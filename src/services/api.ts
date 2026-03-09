@@ -455,7 +455,7 @@ export const api = {
   // --- WhatsApp (11za) ---
   sendTaskAssignmentWhatsApp: async (
     phone: string,
-    task: { title: string; due_date: string; priority: TaskPriority; description: string; link: string }
+    task: { title: string; due_date: string; priority: TaskPriority; description: string; link: string; assigned_by_name: string }
   ): Promise<void> => {
     const { whatsappService } = await import('./whatsapp');
     const templateName =
@@ -467,6 +467,7 @@ export const api = {
       taskName: task.title,
       dueDate: task.due_date,
       priority: task.priority,
+      assignedBy: task.assigned_by_name,
       description: task.description,
       link: task.link,
     });

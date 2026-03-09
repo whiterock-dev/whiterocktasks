@@ -155,12 +155,12 @@ export const Members: React.FC = () => {
   };
 
   if (loading) return <div className="text-slate-500">Loading...</div>;
-  if (!isOwner) return <div className="text-slate-500">Access denied. Only Owner can view Members.</div>;
+  if (!isOwner && !isManager) return <div className="text-slate-500">Access denied. Only Owner and Managers can view Members.</div>;
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        {isOwner && (
+        {(isOwner || isManager) && (
           <Button onClick={() => setShowAddForm(true)}>
             <UserPlus size={18} className="mr-2" />
             Add Member
@@ -168,7 +168,7 @@ export const Members: React.FC = () => {
         )}
       </div>
 
-      {showAddForm && isOwner && (
+      {showAddForm && (isOwner || isManager) && (
         <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">

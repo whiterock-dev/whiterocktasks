@@ -106,7 +106,7 @@ export const AssignTask: React.FC = () => {
       if (assigneeUser?.phone) {
         const origin = window.location.origin;
         const link = `${origin}/#/tasks?highlight=${created.id}`;
-        const formattedDate = created.due_date.split('-').reverse().join('-');  
+        const formattedDate = created.due_date.split('-').reverse().join('-');
         let desc = created.description || 'N/A';
         if (desc.length > 60) {
           desc = desc.substring(0, 56) + '...';
@@ -117,6 +117,7 @@ export const AssignTask: React.FC = () => {
           description: desc,
           due_date: formattedDate,
           priority: created.priority,
+          assigned_by_name: created.assigned_by_name || user.name,
           link,
         });
       }

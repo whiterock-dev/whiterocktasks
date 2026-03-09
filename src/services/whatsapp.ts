@@ -12,6 +12,7 @@ export interface SendTaskAssignmentParams {
   priority: string;
   description: string;
   link: string;
+  assignedBy: string;
 }
 
 class WhatsappService {
@@ -36,7 +37,7 @@ class WhatsappService {
    * Send a WhatsApp template message specifically for task assignments.
    */
   public async sendTaskAssignment(params: SendTaskAssignmentParams): Promise<void> {
-    const { phone, templateName, taskName, dueDate, priority, description, link } = params;
+    const { phone, templateName, taskName, dueDate, priority, description, link, assignedBy } = params;
     const normalizedPhone = this.normalizePhone(phone);
     const sanitizedOrigin = this.sanitizeOrigin(ORIGIN_WEBSITE);
 
@@ -56,6 +57,7 @@ class WhatsappService {
         taskName,
         dueDate,
         priority,
+        assignedBy,
         description,
         link
       ]

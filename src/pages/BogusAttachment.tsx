@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task } from '../types';
 import { Button } from '../components/ui/Button';
-import { Paperclip, Check, X, HelpCircle, ExternalLink, FileText } from 'lucide-react';
+import { Check, X, HelpCircle, ExternalLink, FileText } from 'lucide-react';
 
 export const BogusAttachment: React.FC = () => {
   const { user } = useAuth();
@@ -84,15 +84,14 @@ export const BogusAttachment: React.FC = () => {
                   </td>
                   <td className="py-3 px-4">
                     <span
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        t.audit_status === 'audited'
+                      className={`px-2 py-0.5 rounded text-xs ${t.audit_status === 'audited'
                           ? 'bg-green-100 text-green-800'
                           : t.audit_status === 'bogus'
-                          ? 'bg-red-100 text-red-800'
-                          : t.audit_status === 'unclear'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
+                            ? 'bg-red-100 text-red-800'
+                            : t.audit_status === 'unclear'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}
                     >
                       {t.audit_status || 'pending'}
                     </span>
