@@ -23,6 +23,7 @@ const roleLabels: Record<UserRole, string> = {
   [UserRole.MANAGER]: 'Manager',
   [UserRole.DOER]: 'Doer',
   [UserRole.AUDITOR]: 'Auditor',
+  [UserRole.VERIFIER]: 'Verifier',
 };
 
 const NavItem = ({
@@ -66,7 +67,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   if (!user) return <>{children}</>;
 
   const isAuditor = user.role === UserRole.AUDITOR;
+  const isVerifier = user.role === UserRole.VERIFIER;
   if (isAuditor && location.pathname !== '/tasks') {
+    return <Navigate to="/tasks" replace />;
+  }
+  if (isVerifier && location.pathname !== '/tasks') {
     return <Navigate to="/tasks" replace />;
   }
   const isOwner = user.role === UserRole.OWNER;
@@ -76,6 +81,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const navItems: { to: string; icon: any; label: string }[] = isAuditor
     ? [{ to: '/tasks', icon: Table2, label: 'Audit Tasks' }]
+    : isVerifier
+    ? [{ to: '/tasks', icon: Table2, label: 'Verification Tasks' }]
     : [
       ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
       { to: '/removal', icon: Trash2, label: 'Removal Request' },
@@ -108,7 +115,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               active={location.pathname === item.to}
             />
           ))}
-          {!isAuditor && completedTasks.length > 0 && (
+          {!isAuditor && !isVerifier && completedTasks.length > 0 && (
             <div className="mt-5 pt-4 border-t border-slate-100">
               <p className="px-3.5 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 Recent
@@ -182,7 +189,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   onClick={() => setMobileOpen(false)}
                 />
               ))}
-              {!isAuditor && completedTasks.length > 0 && (
+              {!isAuditor && !isVerifier && completedTasks.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
                   <p className="px-3.5 py-2 text-xs font-semibold text-slate-400 uppercase">Recent</p>
                   {completedTasks.map((t) => (
@@ -227,6 +234,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             };
             const pageTitle = isAuditor && location.pathname === '/tasks'
               ? 'Audit Tasks'
+              : isVerifier && location.pathname === '/tasks'
+              ? 'Verification Tasks'
               : (pathTitles[location.pathname] || 'Dashboard');
             return (
               <>

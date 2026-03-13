@@ -41,7 +41,7 @@ const docToTask = (d: any): Task => {
     start_date: data.start_date,
     due_date: data.due_date || '',
     priority: data.priority || 'medium',
-    status: data.status || 'pending',
+    status: (data.status as TaskStatus) || 'pending',
     recurring: data.recurring || 'none',
     attachment_required: data.attachment_required || false,
     attachment_type: data.attachment_type,
@@ -52,6 +52,9 @@ const docToTask = (d: any): Task => {
     assigned_to_city: data.assigned_to_city,
     assigned_by_id: data.assigned_by_id || '',
     assigned_by_name: data.assigned_by_name || '',
+    verification_required: data.verification_required === true,
+    verifier_id: data.verifier_id,
+    verifier_name: data.verifier_name,
     created_at: timestampToISO(data.created_at),
     updated_at: timestampToISO(data.updated_at),
     completed_at: data.completed_at ? timestampToISO(data.completed_at) : undefined,
@@ -63,6 +66,8 @@ const docToTask = (d: any): Task => {
     attachment_url: data.attachment_url,
     attachment_text: data.attachment_text,
     assignee_deleted: data.assignee_deleted === true,
+    verified_at: data.verified_at ? timestampToISO(data.verified_at) : undefined,
+    verified_by: data.verified_by,
   };
 };
 
@@ -162,7 +167,7 @@ export const api = {
     const today = new Date().toISOString().split('T')[0];
     let q = query(
       tasksRef,
-      where('status', 'in', ['pending', 'overdue']),
+      where('status', 'in', ['pending', 'overdue', 'pending_verification', 'correction_required']),
       where('due_date', '<', today),
       orderBy('due_date', 'asc'),
       limit(limitCount)
@@ -171,7 +176,7 @@ export const api = {
       q = query(
         tasksRef,
         where('assigned_to_id', '==', assignedToId),
-        where('status', 'in', ['pending', 'overdue']),
+        where('status', 'in', ['pending', 'overdue', 'pending_verification', 'correction_required']),
         where('due_date', '<', today),
         orderBy('due_date', 'asc'),
         limit(limitCount)
@@ -205,8 +210,19 @@ export const api = {
     recurring?: string;
     dueDateFrom?: string;
     dueDateTo?: string;
+    verifierId?: string;
   }): Promise<{ tasks: Task[]; lastDoc: QueryDocumentSnapshot | null }> => {
-    const { pageSize, startAfterDoc, assignedTo, assignedBy, status, recurring, dueDateFrom, dueDateTo } = opts;
+    const {
+      pageSize,
+      startAfterDoc,
+      assignedTo,
+      assignedBy,
+      status,
+      recurring,
+      dueDateFrom,
+      dueDateTo,
+      verifierId,
+    } = opts;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const hasDueDateRange = Boolean(dueDateFrom || dueDateTo);
     const constraints: unknown[] = [
@@ -217,6 +233,9 @@ export const api = {
     }
     if (assignedBy) {
       constraints.unshift(where('assigned_by_id', '==', assignedBy));
+    }
+    if (verifierId) {
+      constraints.unshift(where('verifier_id', '==', verifierId));
     }
     if (status) {
       constraints.unshift(where('status', '==', status));
@@ -254,6 +273,9 @@ export const api = {
       }
       if (assignedBy) {
         fallbackConstraints.push(where('assigned_by_id', '==', assignedBy));
+      }
+      if (verifierId) {
+        fallbackConstraints.push(where('verifier_id', '==', verifierId));
       }
       if (status) {
         fallbackConstraints.push(where('status', '==', status));
@@ -295,11 +317,13 @@ export const api = {
     recurring?: string;
     dueDateFrom?: string;
     dueDateTo?: string;
+    verifierId?: string;
   }): Promise<number> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const constraints: unknown[] = [];
     if (filters?.assignedTo) constraints.push(where('assigned_to_id', '==', filters.assignedTo));
     if (filters?.assignedBy) constraints.push(where('assigned_by_id', '==', filters.assignedBy));
+    if (filters?.verifierId) constraints.push(where('verifier_id', '==', filters.verifierId));
     if (filters?.status) constraints.push(where('status', '==', filters.status));
     if (filters?.recurring) constraints.push(where('recurring', '==', filters.recurring));
     if (filters?.dueDateFrom) constraints.push(where('due_date', '>=', filters.dueDateFrom));
@@ -315,7 +339,7 @@ export const api = {
     const q = query(
       tasksRef,
       where('assigned_to_id', '==', userId),
-      where('status', 'in', ['pending', 'overdue']),
+      where('status', 'in', ['pending', 'overdue', 'pending_verification', 'correction_required']),
       orderBy('updated_at', 'desc'),
       limit(limitCount)
     );

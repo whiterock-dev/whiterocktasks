@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.MANAGER]: 'Manager',
   [UserRole.DOER]: 'Doer',
   [UserRole.AUDITOR]: 'Auditor',
+  [UserRole.VERIFIER]: 'Verifier',
 };
 
 export const AssignTask: React.FC = () => {
@@ -35,6 +36,8 @@ export const AssignTask: React.FC = () => {
   const [assignToSearch, setAssignToSearch] = useState('');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const assignDropdownRef = useRef<HTMLDivElement>(null);
+  const [verificationRequired, setVerificationRequired] = useState(false);
+  const [verifierId, setVerifierId] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [holidays, setHolidays] = useState<{ date: string }[]>([]);
@@ -77,10 +80,14 @@ export const AssignTask: React.FC = () => {
       setAssignDropdownOpen(true);
       return;
     }
+    if (verificationRequired && !verifierId) {
+      return;
+    }
     setLoading(true);
     setSuccess('');
     try {
       const assignee = users.find((u) => u.id === assignedToId);
+      const verifier = users.find((u) => u.id === verifierId);
       const isHoliday = holidays.some((h) => h.date === dueDate);
       const task: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
         title,
@@ -99,6 +106,9 @@ export const AssignTask: React.FC = () => {
         assigned_to_city: assignee?.city,
         assigned_by_id: user.id,
         assigned_by_name: user.name,
+        verification_required: verificationRequired,
+        verifier_id: verificationRequired ? verifierId : undefined,
+        verifier_name: verificationRequired ? verifier?.name : undefined,
         is_holiday: isHoliday,
       };
       const created = await api.createTask(task);
@@ -141,6 +151,8 @@ export const AssignTask: React.FC = () => {
       setAttachmentRequired(false);
       setAttachmentDesc('');
       setAssignedToId('');
+      setVerificationRequired(false);
+      setVerifierId('');
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -152,6 +164,8 @@ export const AssignTask: React.FC = () => {
 
   const selectedUser = users.find((u) => u.id === assignedToId);
   const assignFiltered = users.filter((u) => {
+    // Do not allow assigning tasks to Verifiers as Doers
+    if (u.role === UserRole.VERIFIER) return false;
     const s = assignToSearch.toLowerCase().trim();
     if (!s) return true;
     const name = (u.name || '').toLowerCase();
@@ -160,6 +174,8 @@ export const AssignTask: React.FC = () => {
     const role = (ROLE_LABELS[u.role] || '').toLowerCase();
     return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
   });
+
+  const verifierOptions = users.filter((u) => u.role === UserRole.VERIFIER);
 
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
@@ -265,17 +281,36 @@ export const AssignTask: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="attachment"
-                checked={attachmentRequired}
-                onChange={(e) => setAttachmentRequired(e.target.checked)}
-                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-              />
-              <label htmlFor="attachment" className="text-sm font-medium text-slate-700">
-                Attachment required
-              </label>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="attachment"
+                  checked={attachmentRequired}
+                  onChange={(e) => setAttachmentRequired(e.target.checked)}
+                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                <label htmlFor="attachment" className="text-sm font-medium text-slate-700">
+                  Attachment required
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="verificationRequired"
+                  checked={verificationRequired}
+                  onChange={(e) => {
+                    setVerificationRequired(e.target.checked);
+                    if (!e.target.checked) {
+                      setVerifierId('');
+                    }
+                  }}
+                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                <label htmlFor="verificationRequired" className="text-sm font-medium text-slate-700">
+                  Verification Required
+                </label>
+              </div>
             </div>
             <div ref={assignDropdownRef} className="relative">
               <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
@@ -330,6 +365,30 @@ export const AssignTask: React.FC = () => {
                 <p className="mt-1 text-xs text-amber-600">Select a member to assign the task to.</p>
               )}
             </div>
+            {verificationRequired && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Verifier</label>
+                <select
+                  value={verifierId}
+                  onChange={(e) => setVerifierId(e.target.value)}
+                  required={verificationRequired}
+                  className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">Select verifier</option>
+                  {verifierOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                      {u.city ? ` · ${u.city}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {!verifierId && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Select a verifier (cannot be a Doer/Owner/Manager/Auditor).
+                  </p>
+                )}
+              </div>
+            )}
             {success && (
               <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm">{success}</div>
             )}

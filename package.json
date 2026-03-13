@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/papaparse": "^5.5.2",
     "axios": "^1.13.5",
     "firebase": "^10.8.0",
     "lucide-react": "^0.460.0",
+    "papaparse": "^5.5.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",

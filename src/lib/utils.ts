@@ -53,7 +53,12 @@ export function computeKpi(
     (t) => t.status === 'completed' && t.completed_at && t.completed_at.split('T')[0] > t.due_date
   ).length;
   const overdue = countable.filter(
-    (t) => (t.status === 'pending' || t.status === 'overdue') && t.due_date < today
+    (t) =>
+      (t.status === 'pending' ||
+        t.status === 'overdue' ||
+        t.status === 'pending_verification' ||
+        t.status === 'correction_required') &&
+      t.due_date < today
   ).length;
   const completed = onTime + late;
   const latePercent = completed > 0 ? Math.round((late / completed) * 100) : 0;
@@ -101,7 +106,12 @@ export function computeKpiByMember(
       (t) => t.status === 'completed' && t.completed_at && t.completed_at.split('T')[0] > t.due_date
     ).length;
     const overdue = countable.filter(
-      (t) => (t.status === 'pending' || t.status === 'overdue') && t.due_date < today
+      (t) =>
+        (t.status === 'pending' ||
+          t.status === 'overdue' ||
+          t.status === 'pending_verification' ||
+          t.status === 'correction_required') &&
+        t.due_date < today
     ).length;
     const completed = onTime + late;
     const latePercent = completed > 0 ? Math.round((late / completed) * 100) : 0;

@@ -4,13 +4,17 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, UserMinus, Pencil } from 'lucide-react';
+import { UserPlus, UserMinus, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import Papa from 'papaparse';
+
+const ROWS_PER_PAGE_OPTIONS = [25, 50, 100] as const;
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
   [UserRole.MANAGER]: 'Manager',
   [UserRole.DOER]: 'Doer',
   [UserRole.AUDITOR]: 'Auditor',
+  [UserRole.VERIFIER]: 'Verifier',
 };
 
 export const Members: React.FC = () => {
@@ -26,6 +30,11 @@ export const Members: React.FC = () => {
   const [newUserPhone, setNewUserPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
@@ -55,13 +64,19 @@ export const Members: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
+      
+      let formattedPhone = newUserPhone?.trim() || undefined;
+      if (formattedPhone && !formattedPhone.startsWith('+91')) {
+          formattedPhone = '+91' + formattedPhone;
+      }
+
       await api.createUser({
         name: newUserName,
         email: newUserEmail,
         password: newUserPassword,
         role: newUserRole,
         city: newUserCity || undefined,
-        phone: newUserPhone || undefined,
+        phone: formattedPhone,
       });
       setUsers(await api.getUsers());
       setShowAddForm(false);
@@ -134,12 +149,18 @@ export const Members: React.FC = () => {
     setEditSubmitting(true);
     setEditError('');
     try {
+
+      let formattedPhone = editPhone?.trim() || undefined;
+      if (formattedPhone && !formattedPhone.startsWith('+91')) {
+          formattedPhone = '+91' + formattedPhone;
+      }
+
       const updates: Partial<User> = {
         name: editName,
         email: editEmail,
         role: editRole,
         city: editCity || undefined,
-        phone: editPhone || undefined,
+        phone: formattedPhone,
       };
       if (editPassword.trim()) {
         updates.password = editPassword;
@@ -154,6 +175,141 @@ export const Members: React.FC = () => {
     }
   };
 
+  const handleDownloadTemplate = () => {
+    const csvContent = 'Name,Email,Password,City,Phone\nJohn Doe,john@example.com,pass123,New York,1234567890';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'members_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBulkUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setBulkUploading(true);
+    setBulkMessage(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const currentUsers = await api.getUsers();
+          const existingPhones = new Set(
+            currentUsers.filter(u => u.phone).map(u => u.phone as string)
+          );
+
+          let successCount = 0;
+          let duplicateCount = 0;
+          let errorCount = 0;
+
+          const rows = results.data as any[];
+
+          const formatPhone = (phoneStr: string) => {
+            let p = phoneStr?.trim() || '';
+            if (!p) return undefined;
+            if (p.startsWith('="') && p.endsWith('"')) {
+              p = p.slice(2, -1);
+            }
+            p = p.replace(/[^\d+]/g, '');
+            if (!p.startsWith('+91')) {
+              if (p.startsWith('91') && p.length === 12) {
+                p = '+' + p;
+              } else {
+                p = '+91' + p.replace(/^\+/, '');
+              }
+            }
+            return p;
+          };
+
+          const processedRows = rows
+            .filter(row => row.Name?.trim() && row.Email?.trim() && row.Password?.trim() && row.Phone?.trim())
+            .map(row => ({
+              ...row,
+              formattedPhone: formatPhone(row.Phone || '')
+            }));
+
+          // Check for empty rows or missing required columns first
+          if (processedRows.length === 0) {
+              setBulkMessage({ text: 'CSV is empty or missing required columns (Name, Email, Password, Phone).', type: 'error' });
+              setBulkUploading(false);
+              if (event.target) event.target.value = '';
+              return;
+          }
+
+          // Check for internal duplicates in the CSV
+          const csvPhones = processedRows.map(row => row.formattedPhone).filter(Boolean) as string[];
+          const internalDuplicates = csvPhones.filter((phone, index) => csvPhones.indexOf(phone) !== index);
+          if (internalDuplicates.length > 0) {
+              setBulkMessage({ text: `Duplicate phone numbers found within the CSV file: ${Array.from(new Set(internalDuplicates)).join(', ')}. Please fix and try again.`, type: 'error' });
+              setBulkUploading(false);
+              if (event.target) event.target.value = '';
+              return;
+          }
+
+          const newUsersToAppend: User[] = [];
+
+          for (const row of processedRows) {
+            const phoneCell = row.formattedPhone;
+            
+            if (phoneCell && existingPhones.has(phoneCell)) {
+              duplicateCount++;
+              continue; // Skip if phone already exists
+            }
+
+            try {
+              const createdUser = await api.createUser({
+                name: row.Name.trim(),
+                email: row.Email.trim(), // Kept email, but isn't part of dupe check now
+                password: row.Password.trim(),
+                role: UserRole.DOER, // Enforce DOER role for bulk imports
+                city: row.City?.trim() || undefined,
+                phone: phoneCell || undefined,
+              });
+              successCount++;
+              newUsersToAppend.push(createdUser);
+              // Add to local set to prevent any subsequent duplicates in the same batch from somehow passing
+              if (phoneCell) existingPhones.add(phoneCell);
+            } catch (err) {
+              console.error('Error creating user from CSV:', err);
+              errorCount++;
+            }
+          }
+
+          if (newUsersToAppend.length > 0) {
+            setUsers(prev => [...prev, ...newUsersToAppend]);
+          }
+
+          if (successCount > 0 && duplicateCount === 0 && errorCount === 0) {
+            setBulkMessage({ text: `Successfully added ${successCount} members.`, type: 'success' });
+          } else if (successCount > 0) {
+            setBulkMessage({ text: `Added ${successCount} members. Skipped ${duplicateCount} duplicates. Errors: ${errorCount}.`, type: 'warning' });
+          } else {
+            setBulkMessage({ text: `Failed to add members. Skipped ${duplicateCount} duplicates. Errors: ${errorCount}.`, type: 'error' });
+          }
+        } catch (err) {
+          console.error('Bulk upload failed:', err);
+          setBulkMessage({ text: 'An unexpected error occurred during bulk upload.', type: 'error' });
+        } finally {
+          setBulkUploading(false);
+          if (event.target) event.target.value = ''; // Reset input
+        }
+      },
+      error: (error) => {
+        console.error('CSV Parsing Error:', error);
+        setBulkMessage({ text: 'Failed to parse CSV file. Ensure it is formatted correctly.', type: 'error' });
+        setBulkUploading(false);
+        if (event.target) event.target.value = '';
+      }
+    });
+  };
+
   if (loading) return <div className="text-slate-500">Loading...</div>;
   if (!isOwner && !isManager) return <div className="text-slate-500">Access denied. Only Owner and Managers can view Members.</div>;
 
@@ -161,12 +317,46 @@ export const Members: React.FC = () => {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         {(isOwner || isManager) && (
-          <Button onClick={() => setShowAddForm(true)}>
-            <UserPlus size={18} className="mr-2" />
-            Add Member
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setShowAddForm(true)}>
+              <UserPlus size={18} className="mr-2" />
+              Add Member
+            </Button>
+            
+            <input
+              type="file"
+              accept=".csv"
+              id="csv-upload"
+              className="hidden"
+              onChange={handleBulkUpload}
+              disabled={bulkUploading}
+            />
+            <Button 
+               variant="secondary" 
+               onClick={() => document.getElementById('csv-upload')?.click()}
+               disabled={bulkUploading}
+            >
+              <Upload size={18} className="mr-2" />
+              {bulkUploading ? 'Uploading...' : 'Bulk Upload CSV'}
+            </Button>
+            
+            <Button variant="secondary" onClick={handleDownloadTemplate}>
+              <Download size={18} className="mr-2" />
+              Download Template
+            </Button>
+          </div>
         )}
       </div>
+
+      {bulkMessage && (
+        <div className={`mb-4 p-3 rounded-lg text-sm ${
+          bulkMessage.type === 'success' ? 'bg-teal-50 text-teal-700' :
+          bulkMessage.type === 'error' ? 'bg-red-50 text-red-700' :
+          'bg-yellow-50 text-yellow-700'
+        }`}>
+          {bulkMessage.text}
+        </div>
+      )}
 
       {showAddForm && (isOwner || isManager) && (
         <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4">
@@ -211,6 +401,7 @@ export const Members: React.FC = () => {
                     <option value={UserRole.MANAGER}>Manager</option>
                     <option value={UserRole.DOER}>Doer</option>
                     <option value={UserRole.AUDITOR}>Auditor</option>
+                    <option value={UserRole.VERIFIER}>Verifier</option>
                   </select>
                 </div>
                 <Input
@@ -252,7 +443,7 @@ export const Members: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {users.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map((u) => (
               <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="py-3 px-4 font-medium text-slate-800">{u.name}</td>
                 <td className="py-3 px-4 text-slate-600">{u.email}</td>
@@ -285,8 +476,80 @@ export const Members: React.FC = () => {
                 </td>
               </tr>
             ))}
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-6 text-center text-slate-500">
+                  No members found.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded-xl">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-600">Rows per page</span>
+          <select
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value));
+              setCurrentPage(1); // Reset to first page when changing row count
+            }}
+            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            {ROWS_PER_PAGE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="flex items-center gap-3 sm:gap-4">
+          <p className="text-sm text-slate-500 whitespace-nowrap">
+            Showing <span className="font-semibold text-slate-800">{users.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, users.length)}</span> of{' '}
+            <span className="font-semibold text-slate-800">{users.length}</span> results
+          </p>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label="First page"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage <= 1}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Previous page"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage <= 1}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Next page"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(users.length / rowsPerPage)))}
+              disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="Last page"
+              onClick={() => setCurrentPage(Math.ceil(users.length / rowsPerPage))}
+              disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {editingUser && (
@@ -318,6 +581,7 @@ export const Members: React.FC = () => {
                     <option value={UserRole.MANAGER}>Manager</option>
                     <option value={UserRole.DOER}>Doer</option>
                     <option value={UserRole.AUDITOR}>Auditor</option>
+                    <option value={UserRole.VERIFIER}>Verifier</option>
                   </select>
                 </div>
                 <Input label="City" value={editCity} onChange={(e) => setEditCity(e.target.value)} placeholder="City" />

@@ -64,6 +64,7 @@ export const TaskTable: React.FC = () => {
   const isOwner = user?.role === UserRole.OWNER;
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
   const isDoer = user?.role === UserRole.DOER;
+  const isVerifier = user?.role === UserRole.VERIFIER;
 
   const resolveDoerDateRange = useCallback((): { dueDateFrom?: string; dueDateTo?: string } => {
     if (dateFilter === 'all_time') return {};
@@ -106,23 +107,32 @@ export const TaskTable: React.FC = () => {
     const filters: {
       assignedTo?: string;
       assignedBy?: string;
-      status?: 'completed';
+      status?: Task['status'];
       recurring?: string;
       dueDateFrom?: string;
       dueDateTo?: string;
+      verifierId?: string;
     } = {};
-    if (isDoer) filters.assignedTo = user?.id ?? '';
-    if (isAuditor) filters.status = 'completed';
-    if (!isDoer && assignedToFilter) filters.assignedTo = assignedToFilter;
-    if (!isDoer && assignedByFilter) filters.assignedBy = assignedByFilter;
-    if (!isDoer && recurringFilter) filters.recurring = recurringFilter;
+    if (isDoer) {
+      filters.assignedTo = user?.id ?? '';
+    }
+    if (isAuditor) {
+      filters.status = 'completed';
+    }
+    if (isVerifier) {
+      filters.verifierId = user?.id ?? '';
+      filters.status = 'pending_verification';
+    }
+    if (!isDoer && !isVerifier && assignedToFilter) filters.assignedTo = assignedToFilter;
+    if (!isDoer && !isVerifier && assignedByFilter) filters.assignedBy = assignedByFilter;
+    if (!isDoer && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
     if (isDoer) {
       const range = resolveDoerDateRange();
       if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
       if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
     }
     return filters;
-  }, [user?.id, isDoer, isAuditor, assignedToFilter, assignedByFilter, recurringFilter, resolveDoerDateRange]);
+  }, [user?.id, isDoer, isAuditor, isVerifier, assignedToFilter, assignedByFilter, recurringFilter, resolveDoerDateRange]);
 
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -226,12 +236,22 @@ export const TaskTable: React.FC = () => {
       if (!isText && !url?.trim()) return;
     }
     try {
-      await api.updateTask(t.id, {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
+      const baseUpdates: Partial<Task> = {
         ...(url && { attachment_url: url }),
         ...(text && { attachment_text: text }),
-      });
+      };
+
+      if (t.verification_required) {
+        await api.updateTask(t.id, {
+          ...baseUpdates,
+          status: 'pending_verification',
+        });
+      } else {
+        await api.updateTask(t.id, {
+          ...baseUpdates,
+          completed_at: new Date().toISOString(),
+        });
+      }
       setLoading(true);
       await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
       setCompleteTask(null);
@@ -564,6 +584,146 @@ export const TaskTable: React.FC = () => {
     );
   }
 
+  if (isVerifier) {
+    return (
+      <div>
+        <p className="text-slate-500 text-sm mb-4">Tasks awaiting your verification. Approve or reject after review.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          {paginationControls}
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th className="whitespace-nowrap">Title</th>
+                <th className="min-w-[180px]">Description</th>
+                <th className="whitespace-nowrap">Doer</th>
+                <th className="whitespace-nowrap text-center">Due Date</th>
+                <th className="whitespace-nowrap text-center">Priority</th>
+                <th className="whitespace-nowrap text-center">Status</th>
+                <th className="whitespace-nowrap text-center">Attachment</th>
+                <th className="whitespace-nowrap text-right pr-4">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.map((t) => (
+                <tr key={t.id} className={highlightId === t.id ? 'bg-amber-50' : ''}>
+                  <td>
+                    <span className="font-medium text-slate-800">{t.title}</span>
+                  </td>
+                  <td className="min-w-[200px] whitespace-pre-wrap break-words text-sm text-slate-700">
+                    {t.description || '-'}
+                  </td>
+                  <td>
+                    {t.assigned_to_name}
+                    {t.assignee_deleted && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                    )}
+                  </td>
+                  <td className="text-center whitespace-nowrap text-slate-600 font-medium">{t.due_date}</td>
+                  <td className="text-center">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
+                        ? 'bg-red-100 text-red-800'
+                        : t.priority === 'high'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-600'
+                        }`}
+                    >
+                      {t.priority}
+                    </span>
+                  </td>
+                  <td className="text-center">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : t.status === 'overdue'
+                          ? 'bg-red-100 text-red-800'
+                          : t.status === 'correction_required'
+                            ? 'bg-amber-100 text-amber-800'
+                            : t.status === 'pending_verification'
+                              ? 'bg-sky-100 text-sky-800'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}
+                    >
+                      {t.status === 'pending_verification'
+                        ? 'Pending Verification'
+                        : t.status === 'correction_required'
+                          ? 'Correction Required'
+                          : t.status}
+                    </span>
+                  </td>
+                  <td className="text-center">
+                    {(t.attachment_url || t.attachment_text) ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                        className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
+                      >
+                        {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                        View
+                      </button>
+                    ) : t.attachment_required ? (
+                      <span className="text-amber-600 text-xs font-medium whitespace-nowrap">Required</span>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-2 text-right pr-4">
+                    {t.status === 'pending_verification' ? (
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
+                        <Button
+                          size="sm"
+                          variant="success"
+                          onClick={async () => {
+                            if (!user) return;
+                            try {
+                              await api.updateTask(t.id, {
+                                completed_at: new Date().toISOString(),
+                                verified_by: user.name,
+                                verified_at: new Date().toISOString(),
+                              });
+                              setLoading(true);
+                              await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={async () => {
+                            try {
+                              await api.updateTask(t.id, { status: 'correction_required' as Task['status'] });
+                              setLoading(true);
+                              await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-center">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">{paginationControls}</div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
@@ -722,10 +882,18 @@ export const TaskTable: React.FC = () => {
                         ? 'bg-emerald-100 text-emerald-800'
                         : t.status === 'overdue'
                           ? 'bg-red-100 text-red-800'
-                          : 'bg-slate-100 text-slate-600'
+                          : t.status === 'correction_required'
+                            ? 'bg-amber-100 text-amber-800'
+                            : t.status === 'pending_verification'
+                              ? 'bg-sky-100 text-sky-800'
+                              : 'bg-slate-100 text-slate-600'
                         }`}
                     >
-                      {t.status}
+                      {t.status === 'pending_verification'
+                        ? 'Pending Verification'
+                        : t.status === 'correction_required'
+                          ? 'Correction Required'
+                          : t.status}
                     </span>
                   </td>
                   <td className="text-center">
@@ -746,7 +914,9 @@ export const TaskTable: React.FC = () => {
                   </td>
                   <td className="py-3 px-2 text-right pr-4">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
-                      {t.assigned_to_id === user?.id && t.status !== 'completed' && (
+                      {t.assigned_to_id === user?.id &&
+                        t.status !== 'completed' &&
+                        t.status !== 'pending_verification' && (
                         <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
                           Complete
                         </Button>

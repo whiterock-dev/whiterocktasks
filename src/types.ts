@@ -3,6 +3,7 @@ export enum UserRole {
   MANAGER = 'manager',
   DOER = 'doer',
   AUDITOR = 'auditor',
+  VERIFIER = 'verifier',
 }
 
 export interface User {
@@ -29,7 +30,14 @@ export type RecurringType =
   | 'half_yearly'
   | 'yearly';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
+export type TaskStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'overdue'
+  | 'cancelled'
+  | 'pending_verification'
+  | 'correction_required';
 
 export type AuditStatus = 'pending' | 'audited' | 'bogus' | 'unclear';
 
@@ -42,6 +50,13 @@ export interface Task {
   priority: TaskPriority;
   status: TaskStatus;
   recurring: RecurringType;
+  /**
+   * Whether this task requires verification by a separate verifier.
+   * Missing/undefined should be treated as false for backward compatibility.
+   */
+  verification_required?: boolean;
+  verifier_id?: string;
+  verifier_name?: string;
   attachment_required: boolean;
   attachment_type?: 'media' | 'text';
   attachment_description?: string;
@@ -62,6 +77,8 @@ export interface Task {
   attachment_url?: string;
   attachment_text?: string;
   assignee_deleted?: boolean;
+  verified_at?: string;
+  verified_by?: string;
 }
 
 export interface Holiday {
