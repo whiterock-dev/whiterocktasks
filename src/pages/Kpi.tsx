@@ -1,31 +1,15 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { api } from '../services/api';
 import { computeKpiByMember } from '../lib/utils';
 import { Task, User, UserRole } from '../types';
-
-/*
-Preserved for future restore (intentionally commented):
-
-import { computeKpi, computeKpiByMember } from '../lib/utils';
-import { KpiMetrics, Task, User, UserRole } from '../types';
-
-const [metrics, setMetrics] = useState<KpiMetrics | null>(null);
-
-setMetrics(computeKpi(allData.tasks, allData.holidays, allData.absences, isOwner ? undefined : user?.id));
-
-if (!metrics) return null;
-
-const summaryRows = [
-  { label: 'Total Assigned', value: metrics.total_assigned },
-  { label: 'On Time Completed', value: metrics.on_time_completed },
-  { label: 'Late Completed', value: metrics.late_completed },
-  { label: 'Overdue Tasks', value: metrics.overdue_count },
-  { label: 'Overdue %', value: `${metrics.overdue_percent}%` },
-  { label: 'Late Completion %', value: `${metrics.late_completion_percent}%` },
-];
-*/
 
 export const Kpi: React.FC = () => {
   const { user } = useAuth();

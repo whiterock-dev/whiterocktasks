@@ -4,5 +4,9 @@ dist
 .env.local
 *.log
 .DS_Store
+Thumbs.db
+.idea
+.vscode
+__pycache__
 functions/lib
 functions/node_modules

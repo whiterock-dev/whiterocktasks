@@ -1,3 +1,9 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
@@ -47,7 +53,7 @@ export const Login: React.FC = () => {
                 <p className="font-medium">{error}</p>
                 {error === 'Invalid email or password' && (
                   <p className="mt-2 text-red-600/90">
-                    No account yet? <a href="#/seed" className="font-medium underline underline-offset-2">Create demo users first</a>, then use <strong>owner@whiterock.co.in</strong> / <strong>password123</strong>.
+                    Contact your administrator for access.
                   </p>
                 )}
               </div>

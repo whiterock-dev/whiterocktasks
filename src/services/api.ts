@@ -1,3 +1,9 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import {
   db,
   COLLECTIONS,
@@ -582,12 +588,4 @@ export const api = {
       link: task.link,
     });
   },
-
-  // sendDailyTasksWhatsApp: async (
-  //   phone: string,
-  //   tasks: { title: string; due_date: string; priority: TaskPriority }[]
-  // ): Promise<void> => {
-  //   // Disabled temporarily: whatsappService structure implemented for AssignTask only
-  //   console.warn("Daily Tasks WhatsApp reminder temporarily disabled during WhatsappService rewrite.");
-  // },
 };

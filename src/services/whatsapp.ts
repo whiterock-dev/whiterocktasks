@@ -1,8 +1,14 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_11ZA_API_URL || 'https://app.11za.in/apis/template/sendTemplate';
 const ORIGIN_WEBSITE = import.meta.env.VITE_11ZA_ORIGIN_WEBSITE || 'https://whiterock.co.in/';
-const AUTH_TOKEN = import.meta.env.VITE_11ZA_AUTH_TOKEN || 'U2FsdGVkX19G5PWypU9DVsSN8DXcIfFiaZV02Ye2Pu7Mih1M1eXKaD9KIqKqoa1JyI7te4q4Bv1/RxGn6x9va5yc7V6kfHGorsb82/0+r1I90u0yP6eU1vBK9lXI2Len3IwLGpcpHqARs4wUz7hGYRPTYvqSYpDHH6dLPeWqgaaPsdADWfIv5Caz+rnSknYT';
+const AUTH_TOKEN = import.meta.env.VITE_11ZA_AUTH_TOKEN;
 
 export interface SendTaskAssignmentParams {
   phone: string;
@@ -69,7 +75,6 @@ class WhatsappService {
           'Content-Type': 'application/json',
         }
       });
-      console.log('[WhatsappService] Message sent successfully:', response.data);
     } catch (error: any) {
       // Catch and rethrow to allow the caller to handle it gracefully
       console.error('[WhatsappService] Error sending WhatsApp message:', error?.response?.data || error.message);

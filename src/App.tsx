@@ -1,10 +1,15 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
-const SeedDatabase = lazy(() => import('./pages/SeedDatabase').then((m) => ({ default: m.SeedDatabase })));
 const AssignTask = lazy(() => import('./pages/AssignTask').then((m) => ({ default: m.AssignTask })));
 const RemovalRequest = lazy(() => import('./pages/RemovalRequest').then((m) => ({ default: m.RemovalRequest })));
 const RedZone = lazy(() => import('./pages/RedZone').then((m) => ({ default: m.RedZone })));
@@ -29,7 +34,6 @@ const App: React.FC = () => {
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/seed" element={<SeedDatabase />} />
             <Route
               path="/"
               element={

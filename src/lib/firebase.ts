@@ -1,3 +1,9 @@
+/*
+ * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
+ * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
+ *
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, Timestamp } from 'firebase/firestore';
@@ -5,14 +11,26 @@ import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCCM8CQ37vTZeD53TpgdJXVpW2aGWaG4ck',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'whiterock-tasks.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'whiterock-tasks',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'whiterock-tasks.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '472115769335',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:472115769335:web:4dbef707474d99d4d8c8f2',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-5GD001TYV0',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
+
+const hasFirebaseConfig =
+  typeof firebaseConfig.apiKey === 'string' &&
+  firebaseConfig.apiKey.length > 0 &&
+  typeof firebaseConfig.projectId === 'string' &&
+  firebaseConfig.projectId.length > 0;
+
+if (!hasFirebaseConfig) {
+  throw new Error(
+    'Missing Firebase config. Copy .env.example to .env and add your Firebase project credentials (VITE_FIREBASE_API_KEY, VITE_FIREBASE_PROJECT_ID, etc.). See README.'
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
