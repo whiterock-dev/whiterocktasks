@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   BarChart3,
   Table2,
+  ClipboardCheck,
   Settings,
   LogOut,
   Menu,
@@ -49,8 +50,8 @@ const NavItem = ({
     to={to}
     onClick={onClick}
     className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${active
-        ? 'bg-slate-700 text-white'
-        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+      ? 'bg-slate-700 text-white'
+      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
       }`}
   >
     <Icon size={20} className={active ? 'text-white' : 'text-slate-500'} />
@@ -74,31 +75,33 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
-  if (isAuditor && location.pathname !== '/tasks') {
-    return <Navigate to="/tasks" replace />;
-  }
-  if (isVerifier && location.pathname !== '/tasks') {
-    return <Navigate to="/tasks" replace />;
-  }
   const isOwner = user.role === UserRole.OWNER;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const canAssign = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
   const canSeeRedZone = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
 
   const navItems: { to: string; icon: any; label: string }[] = isAuditor
-    ? [{ to: '/tasks', icon: Table2, label: 'Audit Tasks' }]
-    : isVerifier
-    ? [{ to: '/tasks', icon: Table2, label: 'Verification Tasks' }]
-    : [
-      ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
-      { to: '/removal', icon: Trash2, label: 'Removal Request' },
-      ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue' }] : []),
-      { to: '/kpi', icon: BarChart3, label: 'KPI' },
-      { to: '/tasks', icon: Table2, label: 'Task Table' },
-      ...(isOwner ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
-      ...(isManager ? [{ to: '/bogus-attachment', icon: Paperclip, label: 'Bogus Attachment' }] : []),
+    ? [
+      { to: '/tasks', icon: Table2, label: 'Audit Tasks' },
+      { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
       { to: '/settings', icon: Settings, label: 'Settings' },
-    ];
+    ]
+    : isVerifier
+      ? [
+        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
+        { to: '/settings', icon: Settings, label: 'Settings' },
+      ]
+      : [
+        ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
+        { to: '/removal', icon: Trash2, label: 'Removal Request' },
+        ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue' }] : []),
+        { to: '/kpi', icon: BarChart3, label: 'KPI' },
+        { to: '/tasks', icon: Table2, label: 'Task Table' },
+        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
+        ...(isManager ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
+        ...(isManager ? [{ to: '/bogus-attachment', icon: Paperclip, label: 'Bogus Attachment' }] : []),
+        { to: '/settings', icon: Settings, label: 'Settings' },
+      ];
 
   return (
     <div className="min-h-screen bg-slate-100/80 flex flex-col md:flex-row">
@@ -147,7 +150,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               {user.name.charAt(0)}
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-800 truncate max-w-[140px]">{user.name}</p>
+              <p className="text-sm font-medium text-slate-800 truncate max-w-35">{user.name}</p>
               <p className="text-xs text-slate-500">{roleLabels[user.role]}</p>
             </div>
           </div>
@@ -235,13 +238,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/redzone': 'Overdue',
               '/kpi': 'KPI Dashboard',
               '/members': 'Members',
+              '/approve': 'Approve Task',
               '/bogus-attachment': 'Bogus Attachment',
               '/settings': 'Settings',
             };
             const pageTitle = isAuditor && location.pathname === '/tasks'
               ? 'Audit Tasks'
-              : isVerifier && location.pathname === '/tasks'
-              ? 'Verification Tasks'
               : (pathTitles[location.pathname] || 'Dashboard');
             return (
               <>

@@ -15,6 +15,7 @@ const RemovalRequest = lazy(() => import('./pages/RemovalRequest').then((m) => (
 const RedZone = lazy(() => import('./pages/RedZone').then((m) => ({ default: m.RedZone })));
 const Kpi = lazy(() => import('./pages/Kpi').then((m) => ({ default: m.Kpi })));
 const TaskTable = lazy(() => import('./pages/TaskTable').then((m) => ({ default: m.TaskTable })));
+const ApproveTask = lazy(() => import('./pages/ApproveTask').then((m) => ({ default: m.ApproveTask })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Members = lazy(() => import('./pages/Members').then((m) => ({ default: m.Members })));
 const BogusAttachment = lazy(() => import('./pages/BogusAttachment').then((m) => ({ default: m.BogusAttachment })));
@@ -79,6 +80,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <TaskTable />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/approve"
+              element={
+                <ProtectedRoute>
+                  <ApproveTask />
                 </ProtectedRoute>
               }
             />

@@ -26,16 +26,19 @@ export const RemovalRequest: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const isOwner = user?.role === UserRole.OWNER;
+  const isManager = user?.role === UserRole.MANAGER;
+  const canReviewRequests = isOwner || isManager;
 
   const loadRequests = useCallback(async (startAfterDoc?: QueryDocumentSnapshot | null) => {
     const { requests: nextRequests, lastDoc } = await api.getRemovalRequestsPaginated({
       limitCount: REQUESTS_PAGE_SIZE,
       startAfterDoc: startAfterDoc ?? undefined,
+      requestedById: canReviewRequests ? undefined : user?.id,
     });
     setRequests(startAfterDoc ? (prev) => [...prev, ...nextRequests] : nextRequests);
     setLastRequestDoc(lastDoc);
     setHasNextPage(lastDoc != null);
-  }, []);
+  }, [canReviewRequests, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -154,7 +157,7 @@ export const RemovalRequest: React.FC = () => {
 
       <div>
         <h2 className="font-semibold text-slate-800 mb-4">
-          {isOwner ? 'All Removal Requests' : 'My Requests'}
+          {canReviewRequests ? 'All Removal Requests' : 'My Requests'}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -165,7 +168,7 @@ export const RemovalRequest: React.FC = () => {
                 <th className="text-left py-4 px-4 font-semibold text-slate-800">Reason</th>
                 <th className="text-left py-4 px-4 font-semibold text-slate-800">Date</th>
                 <th className="text-left py-4 px-4 font-semibold text-slate-800">Status</th>
-                {isOwner && (
+                {canReviewRequests && (
                   <th className="text-right py-4 px-4 font-semibold text-slate-800">Actions</th>
                 )}
               </tr>
@@ -174,7 +177,7 @@ export const RemovalRequest: React.FC = () => {
               {requests.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={isOwner ? 6 : 5}
+                    colSpan={canReviewRequests ? 6 : 5}
                     className="py-8 px-4 text-center text-slate-500"
                   >
                     No removal requests yet.
@@ -185,24 +188,23 @@ export const RemovalRequest: React.FC = () => {
                   <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-3 px-4 font-medium text-slate-800">{r.task_title}</td>
                     <td className="py-3 px-4 text-slate-700">{r.requested_by_name}</td>
-                    <td className="py-3 px-4 text-slate-600 max-w-[200px]">{r.reason}</td>
+                    <td className="py-3 px-4 text-slate-600 max-w-50">{r.reason}</td>
                     <td className="py-3 px-4 text-slate-600">
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>
                     <td className="py-3 px-4">
                       <span
-                        className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          r.status === 'pending'
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${r.status === 'pending'
                             ? 'bg-amber-100 text-amber-800'
                             : r.status === 'approved'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}
                       >
                         {r.status}
                       </span>
                     </td>
-                    {isOwner && (
+                    {canReviewRequests && (
                       <td className="py-3 px-4 text-right">
                         {r.status === 'pending' ? (
                           <div className="flex gap-2 justify-end">

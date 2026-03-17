@@ -70,10 +70,10 @@ export const Members: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      
+
       let formattedPhone = newUserPhone?.trim() || undefined;
       if (formattedPhone && !formattedPhone.startsWith('+91')) {
-          formattedPhone = '+91' + formattedPhone;
+        formattedPhone = '+91' + formattedPhone;
       }
 
       await api.createUser({
@@ -100,12 +100,13 @@ export const Members: React.FC = () => {
 
   const handleDeleteMember = async (u: User) => {
     const tasksAssigned = await api.getTasksAssignedTo(u.id);
-    if (tasksAssigned.length > 0) {
-      setDeleteModal({ user: u, taskCount: tasksAssigned.length });
-      setDeleteReassignToId('');
-      setDeleteAction(null);
+    const incompleteAssigned = tasksAssigned.filter((t) => t.status !== 'completed');
+
+    if (incompleteAssigned.length > 0) {
+      alert('You cannot delete this member because tasks are still assigned and not completed.');
       return;
     }
+
     if (!confirm('Remove this member? This cannot be undone.')) return;
     try {
       await api.deleteUser(u.id);
@@ -158,7 +159,7 @@ export const Members: React.FC = () => {
 
       let formattedPhone = editPhone?.trim() || undefined;
       if (formattedPhone && !formattedPhone.startsWith('+91')) {
-          formattedPhone = '+91' + formattedPhone;
+        formattedPhone = '+91' + formattedPhone;
       }
 
       const updates: Partial<User> = {
@@ -243,27 +244,27 @@ export const Members: React.FC = () => {
 
           // Check for empty rows or missing required columns first
           if (processedRows.length === 0) {
-              setBulkMessage({ text: 'CSV is empty or missing required columns (Name, Email, Password, Phone).', type: 'error' });
-              setBulkUploading(false);
-              if (event.target) event.target.value = '';
-              return;
+            setBulkMessage({ text: 'CSV is empty or missing required columns (Name, Email, Password, Phone).', type: 'error' });
+            setBulkUploading(false);
+            if (event.target) event.target.value = '';
+            return;
           }
 
           // Check for internal duplicates in the CSV
           const csvPhones = processedRows.map(row => row.formattedPhone).filter(Boolean) as string[];
           const internalDuplicates = csvPhones.filter((phone, index) => csvPhones.indexOf(phone) !== index);
           if (internalDuplicates.length > 0) {
-              setBulkMessage({ text: `Duplicate phone numbers found within the CSV file: ${Array.from(new Set(internalDuplicates)).join(', ')}. Please fix and try again.`, type: 'error' });
-              setBulkUploading(false);
-              if (event.target) event.target.value = '';
-              return;
+            setBulkMessage({ text: `Duplicate phone numbers found within the CSV file: ${Array.from(new Set(internalDuplicates)).join(', ')}. Please fix and try again.`, type: 'error' });
+            setBulkUploading(false);
+            if (event.target) event.target.value = '';
+            return;
           }
 
           const newUsersToAppend: User[] = [];
 
           for (const row of processedRows) {
             const phoneCell = row.formattedPhone;
-            
+
             if (phoneCell && existingPhones.has(phoneCell)) {
               duplicateCount++;
               continue; // Skip if phone already exists
@@ -328,7 +329,7 @@ export const Members: React.FC = () => {
               <UserPlus size={18} className="mr-2" />
               Add Member
             </Button>
-            
+
             <input
               type="file"
               accept=".csv"
@@ -337,15 +338,15 @@ export const Members: React.FC = () => {
               onChange={handleBulkUpload}
               disabled={bulkUploading}
             />
-            <Button 
-               variant="secondary" 
-               onClick={() => document.getElementById('csv-upload')?.click()}
-               disabled={bulkUploading}
+            <Button
+              variant="secondary"
+              onClick={() => document.getElementById('csv-upload')?.click()}
+              disabled={bulkUploading}
             >
               <Upload size={18} className="mr-2" />
               {bulkUploading ? 'Uploading...' : 'Bulk Upload CSV'}
             </Button>
-            
+
             <Button variant="secondary" onClick={handleDownloadTemplate}>
               <Download size={18} className="mr-2" />
               Download Template
@@ -355,11 +356,10 @@ export const Members: React.FC = () => {
       </div>
 
       {bulkMessage && (
-        <div className={`mb-4 p-3 rounded-lg text-sm ${
-          bulkMessage.type === 'success' ? 'bg-teal-50 text-teal-700' :
+        <div className={`mb-4 p-3 rounded-lg text-sm ${bulkMessage.type === 'success' ? 'bg-teal-50 text-teal-700' :
           bulkMessage.type === 'error' ? 'bg-red-50 text-red-700' :
-          'bg-yellow-50 text-yellow-700'
-        }`}>
+            'bg-yellow-50 text-yellow-700'
+          }`}>
           {bulkMessage.text}
         </div>
       )}
@@ -407,7 +407,6 @@ export const Members: React.FC = () => {
                     <option value={UserRole.MANAGER}>Manager</option>
                     <option value={UserRole.DOER}>Doer</option>
                     <option value={UserRole.AUDITOR}>Auditor</option>
-                    <option value={UserRole.VERIFIER}>Verifier</option>
                   </select>
                 </div>
                 <Input
@@ -511,7 +510,7 @@ export const Members: React.FC = () => {
             ))}
           </select>
         </div>
-        
+
         <div className="flex items-center gap-3 sm:gap-4">
           <p className="text-sm text-slate-500 whitespace-nowrap">
             Showing <span className="font-semibold text-slate-800">{users.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, users.length)}</span> of{' '}
@@ -587,7 +586,6 @@ export const Members: React.FC = () => {
                     <option value={UserRole.MANAGER}>Manager</option>
                     <option value={UserRole.DOER}>Doer</option>
                     <option value={UserRole.AUDITOR}>Auditor</option>
-                    <option value={UserRole.VERIFIER}>Verifier</option>
                   </select>
                 </div>
                 <Input label="City" value={editCity} onChange={(e) => setEditCity(e.target.value)} placeholder="City" />

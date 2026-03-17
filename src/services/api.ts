@@ -515,11 +515,14 @@ export const api = {
   getRemovalRequestsPaginated: async (opts: {
     limitCount: number;
     startAfterDoc?: QueryDocumentSnapshot | null;
+    requestedById?: string;
   }): Promise<{ requests: RemovalRequest[]; lastDoc: QueryDocumentSnapshot | null }> => {
-    const { limitCount, startAfterDoc } = opts;
+    const { limitCount, startAfterDoc, requestedById } = opts;
     const ref = collection(db, COLLECTIONS.REMOVAL_REQUESTS);
-    const base = query(ref, orderBy('created_at', 'desc'), limit(limitCount));
-    const q = startAfterDoc ? query(ref, orderBy('created_at', 'desc'), limit(limitCount), startAfter(startAfterDoc)) : base;
+    const base = requestedById
+      ? query(ref, where('requested_by_id', '==', requestedById), orderBy('created_at', 'desc'), limit(limitCount))
+      : query(ref, orderBy('created_at', 'desc'), limit(limitCount));
+    const q = startAfterDoc ? query(base, startAfter(startAfterDoc)) : base;
     const snap = await getDocs(q);
     const requests = snap.docs.map((d) => {
       const data = d.data();
@@ -571,7 +574,7 @@ export const api = {
   // --- WhatsApp (11za) ---
   sendTaskAssignmentWhatsApp: async (
     phone: string,
-    task: { title: string; due_date: string; priority: TaskPriority; description: string; link: string; assigned_by_name: string }
+    task: { title: string; due_date: string; description: string; link: string; assigned_by_name: string }
   ): Promise<void> => {
     const { whatsappService } = await import('./whatsapp');
     const templateName =
@@ -582,7 +585,6 @@ export const api = {
       templateName,
       taskName: task.title,
       dueDate: task.due_date,
-      priority: task.priority,
       assignedBy: task.assigned_by_name,
       description: task.description,
       link: task.link,
