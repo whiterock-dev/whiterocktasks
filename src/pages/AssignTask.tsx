@@ -122,19 +122,14 @@ export const AssignTask: React.FC = () => {
       let whatsappStatus = '';
       if (assigneeUser?.phone) {
         try {
-          const origin = window.location.origin;
-          const link = `${origin}/#/tasks?highlight=${created.id}`;
+          const link = `https://tasks.whiterock.co.in/#/tasks`;
           const formattedDate = created.due_date.split('-').reverse().join('-');
-          let desc = created.description || 'N/A';
-          if (desc.length > 60) {
-            desc = desc.substring(0, 56) + '...';
-          }
+          const desc = created.description || 'N/A';
 
           await api.sendTaskAssignmentWhatsApp(assigneeUser.phone, {
             title: created.title,
             description: desc,
             due_date: formattedDate,
-            priority: created.priority,
             assigned_by_name: created.assigned_by_name || user.name,
             link,
           });
@@ -170,8 +165,6 @@ export const AssignTask: React.FC = () => {
 
   const selectedUser = users.find((u) => u.id === assignedToId);
   const assignFiltered = users.filter((u) => {
-    // Do not allow assigning tasks to Verifiers as Doers
-    if (u.role === UserRole.VERIFIER) return false;
     const s = assignToSearch.toLowerCase().trim();
     if (!s) return true;
     const name = (u.name || '').toLowerCase();
@@ -181,7 +174,7 @@ export const AssignTask: React.FC = () => {
     return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
   });
 
-  const verifierOptions = users.filter((u) => u.role === UserRole.VERIFIER);
+  const verifierOptions = users.filter((u) => u.id !== assignedToId);
 
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
@@ -390,7 +383,7 @@ export const AssignTask: React.FC = () => {
                 </select>
                 {!verifierId && (
                   <p className="mt-1 text-xs text-amber-600">
-                    Select a verifier (cannot be a Doer/Owner/Manager/Auditor).
+                    Select a verifier. Any member except the selected assignee can verify this task.
                   </p>
                 )}
               </div>

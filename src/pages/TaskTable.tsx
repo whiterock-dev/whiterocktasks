@@ -818,7 +818,7 @@ export const TaskTable: React.FC = () => {
           <thead>
             <tr>
               <th className="whitespace-nowrap">Title</th>
-              <th className="min-w-[180px]">Description</th>
+              <th className="max-w-[400px]">Description</th>
               {!isDoer && <th className="whitespace-nowrap">Assigned To</th>}
               <th className="whitespace-nowrap">Assigned By</th>
               <th className="whitespace-nowrap text-center">Start Date</th>
@@ -847,7 +847,7 @@ export const TaskTable: React.FC = () => {
                       <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                     )}
                   </td>
-                  <td className="min-w-[200px] whitespace-pre-wrap break-words text-sm text-slate-700">
+                  <td className="max-w-[400px] whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
                   {!isDoer && (
