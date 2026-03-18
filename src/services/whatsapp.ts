@@ -20,6 +20,12 @@ export interface SendTaskAssignmentParams {
   assignedBy: string;
 }
 
+export interface SendOverdueNotificationParams {
+  phone: string;
+  overdueCount: number;
+  templateName?: string;
+}
+
 class WhatsappService {
   /**
    * Helper to format phone numbers properly (ensures country code and strips special characters)
@@ -68,7 +74,7 @@ class WhatsappService {
     };
 
     try {
-      const response = await axios.post(API_URL, payload, {
+      await axios.post(API_URL, payload, {
         headers: {
           'Content-Type': 'application/json',
         }
@@ -76,6 +82,40 @@ class WhatsappService {
     } catch (error: any) {
       // Catch and rethrow to allow the caller to handle it gracefully
       console.error('[WhatsappService] Error sending WhatsApp message:', error?.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a WhatsApp notification about overdue tasks.
+   */
+  public async sendOverdueNotification(params: SendOverdueNotificationParams): Promise<void> {
+    const { phone, overdueCount, templateName } = params;
+    const normalizedPhone = this.normalizePhone(phone);
+    const sanitizedOrigin = this.sanitizeOrigin(ORIGIN_WEBSITE);
+
+    if (!AUTH_TOKEN) {
+      console.warn('[WhatsappService] VITE_11ZA_AUTH_TOKEN not set; skipping WhatsApp send');
+      return;
+    }
+
+    const payload = {
+      sendto: normalizedPhone,
+      authToken: AUTH_TOKEN,
+      originWebsite: sanitizedOrigin,
+      language: "en",
+      templateName: templateName,
+      data: [overdueCount.toString()]
+    };
+
+    try {
+      await axios.post(API_URL, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+    } catch (error: any) {
+      console.error('[WhatsappService] Error sending overdue notification:', error?.response?.data || error.message);
       throw error;
     }
   }
