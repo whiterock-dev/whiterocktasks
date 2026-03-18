@@ -22,6 +22,11 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+/** Sanitize origin website for API calls */
+function sanitizeOrigin(origin: string): string {
+  return origin.replace(/[`"' ]/g, '').trim();
+}
+
 /** Call 11za sendTemplate API */
 async function send11zaTemplate(
   phone: string,
@@ -33,18 +38,18 @@ async function send11zaTemplate(
   if (!normalizedPhone) return;
 
   const body = {
-    phone: normalizedPhone,
+    sendto: normalizedPhone,
+    authToken: config.authToken,
+    originWebsite: sanitizeOrigin(config.originWebsite),
+    language: 'en',
     templateName,
-    originWebsite: config.originWebsite,
-    bodyParams,
+    data: bodyParams,
   };
 
   const res = await fetch(config.apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.authToken}`,
-      'X-Origin-Website': config.originWebsite,
     },
     body: JSON.stringify(body),
   });
@@ -56,21 +61,16 @@ async function send11zaTemplate(
 }
 
 /**
- * Scheduled function: runs daily at 8:00 AM IST.
- * Sends WhatsApp reminder via 11za to each user who has tasks due today.
- *
- * Set config before deploy:
- *   firebase functions:config:set 11za.auth_token "YOUR_TOKEN"
- *   firebase functions:config:set 11za.origin_website "https://whiterock.co.in/"
- *   firebase functions:config:set 11za.api_url "https://app.11za.in/apis/template/sendTemplate"
- *   firebase functions:config:set 11za.template_daily "daily_tasks_reminder"
+ * Scheduled function: runs daily at 11:00 AM IST.
+ * Sends WhatsApp notification via 11za to each user with overdue tasks.
+ * Only sends a message if the user has at least one overdue task.
  */
 export const sendDailyDueDateReminders = functions
   .runWith({ timeoutSeconds: 120, memory: '256MB' })
-  .pubsub.schedule('30 2 * * *') // 02:30 UTC = 8:00 AM IST
+  .pubsub.schedule('0 11 * * *') //11:00 AM IST
   .timeZone('Asia/Kolkata')
   .onRun(async () => {
-    const config = functions.config().11za || {};
+    const config = functions.config()['11za'] || {};
     const authToken = config.auth_token || process.env.VITE_11ZA_AUTH_TOKEN;
     const apiUrl =
       config.api_url ||
@@ -80,47 +80,46 @@ export const sendDailyDueDateReminders = functions
       config.origin_website ||
       process.env.VITE_11ZA_ORIGIN_WEBSITE ||
       'https://whiterock.co.in/';
-    const templateDaily = config.template_daily || 'daily_tasks_reminder';
+    const templateOverdueCount =
+      process.env.VITE_11ZA_TEMPLATE_OVERDUE_COUNT ||
+      config.template_overdue_count ||
+      'overdue_count';
 
     if (!authToken) {
-      functions.logger.warn('11za auth_token not set; skipping daily reminders');
+      functions.logger.warn('11za auth_token not set; skipping daily overdue reminders');
       return null;
     }
 
     const db = admin.firestore();
-    const today = new Date()
-      .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-      .replace(/\//g, '-'); // YYYY-MM-DD
 
-    const tasksSnap = await db
+    // Get all overdue tasks
+    const overdueTasksSnap = await db
       .collection(COLLECTIONS.TASKS)
-      .where('due_date', '==', today)
-      .where('status', 'in', ['pending', 'in_progress', 'overdue'])
+      .where('status', '==', 'overdue')
       .get();
 
-    const tasksByUserId = new Map<
-      string,
-      { title: string; due_date: string; priority: string }[]
-    >();
-    for (const doc of tasksSnap.docs) {
+    // Group overdue tasks count by assigned user
+    const overdueByUserId = new Map<string, number>();
+    for (const doc of overdueTasksSnap.docs) {
       const d = doc.data();
       const uid = d.assigned_to_id;
       if (!uid) continue;
-      const list = tasksByUserId.get(uid) || [];
-      list.push({
-        title: d.title || '',
-        due_date: d.due_date || today,
-        priority: d.priority || 'medium',
-      });
-      tasksByUserId.set(uid, list);
+      const count = (overdueByUserId.get(uid) || 0) + 1;
+      overdueByUserId.set(uid, count);
+    }
+
+    // Early exit if no overdue tasks
+    if (overdueByUserId.size === 0) {
+      functions.logger.info('No overdue tasks found; skipping notifications');
+      return null;
     }
 
     const usersSnap = await db.collection(COLLECTIONS.USERS).get();
     const usersById = new Map<string, { phone?: string; name: string }>();
-    usersSnap.docs.forEach((doc) => {
+    for (const doc of usersSnap.docs) {
       const d = doc.data();
       usersById.set(doc.id, { phone: d.phone, name: d.name || '' });
-    });
+    }
 
     const elevenzaConfig = {
       apiUrl,
@@ -128,27 +127,18 @@ export const sendDailyDueDateReminders = functions
       authToken,
     };
 
-    for (const [userId, tasks] of tasksByUserId) {
+    // Send overdue notifications to users who have overdue tasks
+    for (const [userId, overdueCount] of overdueByUserId) {
       const user = usersById.get(userId);
       const phone = user?.phone;
       if (!phone) {
         functions.logger.info(`No phone for user ${userId}; skipping`);
         continue;
       }
-      const taskList =
-        tasks.length > 0
-          ? tasks
-              .map((t) => `${t.title} (Due: ${t.due_date}, ${t.priority})`)
-              .join('\n• ')
-          : 'No tasks due today.';
+
       try {
-        await send11zaTemplate(
-          phone,
-          templateDaily,
-          [today, taskList],
-          elevenzaConfig
-        );
-        functions.logger.info(`Daily reminder sent to ${phone}`);
+        await send11zaTemplate(phone, templateOverdueCount, [overdueCount.toString()], elevenzaConfig);
+        functions.logger.info(`Overdue reminder sent to ${phone}: ${overdueCount} tasks`);
       } catch (err) {
         functions.logger.error(`Failed to send to ${phone}:`, err);
       }
