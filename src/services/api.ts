@@ -213,10 +213,13 @@ export const api = {
     assignedTo?: string;
     assignedBy?: string;
     status?: TaskStatus;
+    statusIn?: TaskStatus[];
     recurring?: string;
     dueDateFrom?: string;
     dueDateTo?: string;
     verifierId?: string;
+    sortBy?: 'updated_at' | 'start_date' | 'due_date';
+    sortDirection?: 'asc' | 'desc';
   }): Promise<{ tasks: Task[]; lastDoc: QueryDocumentSnapshot | null }> => {
     const {
       pageSize,
@@ -224,15 +227,20 @@ export const api = {
       assignedTo,
       assignedBy,
       status,
+      statusIn,
       recurring,
       dueDateFrom,
       dueDateTo,
       verifierId,
+      sortBy,
+      sortDirection,
     } = opts;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const hasDueDateRange = Boolean(dueDateFrom || dueDateTo);
+    const effectiveSortBy = sortBy || (hasDueDateRange ? 'due_date' : 'updated_at');
+    const effectiveSortDirection = sortDirection || 'desc';
     const constraints: unknown[] = [
-      hasDueDateRange ? orderBy('due_date', 'desc') : orderBy('updated_at', 'desc'),
+      orderBy(effectiveSortBy, effectiveSortDirection),
     ];
     if (assignedTo) {
       constraints.unshift(where('assigned_to_id', '==', assignedTo));
@@ -245,6 +253,9 @@ export const api = {
     }
     if (status) {
       constraints.unshift(where('status', '==', status));
+    }
+    if (statusIn && statusIn.length > 0) {
+      constraints.unshift(where('status', 'in', statusIn));
     }
     if (recurring) {
       constraints.unshift(where('recurring', '==', recurring));
@@ -286,6 +297,9 @@ export const api = {
       if (status) {
         fallbackConstraints.push(where('status', '==', status));
       }
+      if (statusIn && statusIn.length > 0) {
+        fallbackConstraints.push(where('status', 'in', statusIn));
+      }
       if (recurring) {
         fallbackConstraints.push(where('recurring', '==', recurring));
       }
@@ -304,15 +318,56 @@ export const api = {
       const tasks = fallbackSnap.docs
         .map((d) => docToTask(d))
         .sort((a, b) => {
-          if (hasDueDateRange) {
-            if (a.due_date === b.due_date) return a.updated_at < b.updated_at ? 1 : -1;
-            return a.due_date < b.due_date ? 1 : -1;
+          const aValue = (a[effectiveSortBy] || '') as string;
+          const bValue = (b[effectiveSortBy] || '') as string;
+          if (aValue === bValue) return 0;
+          if (!aValue) return 1;
+          if (!bValue) return -1;
+          if (effectiveSortDirection === 'asc') {
+            return aValue < bValue ? -1 : 1;
           }
-          return a.updated_at < b.updated_at ? 1 : -1;
+          return aValue > bValue ? -1 : 1;
         });
 
       return { tasks, lastDoc: null };
     }
+  },
+
+  /** Fetch all tasks matching filters/sort. Useful for full-data export across pages. */
+  getAllTasksByFilters: async (opts: {
+    assignedTo?: string;
+    assignedBy?: string;
+    status?: TaskStatus;
+    statusIn?: TaskStatus[];
+    recurring?: string;
+    dueDateFrom?: string;
+    dueDateTo?: string;
+    verifierId?: string;
+    sortBy?: 'updated_at' | 'start_date' | 'due_date';
+    sortDirection?: 'asc' | 'desc';
+    batchSize?: number;
+  }): Promise<Task[]> => {
+    const { batchSize = 1000, ...filters } = opts;
+    const allTasks: Task[] = [];
+    let cursor: QueryDocumentSnapshot | null | undefined = undefined;
+
+    for (let i = 0; i < 200; i += 1) {
+      const { tasks, lastDoc } = await api.getTasksPaginated({
+        pageSize: batchSize,
+        startAfterDoc: cursor,
+        ...filters,
+      });
+
+      allTasks.push(...tasks);
+
+      if (!lastDoc || tasks.length === 0) {
+        break;
+      }
+
+      cursor = lastDoc;
+    }
+
+    return allTasks;
   },
 
   /** Count tasks matching filters (for pagination totals). */
@@ -320,6 +375,7 @@ export const api = {
     assignedTo?: string;
     assignedBy?: string;
     status?: TaskStatus;
+    statusIn?: TaskStatus[];
     recurring?: string;
     dueDateFrom?: string;
     dueDateTo?: string;
@@ -331,6 +387,7 @@ export const api = {
     if (filters?.assignedBy) constraints.push(where('assigned_by_id', '==', filters.assignedBy));
     if (filters?.verifierId) constraints.push(where('verifier_id', '==', filters.verifierId));
     if (filters?.status) constraints.push(where('status', '==', filters.status));
+    if (filters?.statusIn && filters.statusIn.length > 0) constraints.push(where('status', 'in', filters.statusIn));
     if (filters?.recurring) constraints.push(where('recurring', '==', filters.recurring));
     if (filters?.dueDateFrom) constraints.push(where('due_date', '>=', filters.dueDateFrom));
     if (filters?.dueDateTo) constraints.push(where('due_date', '<=', filters.dueDateTo));

@@ -1,14 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createDailyRecurringTaskInstances = exports.sendDailyDueDateReminders = void 0;
+exports.sendDailyDueDateReminders = void 0;
 /*
  * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
  * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const firebase_functions_1 = require("firebase-functions");
+const scheduler_1 = require("firebase-functions/v2/scheduler");
 admin.initializeApp();
 const COLLECTIONS = {
     TASKS: 'tasks',
@@ -57,25 +58,25 @@ async function send11zaTemplate(phone, templateName, bodyParams, config) {
  * Sends WhatsApp notification via 11za to each user with overdue tasks.
  * Only sends a message if the user has at least one overdue task.
  */
-exports.sendDailyDueDateReminders = functions
-    .runWith({ timeoutSeconds: 120, memory: '256MB' })
-    .pubsub.schedule('0 11 * * *') //11:00 AM IST
-    .timeZone('Asia/Kolkata')
-    .onRun(async () => {
-    const config = functions.config()['11za'] || {};
-    const authToken = config.auth_token || process.env.VITE_11ZA_AUTH_TOKEN;
-    const apiUrl = config.api_url ||
+exports.sendDailyDueDateReminders = (0, scheduler_1.onSchedule)({
+    schedule: '0 11 * * *',
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 120,
+    memory: '256MiB',
+}, async () => {
+    const authToken = process.env.ELEVENZA_AUTH_TOKEN || process.env.VITE_11ZA_AUTH_TOKEN;
+    const apiUrl = process.env.ELEVENZA_API_URL ||
         process.env.VITE_11ZA_API_URL ||
         'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite = config.origin_website ||
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE ||
         process.env.VITE_11ZA_ORIGIN_WEBSITE ||
         'https://whiterock.co.in/';
-    const templateOverdueCount = process.env.VITE_11ZA_TEMPLATE_OVERDUE_COUNT ||
-        config.template_overdue_count ||
+    const templateOverdueCount = process.env.ELEVENZA_TEMPLATE_OVERDUE_COUNT ||
+        process.env.VITE_11ZA_TEMPLATE_OVERDUE_COUNT ||
         'overdue_count';
     if (!authToken) {
-        functions.logger.warn('11za auth_token not set; skipping daily overdue reminders');
-        return null;
+        firebase_functions_1.logger.warn('11za auth_token not set; skipping daily overdue reminders');
+        return;
     }
     const db = admin.firestore();
     // Get all overdue tasks
@@ -95,8 +96,8 @@ exports.sendDailyDueDateReminders = functions
     }
     // Early exit if no overdue tasks
     if (overdueByUserId.size === 0) {
-        functions.logger.info('No overdue tasks found; skipping notifications');
-        return null;
+        firebase_functions_1.logger.info('No overdue tasks found; skipping notifications');
+        return;
     }
     const usersSnap = await db.collection(COLLECTIONS.USERS).get();
     const usersById = new Map();
@@ -112,20 +113,20 @@ exports.sendDailyDueDateReminders = functions
     // Send overdue notifications to users who have overdue tasks
     for (const [userId, overdueCount] of overdueByUserId) {
         const user = usersById.get(userId);
-        const phone = user === null || user === void 0 ? void 0 : user.phone;
+        const phone = user?.phone;
         if (!phone) {
-            functions.logger.info(`No phone for user ${userId}; skipping`);
+            firebase_functions_1.logger.info(`No phone for user ${userId}; skipping`);
             continue;
         }
         try {
             await send11zaTemplate(phone, templateOverdueCount, [overdueCount.toString()], elevenzaConfig);
-            functions.logger.info(`Overdue reminder sent to ${phone}: ${overdueCount} tasks`);
+            firebase_functions_1.logger.info(`Overdue reminder sent to ${phone}: ${overdueCount} tasks`);
         }
         catch (err) {
-            functions.logger.error(`Failed to send to ${phone}:`, err);
+            firebase_functions_1.logger.error(`Failed to send to ${phone}:`, err);
         }
     }
-    return null;
+    return;
 });
 /**
  * Scheduled function: runs daily at 6:00 AM IST.
@@ -133,68 +134,70 @@ exports.sendDailyDueDateReminders = functions
  * and recurring_days containing today's weekday (0=Mon .. 6=Sun).
  * Child tasks get parent_task_id set and due_date = today.
  */
-exports.createDailyRecurringTaskInstances = functions
-    .runWith({ timeoutSeconds: 120, memory: '256MB' })
-    .pubsub.schedule('30 0 * * *') // 00:30 UTC = 6:00 AM IST
-    .timeZone('Asia/Kolkata')
-    .onRun(async () => {
-    const db = admin.firestore();
-    const now = new Date();
-    const today = now
-        .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-        .replace(/\//g, '-'); // YYYY-MM-DD
-    // Weekday for date "today": 0=Mon .. 6=Sun (app format)
-    const todayAtNoonUTC = new Date(today + 'T12:00:00Z');
-    const jsDay = todayAtNoonUTC.getUTCDay(); // 0=Sun .. 6=Sat
-    const appWeekday = jsDay === 0 ? 6 : jsDay - 1;
-    const recurringSnap = await db
-        .collection(COLLECTIONS.TASKS)
-        .where('recurring', '==', 'daily')
-        .get();
-    const toCreate = [];
-    for (const doc of recurringSnap.docs) {
-        const d = doc.data();
-        const days = d.recurring_days || [];
-        if (!days.includes(appWeekday))
-            continue;
-        const parentId = doc.id;
-        const existing = await db
-            .collection(COLLECTIONS.TASKS)
-            .where('parent_task_id', '==', parentId)
-            .where('due_date', '==', today)
-            .limit(1)
-            .get();
-        if (!existing.empty)
-            continue;
-        toCreate.push({
-            title: d.title || '',
-            description: d.description || '',
-            start_date: today,
-            due_date: today,
-            priority: d.priority || 'medium',
-            status: 'pending',
-            recurring: 'none',
-            attachment_required: d.attachment_required || false,
-            attachment_type: d.attachment_type,
-            attachment_description: d.attachment_description,
-            assigned_to_id: d.assigned_to_id || '',
-            assigned_to_name: d.assigned_to_name || '',
-            assigned_to_city: d.assigned_to_city,
-            assigned_by_id: d.assigned_by_id || '',
-            assigned_by_name: d.assigned_by_name || '',
-            parent_task_id: parentId,
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
-        });
-    }
-    const batch = db.batch();
-    for (const data of toCreate) {
-        const ref = db.collection(COLLECTIONS.TASKS).doc();
-        batch.set(ref, data);
-    }
-    if (toCreate.length > 0) {
-        await batch.commit();
-        functions.logger.info(`Created ${toCreate.length} daily recurring task instances for ${today}`);
-    }
-    return null;
-});
+// export const createDailyRecurringTaskInstances = onSchedule(
+//   {
+//     schedule: '30 0 * * *',
+//     timeZone: 'Asia/Kolkata',
+//     timeoutSeconds: 120,
+//     memory: '256MiB',
+//   },
+//   async () => {
+//     const db = admin.firestore();
+//     const now = new Date();
+//     const today = now
+//       .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+//       .replace(/\//g, '-'); // YYYY-MM-DD
+//     // Weekday for date "today": 0=Mon .. 6=Sun (app format)
+//     const todayAtNoonUTC = new Date(today + 'T12:00:00Z');
+//     const jsDay = todayAtNoonUTC.getUTCDay(); // 0=Sun .. 6=Sat
+//     const appWeekday = jsDay === 0 ? 6 : jsDay - 1;
+//     const recurringSnap = await db
+//       .collection(COLLECTIONS.TASKS)
+//       .where('recurring', '==', 'daily')
+//       .get();
+//     const toCreate: Record<string, unknown>[] = [];
+//     for (const doc of recurringSnap.docs) {
+//       const d = doc.data();
+//       const days: number[] = d.recurring_days || [];
+//       if (!days.includes(appWeekday)) continue;
+//       const parentId = doc.id;
+//       const existing = await db
+//         .collection(COLLECTIONS.TASKS)
+//         .where('parent_task_id', '==', parentId)
+//         .where('due_date', '==', today)
+//         .limit(1)
+//         .get();
+//       if (!existing.empty) continue;
+//       toCreate.push({
+//         title: d.title || '',
+//         description: d.description || '',
+//         start_date: today,
+//         due_date: today,
+//         priority: d.priority || 'medium',
+//         status: 'pending',
+//         recurring: 'none',
+//         attachment_required: d.attachment_required || false,
+//         attachment_type: d.attachment_type,
+//         attachment_description: d.attachment_description,
+//         assigned_to_id: d.assigned_to_id || '',
+//         assigned_to_name: d.assigned_to_name || '',
+//         assigned_to_city: d.assigned_to_city,
+//         assigned_by_id: d.assigned_by_id || '',
+//         assigned_by_name: d.assigned_by_name || '',
+//         parent_task_id: parentId,
+//         created_at: admin.firestore.FieldValue.serverTimestamp(),
+//         updated_at: admin.firestore.FieldValue.serverTimestamp(),
+//       });
+//     }
+//     const batch = db.batch();
+//     for (const data of toCreate) {
+//       const ref = db.collection(COLLECTIONS.TASKS).doc();
+//       batch.set(ref, data);
+//     }
+//     if (toCreate.length > 0) {
+//       await batch.commit();
+//       logger.info(`Created ${toCreate.length} daily recurring task instances for ${today}`);
+//     }
+//     return;
+//   }
+// );
