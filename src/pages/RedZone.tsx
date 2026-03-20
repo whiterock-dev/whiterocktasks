@@ -528,23 +528,41 @@ export const RedZone: React.FC = () => {
               return (
                 <div
                   key={t.id}
-                  className="flex items-center gap-4 p-4 hover:bg-red-50/50 transition-colors"
+                  className="flex items-start gap-4 p-4 hover:bg-red-50/50 transition-colors"
                 >
-                  <Link to={`/tasks?highlight=${t.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                  <Link to={`/tasks?highlight=${t.id}`} className="flex min-w-0 flex-1 items-start gap-4">
                     <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
                       <UserIcon size={20} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-800 truncate">{t.assigned_to_name}</p>
-                      <p className="text-sm text-slate-600 truncate">
-                        {t.title} • Due {t.due_date} • <span className="font-medium text-red-600">{daysOverdue} day(s) overdue</span>
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        Assigned by {t.assigned_by_name} • {t.recurring === 'none' ? 'Non-recurring' : t.recurring}
-                      </p>
+                      <p className="font-semibold text-slate-800 truncate">{t.title}</p>
+                      {t.description ? (
+                        <p className="mt-1 text-sm text-slate-600 line-clamp-2">{t.description}</p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                        {!isDoer ? (
+                          <span>
+                            <span className="font-medium text-slate-700">Doer:</span> {t.assigned_to_name}
+                          </span>
+                        ) : null}
+                        <span>
+                          <span className="font-medium text-slate-700">Due:</span> {t.due_date}
+                        </span>
+                        <span className="text-red-700 font-semibold">{daysOverdue} day(s) overdue</span>
+                        <span>
+                          <span className="font-medium text-slate-700">Assigned by:</span> {t.assigned_by_name}
+                        </span>
+                        <span>
+                          <span className="font-medium text-slate-700">Recurring:</span>{' '}
+                          {t.recurring === 'none' ? 'Non-recurring' : t.recurring}
+                        </span>
+                        <span>
+                          <span className="font-medium text-slate-700">Status:</span> {t.status}
+                        </span>
+                      </div>
                     </div>
                   </Link>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 pt-1">
                     <span className="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800 shrink-0 capitalize">
                       {t.priority}
                     </span>

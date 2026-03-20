@@ -23,6 +23,7 @@ export const Kpi: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
 
   const isOwner = user?.role === UserRole.OWNER;
+  const isDoer = user?.role === UserRole.DOER;
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -179,13 +180,20 @@ export const Kpi: React.FC = () => {
             <tr className="bg-slate-50 border-b border-slate-200 select-none">
               {[
                 { key: 'userName', label: 'Name', align: 'left' },
-                { key: 'city', label: 'City', align: 'left' },
-                { key: 'total_assigned', label: 'Total Assigned', align: 'center' },
-                { key: 'on_time_completed', label: 'On Time', align: 'center' },
-                { key: 'late_completed', label: 'Late', align: 'center' },
-                { key: 'overdue_count', label: 'Overdue', align: 'center' },
-                { key: 'overdue_percent', label: 'Overdue %', align: 'center' },
-                { key: 'late_completion_percent', label: 'Late %', align: 'center' }
+                ...(isDoer
+                  ? [
+                    { key: 'overdue_percent', label: 'Overdue %', align: 'center' },
+                    { key: 'late_completion_percent', label: 'Late %', align: 'center' },
+                  ]
+                  : [
+                    { key: 'city', label: 'City', align: 'left' },
+                    { key: 'total_assigned', label: 'Total Assigned', align: 'center' },
+                    { key: 'on_time_completed', label: 'On Time', align: 'center' },
+                    { key: 'late_completed', label: 'Late', align: 'center' },
+                    { key: 'overdue_count', label: 'Overdue', align: 'center' },
+                    { key: 'overdue_percent', label: 'Overdue %', align: 'center' },
+                    { key: 'late_completion_percent', label: 'Late %', align: 'center' },
+                  ]),
               ].map((col) => (
                 <th
                   key={col.key}
@@ -229,11 +237,11 @@ export const Kpi: React.FC = () => {
               .map((row) => (
                 <tr key={row.userId} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="py-3 px-4 font-medium text-slate-800">{row.userName}</td>
-                  <td className="py-3 px-4 text-slate-600">{row.city || '-'}</td>
-                  <td className="py-3 px-4 text-center text-slate-700">{row.total_assigned}</td>
-                  <td className="py-3 px-4 text-center text-green-600">{row.on_time_completed}</td>
-                  <td className="py-3 px-4 text-center text-amber-600">{row.late_completed}</td>
-                  <td className="py-3 px-4 text-center text-red-600">{row.overdue_count}</td>
+                  {!isDoer && <td className="py-3 px-4 text-slate-600">{row.city || '-'}</td>}
+                  {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.total_assigned}</td>}
+                  {!isDoer && <td className="py-3 px-4 text-center text-green-600">{row.on_time_completed}</td>}
+                  {!isDoer && <td className="py-3 px-4 text-center text-amber-600">{row.late_completed}</td>}
+                  {!isDoer && <td className="py-3 px-4 text-center text-red-600">{row.overdue_count}</td>}
                   <td className="py-3 px-4 text-center font-medium text-red-600">{row.overdue_percent}%</td>
                   <td className="py-3 px-4 text-center font-medium text-slate-800">
                     {row.late_completion_percent}%

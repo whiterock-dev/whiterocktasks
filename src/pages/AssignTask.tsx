@@ -44,6 +44,10 @@ export const AssignTask: React.FC = () => {
   const assignDropdownRef = useRef<HTMLDivElement>(null);
   const [verificationRequired, setVerificationRequired] = useState(false);
   const [verifierId, setVerifierId] = useState('');
+  const [verifierSearch, setVerifierSearch] = useState('');
+  const [verifierDropdownOpen, setVerifierDropdownOpen] = useState(false);
+  const verifierDropdownRef = useRef<HTMLDivElement>(null);
+  const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [holidays, setHolidays] = useState<{ date: string }[]>([]);
@@ -82,11 +86,19 @@ export const AssignTask: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setFormError('');
     if (!assignedToId) {
       setAssignDropdownOpen(true);
+      setFormError('Please select a member in Assign To.');
       return;
     }
     if (verificationRequired && !verifierId) {
+      setVerifierDropdownOpen(true);
+      setFormError('Please select a verifier.');
+      return;
+    }
+    if (verificationRequired && verifierId === assignedToId) {
+      setFormError('Verifier and assignee cannot be the same member.');
       return;
     }
     setLoading(true);
@@ -152,10 +164,14 @@ export const AssignTask: React.FC = () => {
       setAttachmentRequired(false);
       setAttachmentDesc('');
       setAssignedToId('');
+      setAssignToSearch('');
       setVerificationRequired(false);
       setVerifierId('');
+      setVerifierSearch('');
+      setVerifierDropdownOpen(false);
     } catch (err: any) {
       console.error(err);
+      setFormError(err?.message || 'Failed to assign task. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -164,6 +180,7 @@ export const AssignTask: React.FC = () => {
   const today = new Date().toISOString().split('T')[0];
 
   const selectedUser = users.find((u) => u.id === assignedToId);
+  const selectedVerifier = users.find((u) => u.id === verifierId);
   const assignFiltered = users.filter((u) => {
     const s = assignToSearch.toLowerCase().trim();
     if (!s) return true;
@@ -174,12 +191,32 @@ export const AssignTask: React.FC = () => {
     return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
   });
 
-  const verifierOptions = users.filter((u) => u.id !== assignedToId);
+  const verifierFiltered = users
+    .filter((u) => u.id !== assignedToId)
+    .filter((u) => {
+      const s = verifierSearch.toLowerCase().trim();
+      if (!s) return true;
+      const name = (u.name || '').toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      const city = (u.city || '').toLowerCase();
+      const role = (ROLE_LABELS[u.role] || '').toLowerCase();
+      return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
+    });
+
+  useEffect(() => {
+    if (assignedToId && verifierId === assignedToId) {
+      setVerifierId('');
+      setVerifierSearch('');
+    }
+  }, [assignedToId, verifierId]);
 
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
       if (assignDropdownRef.current && !assignDropdownRef.current.contains(e.target as Node)) {
         setAssignDropdownOpen(false);
+      }
+      if (verifierDropdownRef.current && !verifierDropdownRef.current.contains(e.target as Node)) {
+        setVerifierDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', onOutside);
@@ -280,36 +317,17 @@ export const AssignTask: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="attachment"
-                  checked={attachmentRequired}
-                  onChange={(e) => setAttachmentRequired(e.target.checked)}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                />
-                <label htmlFor="attachment" className="text-sm font-medium text-slate-700">
-                  Attachment required
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="verificationRequired"
-                  checked={verificationRequired}
-                  onChange={(e) => {
-                    setVerificationRequired(e.target.checked);
-                    if (!e.target.checked) {
-                      setVerifierId('');
-                    }
-                  }}
-                  className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                />
-                <label htmlFor="verificationRequired" className="text-sm font-medium text-slate-700">
-                  Verification Required
-                </label>
-              </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="attachment"
+                checked={attachmentRequired}
+                onChange={(e) => setAttachmentRequired(e.target.checked)}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <label htmlFor="attachment" className="text-sm font-medium text-slate-700">
+                Attachment required
+              </label>
             </div>
             <div ref={assignDropdownRef} className="relative">
               <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
@@ -322,11 +340,11 @@ export const AssignTask: React.FC = () => {
                     setAssignToSearch(e.target.value);
                     setAssignDropdownOpen(true);
                     if (!e.target.value) setAssignedToId('');
+                    if (formError) setFormError('');
                   }}
                   onFocus={() => setAssignDropdownOpen(true)}
-                  placeholder="Search by name, role, or city..."
+                  placeholder="Search by name, email, role, or city..."
                   className="w-full h-10 pl-10 pr-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  required={!!assignedToId}
                 />
                 <ChevronDown
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
@@ -347,6 +365,7 @@ export const AssignTask: React.FC = () => {
                           setAssignedToId(u.id);
                           setAssignToSearch('');
                           setAssignDropdownOpen(false);
+                          setFormError('');
                         }}
                         className={`cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 ${assignedToId === u.id ? 'bg-teal-50 text-teal-800' : 'text-slate-700'}`}
                       >
@@ -364,29 +383,83 @@ export const AssignTask: React.FC = () => {
                 <p className="mt-1 text-xs text-amber-600">Select a member to assign the task to.</p>
               )}
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="verificationRequired"
+                checked={verificationRequired}
+                onChange={(e) => {
+                  setVerificationRequired(e.target.checked);
+                  if (!e.target.checked) {
+                    setVerifierId('');
+                  }
+                }}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <label htmlFor="verificationRequired" className="text-sm font-medium text-slate-700">
+                Verification Required
+              </label>
+            </div>
             {verificationRequired && (
-              <div>
+              <div ref={verifierDropdownRef} className="relative">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Verifier</label>
-                <select
-                  value={verifierId}
-                  onChange={(e) => setVerifierId(e.target.value)}
-                  required={verificationRequired}
-                  className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                >
-                  <option value="">Select verifier</option>
-                  {verifierOptions.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                      {u.city ? ` · ${u.city}` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    value={verifierDropdownOpen ? verifierSearch : (selectedVerifier ? `${selectedVerifier.name} · ${ROLE_LABELS[selectedVerifier.role]}${selectedVerifier.city ? ` · ${selectedVerifier.city}` : ''}` : '')}
+                    onChange={(e) => {
+                      setVerifierSearch(e.target.value);
+                      setVerifierDropdownOpen(true);
+                      if (!e.target.value) setVerifierId('');
+                      if (formError) setFormError('');
+                    }}
+                    onFocus={() => setVerifierDropdownOpen(true)}
+                    placeholder="Search verifier by name, email, role, or city..."
+                    className="w-full h-10 pl-10 pr-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                  <ChevronDown
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    size={18}
+                  />
+                </div>
+                {verifierDropdownOpen && (
+                  <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                    {verifierFiltered.length === 0 ? (
+                      <li className="py-2 px-3 text-sm text-slate-500">No verifier found</li>
+                    ) : (
+                      verifierFiltered.map((u) => (
+                        <li
+                          key={u.id}
+                          role="option"
+                          aria-selected={verifierId === u.id}
+                          onClick={() => {
+                            setVerifierId(u.id);
+                            setVerifierSearch('');
+                            setVerifierDropdownOpen(false);
+                            setFormError('');
+                          }}
+                          className={`cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 ${verifierId === u.id ? 'bg-teal-50 text-teal-800' : 'text-slate-700'}`}
+                        >
+                          <span className="font-medium">{u.name}</span>
+                          <span className="text-slate-500">
+                            {' · '}{ROLE_LABELS[u.role]}
+                            {u.city ? ` · ${u.city}` : ''}
+                          </span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
                 {!verifierId && (
                   <p className="mt-1 text-xs text-amber-600">
                     Select a verifier. Any member except the selected assignee can verify this task.
                   </p>
                 )}
               </div>
+            )}
+            {formError && (
+              <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{formError}</div>
             )}
             {success && (
               <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm">{success}</div>

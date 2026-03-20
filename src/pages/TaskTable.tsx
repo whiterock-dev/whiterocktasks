@@ -4,7 +4,7 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
@@ -12,11 +12,32 @@ import { useSearchParams } from 'react-router-dom';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
+import { CsvExportButton } from '../components/ui/CsvExportButton';
+import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, compressImageForUpload, getPendingDays } from '../lib/utils';
-import { Paperclip, Check, X, HelpCircle, ExternalLink, FileText, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import {
+  Paperclip,
+  Check,
+  X,
+  HelpCircle,
+  ExternalLink,
+  FileText,
+  Pencil,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Search,
+  ChevronDown,
+} from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+type TaskSortKey = 'start_date' | 'due_date';
 
 const DAYS = [
   { value: 0, label: 'Mon' },
@@ -46,6 +67,11 @@ export const TaskTable: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
+  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
+  const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
+  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
+  const assignedByDropdownRef = useRef<HTMLDivElement>(null);
+  const [statusFilter, setStatusFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -54,6 +80,11 @@ export const TaskTable: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
+  const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -71,6 +102,14 @@ export const TaskTable: React.FC = () => {
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
   const isDoer = user?.role === UserRole.DOER;
   const isVerifier = user?.role === UserRole.VERIFIER;
+
+  const getTodayLocal = useCallback(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   const resolveDoerDateRange = useCallback((): { dueDateFrom?: string; dueDateTo?: string } => {
     if (dateFilter === 'all_time') return {};
@@ -114,6 +153,7 @@ export const TaskTable: React.FC = () => {
       assignedTo?: string;
       assignedBy?: string;
       status?: Task['status'];
+      statusIn?: Task['status'][];
       recurring?: string;
       dueDateFrom?: string;
       dueDateTo?: string;
@@ -129,8 +169,18 @@ export const TaskTable: React.FC = () => {
       filters.verifierId = user?.id ?? '';
       filters.status = 'pending_verification';
     }
-    if (!isDoer && !isVerifier && assignedToFilter) filters.assignedTo = assignedToFilter;
-    if (!isDoer && !isVerifier && assignedByFilter) filters.assignedBy = assignedByFilter;
+    if (!isDoer && !isVerifier && statusFilter) {
+      filters.status = statusFilter as Task['status'];
+    }
+    if (!isDoer && !isVerifier && !statusFilter) {
+      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+    }
+    if (isDoer && statusFilter) {
+      filters.status = statusFilter as Task['status'];
+    }
+    if (isDoer && !statusFilter) {
+      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+    }
     if (!isDoer && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
     if (isDoer) {
       const range = resolveDoerDateRange();
@@ -138,7 +188,52 @@ export const TaskTable: React.FC = () => {
       if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
     }
     return filters;
-  }, [user?.id, isDoer, isAuditor, isVerifier, assignedToFilter, assignedByFilter, recurringFilter, resolveDoerDateRange]);
+  }, [user?.id, isDoer, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter]);
+
+  const applyNameFilters = useCallback(
+    (list: Task[]) => {
+      const assignedToQuery = assignedToFilter.toLowerCase().trim();
+      const assignedByQuery = assignedByFilter.toLowerCase().trim();
+
+      return list.filter((task) => {
+        const assignee = (task.assigned_to_name || '').toLowerCase();
+        const assigner = (task.assigned_by_name || '').toLowerCase();
+        if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
+        if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
+        return true;
+      });
+    },
+    [assignedByFilter, assignedToFilter]
+  );
+
+  const hasNameFilter = assignedToFilter.trim().length > 0 || assignedByFilter.trim().length > 0;
+
+  const formatDateValue = useCallback(
+    (value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
+      const { includeTime = false, emptyValue = '' } = opts || {};
+      if (!value) return emptyValue;
+
+      const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(`${value}T00:00:00`)
+        : new Date(value);
+
+      if (Number.isNaN(parsed.getTime())) return value;
+
+      if (includeTime) {
+        return parsed.toLocaleString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+      }
+
+      return parsed.toISOString().split('T')[0];
+    },
+    []
+  );
 
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -147,6 +242,8 @@ export const TaskTable: React.FC = () => {
         const { tasks: nextTasks, lastDoc: nextLastDoc } = await api.getTasksPaginated({
           pageSize: rowsPerPage,
           startAfterDoc: startAfterDoc ?? undefined,
+          sortBy: sortConfig?.key,
+          sortDirection: sortConfig?.direction,
           ...filters,
         });
         setTasks(nextTasks);
@@ -163,7 +260,22 @@ export const TaskTable: React.FC = () => {
         setLoading(false);
       }
     },
-    [getActiveFilters, rowsPerPage]
+    [getActiveFilters, rowsPerPage, sortConfig]
+  );
+
+  const setClientPageFromRows = useCallback(
+    (rows: Task[], pageNumber: number) => {
+      const clientTotalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+      const safePage = Math.min(Math.max(pageNumber, 1), clientTotalPages);
+      const startIndex = (safePage - 1) * rowsPerPage;
+      const pagedRows = rows.slice(startIndex, startIndex + rowsPerPage);
+
+      setTasks(pagedRows);
+      setCurrentPage(safePage);
+      setLastDoc(null);
+      setHasNextPage(safePage < clientTotalPages);
+    },
+    [rowsPerPage]
   );
 
   useEffect(() => {
@@ -171,23 +283,210 @@ export const TaskTable: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
+
     const load = async () => {
-      setLoading(true);
       setCurrentPage(1);
       setPageCursors([null]);
-      try {
-        const count = await api.getTasksCount(getActiveFilters());
-        setTotalResults(count);
-      } catch (err) {
-        console.error('Failed to load task count:', err);
-        setTotalResults(0);
+      const filters = getActiveFilters();
+
+      if (hasNameFilter) {
+        try {
+          const allRows = await api.getAllTasksByFilters({
+            sortBy: sortConfig?.key,
+            sortDirection: sortConfig?.direction,
+            ...filters,
+          });
+          if (!isActive) return;
+
+          const filteredRows = applyNameFilters(allRows);
+          setNameFilteredRows(filteredRows);
+          setTotalResults(filteredRows.length);
+          setClientPageFromRows(filteredRows, 1);
+          setLoading(false);
+        } catch (err) {
+          if (!isActive) return;
+          console.error('Failed to load tasks:', err);
+          setTasks([]);
+          setTotalResults(0);
+          setLastDoc(null);
+          setHasNextPage(false);
+          setLoading(false);
+        }
+        return;
       }
-      await loadPage(undefined, 1);
+
+      setLoading(true);
+      try {
+        if (!isActive) return;
+        setNameFilteredRows(null);
+        const count = await api.getTasksCount(filters);
+        if (!isActive) return;
+        setTotalResults(count);
+        await loadPage(undefined, 1);
+      } catch (err) {
+        if (!isActive) return;
+        console.error('Failed to load tasks:', err);
+        setTasks([]);
+        setTotalResults(0);
+        setLastDoc(null);
+        setHasNextPage(false);
+      } finally {
+        if (isActive) setLoading(false);
+      }
     };
     load();
-  }, [loadPage, getActiveFilters]);
 
-  const filteredTasks = tasks;
+    return () => {
+      isActive = false;
+    };
+  }, [hasNameFilter, applyNameFilters, getActiveFilters, loadPage, setClientPageFromRows, sortConfig]);
+
+  useEffect(() => {
+    if (isDoer && !sortConfig) {
+      setSortConfig({ key: 'due_date', direction: 'asc' });
+    }
+  }, [isDoer, sortConfig]);
+
+  useEffect(() => {
+    if (isAuditor || isVerifier) return;
+    let isMounted = true;
+
+    const loadSummary = async () => {
+      setSummaryLoading(true);
+      try {
+        const filters = getActiveFilters();
+        const { tasks: summaryTasks } = await api.getTasksPaginated({
+          pageSize: 5000,
+          ...filters,
+        });
+        const summaryRows = applyNameFilters(summaryTasks);
+
+        const today = getTodayLocal();
+        const dueToday = summaryRows.filter(
+          (t) =>
+            t.due_date === today &&
+            t.status !== 'completed' &&
+            t.status !== 'cancelled'
+        ).length;
+        const overdue = summaryRows.filter(
+          (t) =>
+            t.due_date < today &&
+            t.status !== 'completed' &&
+            t.status !== 'cancelled'
+        ).length;
+
+        if (isMounted) setTaskSummary({ dueToday, overdue });
+      } catch (err) {
+        console.error('Failed to load task summary:', err);
+        if (isMounted) setTaskSummary({ dueToday: 0, overdue: 0 });
+      } finally {
+        if (isMounted) setSummaryLoading(false);
+      }
+    };
+
+    loadSummary();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [applyNameFilters, getActiveFilters, getTodayLocal, isAuditor, isVerifier]);
+
+  const filteredTasks = applyNameFilters(tasks);
+
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    if (!sortConfig) return 0;
+    const aValue = (a[sortConfig.key] || '') as string;
+    const bValue = (b[sortConfig.key] || '') as string;
+
+    if (aValue === bValue) return 0;
+    if (!aValue) return 1;
+    if (!bValue) return -1;
+
+    if (sortConfig.direction === 'asc') {
+      return aValue < bValue ? -1 : 1;
+    }
+    return aValue > bValue ? -1 : 1;
+  });
+
+  const effectiveTotalResults = hasNameFilter
+    ? (nameFilteredRows?.length ?? 0)
+    : totalResults;
+  const totalPages = Math.max(1, Math.ceil(effectiveTotalResults / rowsPerPage));
+
+  const toggleDateSort = (key: TaskSortKey) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key: TaskSortKey) => {
+    if (sortConfig?.key !== key) return <ArrowUpDown size={14} className="text-slate-400" />;
+    return sortConfig.direction === 'asc' ? (
+      <ArrowUp size={14} className="text-teal-600" />
+    ) : (
+      <ArrowDown size={14} className="text-teal-600" />
+    );
+  };
+
+  const handleExportCsv = async () => {
+    if (!isManager || isDoer || exportingCsv) return;
+
+    setExportingCsv(true);
+    try {
+      const filters = getActiveFilters();
+      const exportRows = await api.getAllTasksByFilters({
+        sortBy: sortConfig?.key,
+        sortDirection: sortConfig?.direction,
+        ...filters,
+      });
+      const exportRowsByName = applyNameFilters(exportRows);
+
+      const columns: CsvColumn<Task>[] = [
+        { header: 'Title', accessor: (t) => t.title },
+        { header: 'Description', accessor: (t) => t.description || '' },
+        { header: 'Assigned To', accessor: (t) => t.assigned_to_name || '' },
+        { header: 'Assigned To City', accessor: (t) => t.assigned_to_city || '' },
+        { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
+        { header: 'Start Date', accessor: (t) => formatDateValue(t.start_date, { emptyValue: '###' }) },
+        { header: 'Due Date', accessor: (t) => formatDateValue(t.due_date, { emptyValue: '###' }) },
+        { header: 'Priority', accessor: (t) => t.priority || '' },
+        { header: 'Recurring', accessor: (t) => t.recurring || '' },
+        { header: 'Status', accessor: (t) => t.status || '' },
+        { header: 'Verification Required', accessor: (t) => (t.verification_required ? 'Yes' : 'No') },
+        { header: 'Verifier Name', accessor: (t) => t.verifier_name || '' },
+        { header: 'Attachment Required', accessor: (t) => (t.attachment_required ? 'Yes' : 'No') },
+        { header: 'Attachment Type', accessor: (t) => t.attachment_type || '' },
+        {
+          header: 'Attachment Content',
+          accessor: (t) => {
+            if (t.attachment_text && t.attachment_url) {
+              return `Text: ${t.attachment_text} | URL: ${t.attachment_url}`;
+            }
+            return t.attachment_text || t.attachment_url || '';
+          },
+        },
+        { header: 'Completed At', accessor: (t) => formatDateValue(t.completed_at, { includeTime: false }) },
+        { header: 'Created At', accessor: (t) => formatDateValue(t.created_at, { includeTime: false }) },
+        { header: 'Updated At', accessor: (t) => formatDateValue(t.updated_at, { includeTime: false }) },
+      ];
+
+      const now = new Date();
+      const datePart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+        now.getDate()
+      ).padStart(2, '0')}`;
+      exportRowsToCsv({
+        rows: exportRowsByName,
+        columns,
+        fileName: `Task-table-${datePart}.csv`,
+      });
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+    } finally {
+      setExportingCsv(false);
+    }
+  };
 
   // Get unique lists of users and recurring types from the currently loaded tasks
   // (Note: For a fully complete list across all pages, we would need to query the users collection,
@@ -197,6 +496,30 @@ export const TaskTable: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
+  }, []);
+
+  const nameOptions = Array.from(
+    new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const assignedToNameOptions = nameOptions.filter((name) =>
+    name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
+  );
+  const assignedByNameOptions = nameOptions.filter((name) =>
+    name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
+  );
+
+  useEffect(() => {
+    const onOutside = (e: MouseEvent) => {
+      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
+        setAssignedToDropdownOpen(false);
+      }
+      if (assignedByDropdownRef.current && !assignedByDropdownRef.current.contains(e.target as Node)) {
+        setAssignedByDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
   }, []);
 
   const handleCompleteClick = (t: Task) => {
@@ -292,6 +615,11 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleNextPage = () => {
+    if (hasNameFilter) {
+      if (loading || currentPage >= totalPages || !nameFilteredRows) return;
+      setClientPageFromRows(nameFilteredRows, currentPage + 1);
+      return;
+    }
     if (!lastDoc || !hasNextPage || loading) return;
     setPageCursors((prev) => {
       const next = [...prev];
@@ -303,6 +631,11 @@ export const TaskTable: React.FC = () => {
   };
 
   const handlePreviousPage = () => {
+    if (hasNameFilter) {
+      if (currentPage <= 1 || loading || !nameFilteredRows) return;
+      setClientPageFromRows(nameFilteredRows, currentPage - 1);
+      return;
+    }
     if (currentPage <= 1 || loading) return;
     const previousCursor = pageCursors[currentPage - 2] ?? null;
     setLoading(true);
@@ -310,17 +643,28 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleRowsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setRowsPerPage(Number(e.target.value));
+    const nextRowsPerPage = Number(e.target.value);
+    setRowsPerPage(nextRowsPerPage);
+    setCurrentPage(1);
   };
 
   const handleFirstPage = () => {
+    if (hasNameFilter) {
+      if (currentPage <= 1 || loading || !nameFilteredRows) return;
+      setClientPageFromRows(nameFilteredRows, 1);
+      return;
+    }
     if (currentPage <= 1 || loading) return;
     setLoading(true);
     loadPage(null, 1);
   };
 
   const handleLastPage = async () => {
-    const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
+    if (hasNameFilter) {
+      if (loading || currentPage >= totalPages || !nameFilteredRows) return;
+      setClientPageFromRows(nameFilteredRows, totalPages);
+      return;
+    }
     if (loading || currentPage >= totalPages) return;
 
     // Firestore cursor pagination cannot jump directly to unknown pages, so we walk forward.
@@ -334,6 +678,8 @@ export const TaskTable: React.FC = () => {
         const { tasks: nextTasks, lastDoc: nextLastDoc } = await api.getTasksPaginated({
           pageSize: rowsPerPage,
           startAfterDoc: cursor,
+          sortBy: sortConfig?.key,
+          sortDirection: sortConfig?.direction,
           ...filters,
         });
         targetPage += 1;
@@ -416,9 +762,12 @@ export const TaskTable: React.FC = () => {
 
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
-  const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
-  const startRow = totalResults === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-  const endRow = totalResults === 0 ? 0 : Math.min(currentPage * rowsPerPage, totalResults);
+  const startRow = effectiveTotalResults === 0 || sortedTasks.length === 0
+    ? 0
+    : (currentPage - 1) * rowsPerPage + 1;
+  const endRow = effectiveTotalResults === 0 || sortedTasks.length === 0
+    ? 0
+    : Math.min(startRow + Math.max(sortedTasks.length - 1, 0), effectiveTotalResults);
 
   const paginationControls = (
     <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700">
@@ -440,7 +789,7 @@ export const TaskTable: React.FC = () => {
         <div className="flex items-center gap-3 sm:gap-4">
           <p className="text-sm text-slate-500 whitespace-nowrap">
             Showing <span className="font-semibold text-slate-800">{startRow}-{endRow}</span> of{' '}
-            <span className="font-semibold text-slate-800">{totalResults}</span> results
+            <span className="font-semibold text-slate-800">{effectiveTotalResults}</span> results
           </p>
           <div className="flex items-center gap-1.5">
             <button
@@ -465,7 +814,7 @@ export const TaskTable: React.FC = () => {
               type="button"
               aria-label="Next page"
               onClick={handleNextPage}
-              disabled={loading || !hasNextPage}
+              disabled={loading || !hasNextPage || currentPage >= totalPages}
               className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronRight size={16} />
@@ -732,6 +1081,21 @@ export const TaskTable: React.FC = () => {
 
   return (
     <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Today</p>
+          <p className="mt-1 text-2xl font-bold text-slate-800">
+            {summaryLoading ? '...' : taskSummary.dueToday}
+          </p>
+        </div>
+        <div className="rounded-xl border border-red-200 bg-red-50/70 px-4 py-3 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Overdue (Till Today)</p>
+          <p className="mt-1 text-2xl font-bold text-red-700">
+            {summaryLoading ? '...' : taskSummary.overdue}
+          </p>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
         {isDoer ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -768,30 +1132,91 @@ export const TaskTable: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={assignedToFilter}
-              onChange={(e) => setAssignedToFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">All Doers</option>
-              {allUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
+            <div ref={assignedToDropdownRef} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedToFilter}
+                onChange={(e) => {
+                  setAssignedToFilter(e.target.value);
+                  setAssignedToDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedToDropdownOpen(true)}
+                placeholder="Search Doer Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedToDropdownOpen && (
+                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedToNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedToNameOptions.map((name) => (
+                      <li
+                        key={`to-${name}`}
+                        onClick={() => {
+                          setAssignedToFilter(name);
+                          setAssignedToDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
+
+            <div ref={assignedByDropdownRef} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedByFilter}
+                onChange={(e) => {
+                  setAssignedByFilter(e.target.value);
+                  setAssignedByDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedByDropdownOpen(true)}
+                placeholder="Search Assigned By Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedByDropdownOpen && (
+                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedByNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedByNameOptions.map((name) => (
+                      <li
+                        key={`by-${name}`}
+                        onClick={() => {
+                          setAssignedByFilter(name);
+                          setAssignedByDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
 
             <select
-              value={assignedByFilter}
-              onChange={(e) => setAssignedByFilter(e.target.value)}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
             >
-              <option value="">Assigned By (All)</option>
-              {allUsers.map((u) => (
-                <option key={`assigner-${u.id}`} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
+              <option value="">Status</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="pending_verification">Pending Verification</option>
+              <option value="correction_required">Correction Required</option>
             </select>
 
             <select
@@ -811,6 +1236,13 @@ export const TaskTable: React.FC = () => {
             </select>
           </div>
         )}
+        {isManager && !isDoer && (
+          <CsvExportButton
+            onClick={handleExportCsv}
+            loading={exportingCsv}
+            className="w-full sm:w-auto text-sm px-3 py-2 h-9 flex items-center justify-center gap-2"
+          />
+        )}
       </div>
       <div className="mb-6">{paginationControls}</div>
       <div className="table-container">
@@ -821,8 +1253,26 @@ export const TaskTable: React.FC = () => {
               <th className="max-w-[400px]">Description</th>
               {!isDoer && <th className="whitespace-nowrap">Assigned To</th>}
               <th className="whitespace-nowrap">Assigned By</th>
-              <th className="whitespace-nowrap text-center">Start Date</th>
-              <th className="whitespace-nowrap text-center">Due Date</th>
+              <th className="whitespace-nowrap text-center">
+                <button
+                  type="button"
+                  onClick={() => toggleDateSort('start_date')}
+                  className="inline-flex items-center justify-center gap-1 hover:text-teal-700"
+                >
+                  Start Date
+                  {renderSortIcon('start_date')}
+                </button>
+              </th>
+              <th className="whitespace-nowrap text-center">
+                <button
+                  type="button"
+                  onClick={() => toggleDateSort('due_date')}
+                  className="inline-flex items-center justify-center gap-1 hover:text-teal-700"
+                >
+                  Due Date
+                  {renderSortIcon('due_date')}
+                </button>
+              </th>
               <th className="whitespace-nowrap text-center">Priority</th>
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
@@ -831,12 +1281,18 @@ export const TaskTable: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredTasks.map((t) => {
+            {sortedTasks.map((t) => {
               const onHoliday = isHoliday(t.due_date, holidays);
+              const today = getTodayLocal();
+              const isOverdue =
+                (t.status === 'overdue' || t.due_date < today) &&
+                t.status !== 'completed' &&
+                t.status !== 'cancelled';
               return (
                 <tr
                   key={t.id}
-                  className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${onHoliday ? 'bg-orange-50/50' : ''}`}
+                  className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50/70' : ''
+                    } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50/50' : ''}`}
                 >
                   <td>
                     <span className="font-medium text-slate-800">{t.title}</span>
@@ -923,10 +1379,10 @@ export const TaskTable: React.FC = () => {
                       {t.assigned_to_id === user?.id &&
                         t.status !== 'completed' &&
                         t.status !== 'pending_verification' && (
-                        <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
-                          Complete
-                        </Button>
-                      )}
+                          <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
+                            Complete
+                          </Button>
+                        )}
                       {(isOwner || isManager || t.assigned_by_id === user?.id) && (
                         <>
                           <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
