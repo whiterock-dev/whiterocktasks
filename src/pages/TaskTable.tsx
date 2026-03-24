@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
 import { useSearchParams } from 'react-router-dom';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
@@ -69,6 +69,20 @@ export const TaskTable: React.FC = () => {
   const [assignedByFilter, setAssignedByFilter] = useState('');
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
+
+  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
+  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
+    return () => clearTimeout(t);
+  }, [assignedToFilter]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
+    return () => clearTimeout(t);
+  }, [assignedByFilter]);
+
   const assignedToDropdownRef = useRef<HTMLDivElement>(null);
   const assignedByDropdownRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState('');
@@ -78,6 +92,7 @@ export const TaskTable: React.FC = () => {
   const [attachmentText, setAttachmentText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
@@ -85,16 +100,24 @@ export const TaskTable: React.FC = () => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
   const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
+  const [editAttachmentRequired, setEditAttachmentRequired] = useState(false);
+  const [editAttachmentType, setEditAttachmentType] = useState<'media' | 'text'>('media');
+  const [editAttachmentDescription, setEditAttachmentDescription] = useState('');
+  const [editVerificationRequired, setEditVerificationRequired] = useState(false);
+  const [editVerifierId, setEditVerifierId] = useState('');
+  const [editError, setEditError] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const isAuditor = user?.role === UserRole.AUDITOR;
@@ -190,10 +213,78 @@ export const TaskTable: React.FC = () => {
     return filters;
   }, [user?.id, isDoer, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter]);
 
+  const getDoerBaseFilters = useCallback(() => {
+    const filters: {
+      status?: Task['status'];
+      statusIn?: Task['status'][];
+      dueDateFrom?: string;
+      dueDateTo?: string;
+    } = {};
+
+    if (statusFilter) {
+      filters.status = statusFilter as Task['status'];
+    } else {
+      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+    }
+
+    const range = resolveDoerDateRange();
+    if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
+    if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
+
+    return filters;
+  }, [resolveDoerDateRange, statusFilter]);
+
+  const sortRowsByConfig = useCallback(
+    (rows: Task[]) => {
+      if (!sortConfig) return rows;
+      return [...rows].sort((a, b) => {
+        const aValue = (a[sortConfig.key] || '') as string;
+        const bValue = (b[sortConfig.key] || '') as string;
+
+        if (aValue === bValue) return 0;
+        if (!aValue) return 1;
+        if (!bValue) return -1;
+
+        if (sortConfig.direction === 'asc') {
+          return aValue < bValue ? -1 : 1;
+        }
+        return aValue > bValue ? -1 : 1;
+      });
+    },
+    [sortConfig]
+  );
+
+  const getDoerVisibleRows = useCallback(async (): Promise<Task[]> => {
+    if (!user?.id) return [];
+
+    const baseFilters = getDoerBaseFilters();
+    const [assignedToRows, assignedByRows] = await Promise.all([
+      api.getAllTasksByFilters({
+        assignedTo: user.id,
+        sortBy: sortConfig?.key,
+        sortDirection: sortConfig?.direction,
+        ...baseFilters,
+      }),
+      api.getAllTasksByFilters({
+        assignedBy: user.id,
+        sortBy: sortConfig?.key,
+        sortDirection: sortConfig?.direction,
+        ...baseFilters,
+      }),
+    ]);
+
+    const mergedById = new Map<string, Task>();
+    [...assignedToRows, ...assignedByRows].forEach((task) => {
+      mergedById.set(task.id, task);
+    });
+
+    return sortRowsByConfig(Array.from(mergedById.values()));
+  }, [getDoerBaseFilters, sortConfig, sortRowsByConfig, user?.id]);
+
   const applyNameFilters = useCallback(
     (list: Task[]) => {
-      const assignedToQuery = assignedToFilter.toLowerCase().trim();
-      const assignedByQuery = assignedByFilter.toLowerCase().trim();
+      const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
+      const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
 
       return list.filter((task) => {
         const assignee = (task.assigned_to_name || '').toLowerCase();
@@ -203,10 +294,10 @@ export const TaskTable: React.FC = () => {
         return true;
       });
     },
-    [assignedByFilter, assignedToFilter]
+    [debouncedAssignedBy, debouncedAssignedTo]
   );
 
-  const hasNameFilter = assignedToFilter.trim().length > 0 || assignedByFilter.trim().length > 0;
+  const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
 
   const formatDateValue = useCallback(
     (value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
@@ -290,6 +381,29 @@ export const TaskTable: React.FC = () => {
       setPageCursors([null]);
       const filters = getActiveFilters();
 
+      if (isDoer) {
+        setLoading(true);
+        try {
+          const doerRows = await getDoerVisibleRows();
+          if (!isActive) return;
+
+          const filteredRows = applyNameFilters(doerRows);
+          setNameFilteredRows(filteredRows);
+          setTotalResults(filteredRows.length);
+          setClientPageFromRows(filteredRows, 1);
+        } catch (err) {
+          if (!isActive) return;
+          console.error('Failed to load tasks:', err);
+          setTasks([]);
+          setTotalResults(0);
+          setLastDoc(null);
+          setHasNextPage(false);
+        } finally {
+          if (isActive) setLoading(false);
+        }
+        return;
+      }
+
       if (hasNameFilter) {
         try {
           const allRows = await api.getAllTasksByFilters({
@@ -340,7 +454,17 @@ export const TaskTable: React.FC = () => {
     return () => {
       isActive = false;
     };
-  }, [hasNameFilter, applyNameFilters, getActiveFilters, loadPage, setClientPageFromRows, sortConfig]);
+  }, [
+    hasNameFilter,
+    applyNameFilters,
+    getActiveFilters,
+    getDoerVisibleRows,
+    isDoer,
+    loadPage,
+    refreshToken,
+    setClientPageFromRows,
+    sortConfig,
+  ]);
 
   useEffect(() => {
     if (isDoer && !sortConfig) {
@@ -355,11 +479,19 @@ export const TaskTable: React.FC = () => {
     const loadSummary = async () => {
       setSummaryLoading(true);
       try {
-        const filters = getActiveFilters();
-        const { tasks: summaryTasks } = await api.getTasksPaginated({
-          pageSize: 5000,
-          ...filters,
-        });
+        let summaryTasks: Task[] = [];
+
+        if (isDoer) {
+          summaryTasks = await getDoerVisibleRows();
+        } else {
+          const filters = getActiveFilters();
+          const summaryResult = await api.getTasksPaginated({
+            pageSize: 5000,
+            ...filters,
+          });
+          summaryTasks = summaryResult.tasks;
+        }
+
         const summaryRows = applyNameFilters(summaryTasks);
 
         const today = getTodayLocal();
@@ -392,7 +524,7 @@ export const TaskTable: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, getActiveFilters, getTodayLocal, isAuditor, isVerifier]);
+  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isDoer, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -411,7 +543,9 @@ export const TaskTable: React.FC = () => {
     return aValue > bValue ? -1 : 1;
   });
 
-  const effectiveTotalResults = hasNameFilter
+  const isClientMode = hasNameFilter || isDoer;
+
+  const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)
     : totalResults;
   const totalPages = Math.max(1, Math.ceil(effectiveTotalResults / rowsPerPage));
@@ -532,6 +666,7 @@ export const TaskTable: React.FC = () => {
       setAttachmentText('');
       setAttachmentFile(null);
       setUploading(false);
+      setUploadProgress(0);
       setUploadError(null);
     } else {
       handleComplete(t, undefined, undefined);
@@ -545,11 +680,19 @@ export const TaskTable: React.FC = () => {
     setUploadError(null);
     setAttachmentFile(file);
     setUploading(true);
+    setUploadProgress(0);
     const path = `task-attachments/${completeTask.id}/${Date.now()}_${file.name}`;
     const storageRef = ref(storage, path);
     try {
       const toUpload = await compressImageForUpload(file);
-      await uploadBytes(storageRef, toUpload);
+      const uploadTask = uploadBytesResumable(storageRef, toUpload);
+
+      uploadTask.on('state_changed', (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      });
+
+      await uploadTask;
       const url = await getDownloadURL(storageRef);
       setAttachmentUrl(url);
     } catch (err: any) {
@@ -557,6 +700,7 @@ export const TaskTable: React.FC = () => {
       setAttachmentFile(null);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -572,6 +716,20 @@ export const TaskTable: React.FC = () => {
       const isText = t.attachment_type === 'text';
       if (isText && !text?.trim()) return;
       if (!isText && !url?.trim()) return;
+      if (!isText) {
+        const candidateUrl = (url || '').trim();
+        try {
+          const parsed = new URL(candidateUrl);
+          const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+          if (!isHttp) {
+            setUploadError('Please enter a valid media link starting with http:// or https://');
+            return;
+          }
+        } catch {
+          setUploadError('Please enter a valid media link starting with http:// or https://');
+          return;
+        }
+      }
     }
     try {
       const baseUpdates: Partial<Task> = {
@@ -591,28 +749,30 @@ export const TaskTable: React.FC = () => {
         });
       } else {
         const completedAt = new Date().toISOString();
+        await api.updateTask(t.id, {
+          ...baseUpdates,
+          status: 'completed',
+          completed_at: completedAt,
+        });
         if (t.recurring !== 'none') {
           const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
-          await api.updateTask(t.id, {
-            ...baseUpdates,
-            completed_at: completedAt,
-            status: 'pending',
-            due_date: nextDueDate || t.due_date,
-          });
-        } else {
-          await api.updateTask(t.id, {
-            ...baseUpdates,
-            completed_at: completedAt,
-          });
+          if (nextDueDate) {
+            await api.cloneRecurringTask(t, nextDueDate);
+          }
         }
       }
-      setLoading(true);
-      await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+      if (isDoer) {
+        setRefreshToken((prev) => prev + 1);
+      } else {
+        setLoading(true);
+        await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+      }
       setCompleteTask(null);
       setAttachmentUrl('');
       setAttachmentText('');
       setAttachmentFile(null);
       setUploading(false);
+      setUploadProgress(0);
       setUploadError(null);
     } catch (err) {
       console.error(err);
@@ -625,6 +785,7 @@ export const TaskTable: React.FC = () => {
     setAttachmentText('');
     setAttachmentFile(null);
     setUploading(false);
+    setUploadProgress(0);
     setUploadError(null);
   };
 
@@ -640,7 +801,7 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleNextPage = () => {
-    if (hasNameFilter) {
+    if (isClientMode) {
       if (loading || currentPage >= totalPages || !nameFilteredRows) return;
       setClientPageFromRows(nameFilteredRows, currentPage + 1);
       return;
@@ -656,7 +817,7 @@ export const TaskTable: React.FC = () => {
   };
 
   const handlePreviousPage = () => {
-    if (hasNameFilter) {
+    if (isClientMode) {
       if (currentPage <= 1 || loading || !nameFilteredRows) return;
       setClientPageFromRows(nameFilteredRows, currentPage - 1);
       return;
@@ -674,7 +835,7 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleFirstPage = () => {
-    if (hasNameFilter) {
+    if (isClientMode) {
       if (currentPage <= 1 || loading || !nameFilteredRows) return;
       setClientPageFromRows(nameFilteredRows, 1);
       return;
@@ -685,7 +846,7 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleLastPage = async () => {
-    if (hasNameFilter) {
+    if (isClientMode) {
       if (loading || currentPage >= totalPages || !nameFilteredRows) return;
       setClientPageFromRows(nameFilteredRows, totalPages);
       return;
@@ -728,24 +889,45 @@ export const TaskTable: React.FC = () => {
 
   const openEditModal = (t: Task) => {
     setEditingTask(t);
+    setEditError('');
     setEditTitle(t.title);
     setEditDesc(t.description || '');
+    setEditStartDate(t.start_date || '');
     setEditAssignedToId(t.assigned_to_id);
     setEditDueDate(t.due_date);
     setEditPriority(t.priority);
     setEditRecurring(t.recurring);
     setEditRecurringDays(t.recurring_days || []);
+    setEditAttachmentRequired(Boolean(t.attachment_required));
+    setEditAttachmentType((t.attachment_type as 'media' | 'text') || 'media');
+    setEditAttachmentDescription(t.attachment_description || '');
+    setEditVerificationRequired(Boolean(t.verification_required));
+    setEditVerifierId(t.verifier_id || '');
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTask || !user) return;
+    setEditError('');
+
+    if (editVerificationRequired && !editVerifierId) {
+      setEditError('Please select a verifier when verification is required.');
+      return;
+    }
+
+    if (editVerificationRequired && editVerifierId === editAssignedToId) {
+      setEditError('Verifier and assignee cannot be the same member.');
+      return;
+    }
+
     setEditSubmitting(true);
     try {
       const assigneeUser = allUsers.find((u) => u.id === editAssignedToId);
+      const verifierUser = allUsers.find((u) => u.id === editVerifierId);
       const updates: Partial<Task> = {
         title: editTitle,
         description: editDesc,
+        start_date: editStartDate || (null as any),
         assigned_to_id: editAssignedToId,
         assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
         assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
@@ -753,6 +935,12 @@ export const TaskTable: React.FC = () => {
         priority: editPriority,
         recurring: editRecurring,
         recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+        attachment_required: editAttachmentRequired,
+        attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
+        attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
+        verification_required: editVerificationRequired,
+        verifier_id: editVerificationRequired ? editVerifierId : (null as any),
+        verifier_name: editVerificationRequired ? (verifierUser?.name || '') : (null as any),
         assignee_deleted: false, // Reset flag if reassigned to active user
       };
 
@@ -866,23 +1054,27 @@ export const TaskTable: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
-        <div className="table-container">
+        <div className="table-container task-table-container">
           <table>
             <thead>
               <tr>
-                <th className="whitespace-nowrap">Name</th>
-                <th className="whitespace-nowrap">City</th>
-                <th className="min-w-[150px]">Task</th>
-                <th className="min-w-[200px]">Description</th>
+                <th className="sticky-col-1 text-center">Task</th>
+                <th className="sticky-col-2 text-center">Description</th>
+                <th className="whitespace-nowrap text-center">Name</th>
+                <th className="whitespace-nowrap text-center">City</th>
                 <th className="whitespace-nowrap text-center">Attachment</th>
                 <th className="whitespace-nowrap text-center">Status</th>
                 <th className="whitespace-nowrap text-center">Pending Days</th>
-                <th className="whitespace-nowrap text-right pr-4">Actions</th>
+                <th className="whitespace-nowrap text-center pr-4">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredTasks.map((t) => (
                 <tr key={t.id} className={highlightId === t.id ? 'bg-amber-50' : ''}>
+                  <td className="sticky-col-1">{t.title}</td>
+                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                    {t.description || '-'}
+                  </td>
                   <td>
                     {t.assigned_to_name}
                     {t.assignee_deleted && (
@@ -890,10 +1082,6 @@ export const TaskTable: React.FC = () => {
                     )}
                   </td>
                   <td>{t.assigned_to_city || (t.assignee_deleted ? '—' : '-')}</td>
-                  <td>{t.title}</td>
-                  <td className="min-w-[150px] whitespace-pre-wrap break-words text-sm text-slate-700">
-                    {t.description || '-'}
-                  </td>
                   <td className="text-center">
                     {(t.attachment_url || t.attachment_text) ? (
                       <button
@@ -971,27 +1159,27 @@ export const TaskTable: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
-        <div className="table-container">
+        <div className="table-container task-table-container">
           <table>
             <thead>
               <tr>
-                <th className="whitespace-nowrap">Title</th>
-                <th className="min-w-[180px]">Description</th>
-                <th className="whitespace-nowrap">Doer</th>
+                <th className="sticky-col-1 text-center">Title</th>
+                <th className="sticky-col-2 text-center">Description</th>
+                <th className="whitespace-nowrap text-center">Doer</th>
                 <th className="whitespace-nowrap text-center">Due Date</th>
                 <th className="whitespace-nowrap text-center">Priority</th>
                 <th className="whitespace-nowrap text-center">Status</th>
                 <th className="whitespace-nowrap text-center">Attachment</th>
-                <th className="whitespace-nowrap text-right pr-4">Action</th>
+                <th className="whitespace-nowrap text-center pr-4">Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredTasks.map((t) => (
                 <tr key={t.id} className={highlightId === t.id ? 'bg-amber-50' : ''}>
-                  <td>
+                  <td className="sticky-col-1">
                     <span className="font-medium text-slate-800">{t.title}</span>
                   </td>
-                  <td className="min-w-[200px] whitespace-pre-wrap break-words text-sm text-slate-700">
+                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
                   <td>
@@ -1063,21 +1251,17 @@ export const TaskTable: React.FC = () => {
                             if (!user) return;
                             try {
                               const completedAt = new Date().toISOString();
+                              await api.updateTask(t.id, {
+                                status: 'completed',
+                                completed_at: completedAt,
+                                verified_by: user.name,
+                                verified_at: completedAt,
+                              });
                               if (t.recurring !== 'none') {
                                 const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
-                                await api.updateTask(t.id, {
-                                  completed_at: completedAt,
-                                  verified_by: user.name,
-                                  verified_at: completedAt,
-                                  status: 'pending',
-                                  due_date: nextDueDate || t.due_date,
-                                });
-                              } else {
-                                await api.updateTask(t.id, {
-                                  completed_at: completedAt,
-                                  verified_by: user.name,
-                                  verified_at: completedAt,
-                                });
+                                if (nextDueDate) {
+                                  await api.cloneRecurringTask(t, nextDueDate);
+                                }
                               }
                               setLoading(true);
                               await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
@@ -1137,7 +1321,7 @@ export const TaskTable: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+      <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
         {isDoer ? (
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -1173,7 +1357,7 @@ export const TaskTable: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <div ref={assignedToDropdownRef} className="relative">
+            <div ref={assignedToDropdownRef} className="relative z-50">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
@@ -1184,11 +1368,11 @@ export const TaskTable: React.FC = () => {
                 }}
                 onFocus={() => setAssignedToDropdownOpen(true)}
                 placeholder="Search Doer Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
               />
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               {assignedToDropdownOpen && (
-                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
                   {assignedToNameOptions.length === 0 ? (
                     <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
                   ) : (
@@ -1209,7 +1393,7 @@ export const TaskTable: React.FC = () => {
               )}
             </div>
 
-            <div ref={assignedByDropdownRef} className="relative">
+            <div ref={assignedByDropdownRef} className="relative z-50">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
@@ -1224,7 +1408,7 @@ export const TaskTable: React.FC = () => {
               />
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               {assignedByDropdownOpen && (
-                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
                   {assignedByNameOptions.length === 0 ? (
                     <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
                   ) : (
@@ -1287,14 +1471,14 @@ export const TaskTable: React.FC = () => {
         )}
       </div>
       <div className="mb-6">{paginationControls}</div>
-      <div className="table-container">
+      <div className="table-container task-table-container">
         <table>
           <thead>
             <tr>
-              <th className="whitespace-nowrap">Title</th>
-              <th className="max-w-[400px]">Description</th>
-              {!isDoer && <th className="whitespace-nowrap">Assigned To</th>}
-              <th className="whitespace-nowrap">Assigned By</th>
+              <th className="sticky-col-1 text-center">Title</th>
+              <th className="sticky-col-2 text-center">Description</th>
+              {!isDoer && <th className="whitespace-nowrap text-center">Assigned To</th>}
+              <th className="whitespace-nowrap text-center">Assigned By</th>
               <th className="whitespace-nowrap text-center">
                 <button
                   type="button"
@@ -1318,8 +1502,9 @@ export const TaskTable: React.FC = () => {
               <th className="whitespace-nowrap text-center">Priority</th>
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
+              <th className="whitespace-nowrap text-center">Verifier</th>
               <th className="whitespace-nowrap text-center">Attachment</th>
-              <th className="whitespace-nowrap text-right pr-4">Action</th>
+              <th className="whitespace-nowrap text-center">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1334,10 +1519,10 @@ export const TaskTable: React.FC = () => {
               return (
                 <tr
                   key={t.id}
-                  className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50/70' : ''
-                    } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50/50' : ''}`}
+                  className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50' : ''
+                    } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50' : ''}`}
                 >
-                  <td>
+                  <td className="sticky-col-1">
                     <span className="font-medium text-slate-800">{t.title}</span>
                     {onHoliday && (
                       <span className="ml-2 text-xs text-orange-600">(Holiday)</span>
@@ -1346,19 +1531,22 @@ export const TaskTable: React.FC = () => {
                       <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                     )}
                   </td>
-                  <td className="max-w-[400px] whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
+                  <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
                   {!isDoer && (
                     <td>
-                      {t.assigned_to_name}
-                      {t.assignee_deleted && (
-                        <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                      )}
+                      <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                        {t.assigned_to_name}
+                        {t.assignee_deleted && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                        )}
+                      </span>
                     </td>
                   )}
+
                   <td>
-                    <span className="text-sm font-medium text-slate-700 whitespace-nowrap">
+                    <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
                       {t.assigned_by_name}
                     </span>
                   </td>
@@ -1403,6 +1591,11 @@ export const TaskTable: React.FC = () => {
                           : t.status === 'closed_permanently'
                             ? 'Closed Permanently'
                           : t.status}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                      {t.verifier_name || t.verified_by || (t.verification_required ? 'Required' : '-')}
                     </span>
                   </td>
                   <td className="text-center">
@@ -1473,8 +1666,9 @@ export const TaskTable: React.FC = () => {
             )}
             {completeTask.recurring !== 'none' && (
               <p className="text-xs text-slate-600 mb-4">
-                This is a recurring task. Use <strong>Complete</strong> to move it to the next recurring date, or
-                <strong> Close Permanently</strong> to stop it.
+                {(isDoer && user?.id !== completeTask.assigned_by_id)
+                  ? 'This is a recurring task. Completing it will automatically create the next occurrence.'
+                  : <>This is a recurring task. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
               </p>
             )}
             {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
@@ -1501,9 +1695,9 @@ export const TaskTable: React.FC = () => {
                   />
                   {attachmentFile && (
                     <p className="text-xs text-slate-500 mt-1">
+                      {uploading && `Uploading(${Math.round(uploadProgress)}%) — `}
+                      {!uploading && attachmentUrl && 'Done — '}
                       {attachmentFile.name}
-                      {uploading && ' — Uploading...'}
-                      {!uploading && attachmentUrl && ' — Done'}
                     </p>
                   )}
                   {uploadError && (
@@ -1529,10 +1723,20 @@ export const TaskTable: React.FC = () => {
                 <p className="text-xs text-slate-500">
                   You must either upload a file or provide a link to mark this task complete.
                 </p>
+                {attachmentUrl.trim().length > 0 && (() => {
+                  try {
+                    const parsed = new URL(attachmentUrl.trim());
+                    return !(parsed.protocol === 'http:' || parsed.protocol === 'https:');
+                  } catch {
+                    return true;
+                  }
+                })() && (
+                    <p className="text-xs text-red-600 mt-1">Enter a valid URL (for example: https://...)</p>
+                  )}
               </div>
             ))}
             <div className="flex gap-2 justify-end">
-              {completeTask.recurring !== 'none' && (
+              {completeTask.recurring !== 'none' && (!isDoer || user?.id === completeTask.assigned_by_id) && (
                 <Button
                   variant="danger"
                   onClick={() =>
@@ -1607,6 +1811,11 @@ export const TaskTable: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="card p-6 max-w-lg w-full shadow-xl">
             <h3 className="text-lg font-semibold mb-4 text-slate-800">Edit Task</h3>
+            {editError && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {editError}
+              </div>
+            )}
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
@@ -1645,6 +1854,17 @@ export const TaskTable: React.FC = () => {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={editStartDate}
+                    onChange={(e) => setEditStartDate(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
                   <input
                     type="date"
@@ -1654,8 +1874,6 @@ export const TaskTable: React.FC = () => {
                     className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
                   <select
@@ -1669,6 +1887,8 @@ export const TaskTable: React.FC = () => {
                     <option value="urgent">Urgent</option>
                   </select>
                 </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                   <select
@@ -1686,6 +1906,84 @@ export const TaskTable: React.FC = () => {
                     <option value="yearly">Yearly</option>
                   </select>
                 </div>
+                <div className="flex items-center gap-2 pt-7">
+                  <input
+                    id="edit-attachment-required"
+                    type="checkbox"
+                    checked={editAttachmentRequired}
+                    onChange={(e) => setEditAttachmentRequired(e.target.checked)}
+                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <label htmlFor="edit-attachment-required" className="text-sm font-medium text-slate-700">
+                    Attachment required
+                  </label>
+                </div>
+              </div>
+
+              {editAttachmentRequired && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Attachment Type</label>
+                    <select
+                      value={editAttachmentType}
+                      onChange={(e) => setEditAttachmentType(e.target.value as 'media' | 'text')}
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="media">Media</option>
+                      <option value="text">Text</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Attachment Note</label>
+                    <input
+                      type="text"
+                      value={editAttachmentDescription}
+                      onChange={(e) => setEditAttachmentDescription(e.target.value)}
+                      placeholder="Describe required attachment"
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="edit-verification-required"
+                    type="checkbox"
+                    checked={editVerificationRequired}
+                    onChange={(e) => {
+                      setEditVerificationRequired(e.target.checked);
+                      if (!e.target.checked) {
+                        setEditVerifierId('');
+                      }
+                    }}
+                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <label htmlFor="edit-verification-required" className="text-sm font-medium text-slate-700">
+                    Verification Required
+                  </label>
+                </div>
+                {editVerificationRequired && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Verifier</label>
+                    <select
+                      value={editVerifierId}
+                      onChange={(e) => setEditVerifierId(e.target.value)}
+                      required={editVerificationRequired}
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="">Select verifier</option>
+                      {allUsers
+                        .filter((u) => u.id !== editAssignedToId)
+                        .map((u) => (
+                          <option key={`verifier-${u.id}`} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
               </div>
               {editRecurring === 'daily' && (
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">

@@ -218,7 +218,7 @@ export const api = {
     dueDateFrom?: string;
     dueDateTo?: string;
     verifierId?: string;
-    sortBy?: 'updated_at' | 'start_date' | 'due_date';
+    sortBy?: 'updated_at' | 'start_date' | 'due_date' | 'completed_at';
     sortDirection?: 'asc' | 'desc';
   }): Promise<{ tasks: Task[]; lastDoc: QueryDocumentSnapshot | null }> => {
     const {
@@ -343,7 +343,7 @@ export const api = {
     dueDateFrom?: string;
     dueDateTo?: string;
     verifierId?: string;
-    sortBy?: 'updated_at' | 'start_date' | 'due_date';
+    sortBy?: 'updated_at' | 'start_date' | 'due_date' | 'completed_at';
     sortDirection?: 'asc' | 'desc';
     batchSize?: number;
   }): Promise<Task[]> => {
@@ -421,6 +421,32 @@ export const api = {
       updated_at: isoToTimestamp(now),
     });
     return { ...t, id: ref.id, created_at: now, updated_at: now };
+  },
+
+  cloneRecurringTask: async (original: Task, nextDueDate: string): Promise<Task> => {
+    const {
+      id,
+      created_at,
+      updated_at,
+      completed_at,
+      verified_at,
+      verified_by,
+      audit_status,
+      audited_at,
+      audited_by,
+      attachment_url,
+      attachment_text,
+      status,
+      due_date,
+      is_holiday,
+      ...baseFields
+    } = original;
+
+    return api.createTask({
+      ...baseFields,
+      due_date: nextDueDate,
+      status: 'pending',
+    } as Omit<Task, 'id' | 'created_at' | 'updated_at'>);
   },
 
   updateTask: async (id: string, updates: Partial<Task>): Promise<void> => {

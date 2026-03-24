@@ -4,7 +4,7 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { storage } from '../lib/firebase';
@@ -12,8 +12,8 @@ import { compressImageForUpload, getNextRecurringDueDate, isHoliday } from '../l
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link } from 'react-router-dom';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { Pencil, User as UserIcon } from 'lucide-react';
+import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { Pencil, User as UserIcon, Search, ChevronDown } from 'lucide-react';
 
 const DAYS = [
   { value: 0, label: 'Mon' },
@@ -36,12 +36,17 @@ export const RedZone: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
+  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
+  const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
+  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
+  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentText, setAttachmentText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -52,6 +57,18 @@ export const RedZone: React.FC = () => {
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
+  const assignedByDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
+    return () => clearTimeout(t);
+  }, [assignedToFilter]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
+    return () => clearTimeout(t);
+  }, [assignedByFilter]);
 
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
@@ -77,6 +94,31 @@ export const RedZone: React.FC = () => {
   const isOwner = user?.role === UserRole.OWNER;
   const isManager = user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
+
+  const nameOptions = Array.from(
+    new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const assignedToNameOptions = nameOptions.filter((name) =>
+    name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
+  );
+
+  const assignedByNameOptions = nameOptions.filter((name) =>
+    name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
+  );
+
+  useEffect(() => {
+    const onOutside = (e: MouseEvent) => {
+      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
+        setAssignedToDropdownOpen(false);
+      }
+      if (assignedByDropdownRef.current && !assignedByDropdownRef.current.contains(e.target as Node)) {
+        setAssignedByDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, []);
 
   const resolveDateRange = useCallback((): { dueDateFrom?: string; dueDateTo?: string } => {
     if (dateFilter === 'all_time') return {};
@@ -130,12 +172,17 @@ export const RedZone: React.FC = () => {
     }
 
     return dateFilteredTasks.filter((task) => {
-      if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
-      if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
+      const assignee = (task.assigned_to_name || '').toLowerCase();
+      const assigner = (task.assigned_by_name || '').toLowerCase();
+      const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
+      const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
+
+      if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
+      if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
       if (recurringFilter && task.recurring !== recurringFilter) return false;
       return true;
     });
-  }, [assignedByFilter, assignedToFilter, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, tasks, user?.id]);
+  }, [debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, tasks, user?.id]);
 
   const handleComplete = useCallback(
     async (task: Task, url?: string, text?: string, opts?: { closePermanently?: boolean }) => {
@@ -145,6 +192,19 @@ export const RedZone: React.FC = () => {
         const isText = task.attachment_type === 'text';
         if (isText && !text?.trim()) return;
         if (!isText && !url?.trim()) return;
+        if (!isText) {
+          try {
+            const parsed = new URL((url || '').trim());
+            const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            if (!isHttp) {
+              setUploadError('Please enter a valid media link starting with http:// or https://');
+              return;
+            }
+          } catch {
+            setUploadError('Please enter a valid media link starting with http:// or https://');
+            return;
+          }
+        }
       }
 
       try {
@@ -165,19 +225,16 @@ export const RedZone: React.FC = () => {
           });
         } else {
           const completedAt = new Date().toISOString();
+          await api.updateTask(task.id, {
+            ...baseUpdates,
+            status: 'completed',
+            completed_at: completedAt,
+          });
           if (task.recurring !== 'none') {
             const nextDueDate = getNextRecurringDueDate(task.due_date, task.recurring, task.recurring_days);
-            await api.updateTask(task.id, {
-              ...baseUpdates,
-              completed_at: completedAt,
-              status: 'pending',
-              due_date: nextDueDate || task.due_date,
-            });
-          } else {
-            await api.updateTask(task.id, {
-              ...baseUpdates,
-              completed_at: completedAt,
-            });
+            if (nextDueDate) {
+              await api.cloneRecurringTask(task, nextDueDate);
+            }
           }
         }
 
@@ -186,6 +243,7 @@ export const RedZone: React.FC = () => {
         setAttachmentText('');
         setAttachmentFile(null);
         setUploading(false);
+        setUploadProgress(0);
         setUploadError(null);
         await loadTasks();
       } catch (err) {
@@ -203,6 +261,7 @@ export const RedZone: React.FC = () => {
       setAttachmentText('');
       setAttachmentFile(null);
       setUploading(false);
+      setUploadProgress(0);
       setUploadError(null);
       return;
     }
@@ -218,13 +277,21 @@ export const RedZone: React.FC = () => {
     setUploadError(null);
     setAttachmentFile(file);
     setUploading(true);
+    setUploadProgress(0);
 
     const path = `task-attachments/${completeTask.id}/${Date.now()}_${file.name}`;
     const storageRef = ref(storage, path);
 
     try {
       const toUpload = await compressImageForUpload(file);
-      await uploadBytes(storageRef, toUpload);
+      const uploadTask = uploadBytesResumable(storageRef, toUpload);
+
+      uploadTask.on('state_changed', (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      });
+
+      await uploadTask;
       const url = await getDownloadURL(storageRef);
       setAttachmentUrl(url);
     } catch (err: any) {
@@ -232,6 +299,7 @@ export const RedZone: React.FC = () => {
       setAttachmentFile(null);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -241,6 +309,7 @@ export const RedZone: React.FC = () => {
     setAttachmentText('');
     setAttachmentFile(null);
     setUploading(false);
+    setUploadProgress(0);
     setUploadError(null);
   };
 
@@ -362,31 +431,77 @@ export const RedZone: React.FC = () => {
                 </div>
               )}
 
-              <select
-                value={assignedToFilter}
-                onChange={(e) => setAssignedToFilter(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-              >
-                <option value="">All Doers</option>
-                {allUsers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+              <div ref={assignedToDropdownRef} className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  value={assignedToFilter}
+                  onChange={(e) => {
+                    setAssignedToFilter(e.target.value);
+                    setAssignedToDropdownOpen(true);
+                  }}
+                  onFocus={() => setAssignedToDropdownOpen(true)}
+                  placeholder="Search Doer Name"
+                  className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                {assignedToDropdownOpen && (
+                  <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                    {assignedToNameOptions.length === 0 ? (
+                      <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                    ) : (
+                      assignedToNameOptions.map((name) => (
+                        <li
+                          key={`to-${name}`}
+                          onClick={() => {
+                            setAssignedToFilter(name);
+                            setAssignedToDropdownOpen(false);
+                          }}
+                          className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                        >
+                          {name}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
+              </div>
 
-              <select
-                value={assignedByFilter}
-                onChange={(e) => setAssignedByFilter(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-              >
-                <option value="">Assigned By (All)</option>
-                {allUsers.map((member) => (
-                  <option key={`assigner-${member.id}`} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+              <div ref={assignedByDropdownRef} className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  value={assignedByFilter}
+                  onChange={(e) => {
+                    setAssignedByFilter(e.target.value);
+                    setAssignedByDropdownOpen(true);
+                  }}
+                  onFocus={() => setAssignedByDropdownOpen(true)}
+                  placeholder="Search Assigned By Name"
+                  className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+                />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                {assignedByDropdownOpen && (
+                  <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                    {assignedByNameOptions.length === 0 ? (
+                      <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                    ) : (
+                      assignedByNameOptions.map((name) => (
+                        <li
+                          key={`by-${name}`}
+                          onClick={() => {
+                            setAssignedByFilter(name);
+                            setAssignedByDropdownOpen(false);
+                          }}
+                          className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                        >
+                          {name}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
+              </div>
 
               <select
                 value={recurringFilter}
@@ -483,31 +598,77 @@ export const RedZone: React.FC = () => {
               </div>
             )}
 
-            <select
-              value={assignedToFilter}
-              onChange={(e) => setAssignedToFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">All Doers</option>
-              {allUsers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
+            <div ref={assignedToDropdownRef} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedToFilter}
+                onChange={(e) => {
+                  setAssignedToFilter(e.target.value);
+                  setAssignedToDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedToDropdownOpen(true)}
+                placeholder="Search Doer Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedToDropdownOpen && (
+                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedToNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedToNameOptions.map((name) => (
+                      <li
+                        key={`to-${name}`}
+                        onClick={() => {
+                          setAssignedToFilter(name);
+                          setAssignedToDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
 
-            <select
-              value={assignedByFilter}
-              onChange={(e) => setAssignedByFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">Assigned By (All)</option>
-              {allUsers.map((member) => (
-                <option key={`assigner-${member.id}`} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
+            <div ref={assignedByDropdownRef} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedByFilter}
+                onChange={(e) => {
+                  setAssignedByFilter(e.target.value);
+                  setAssignedByDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedByDropdownOpen(true)}
+                placeholder="Search Assigned By Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedByDropdownOpen && (
+                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedByNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedByNameOptions.map((name) => (
+                      <li
+                        key={`by-${name}`}
+                        onClick={() => {
+                          setAssignedByFilter(name);
+                          setAssignedByDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
 
             <select
               value={recurringFilter}
@@ -634,8 +795,9 @@ export const RedZone: React.FC = () => {
             )}
             {completeTask.recurring !== 'none' && (
               <p className="text-xs text-slate-600 mb-4">
-                This is a recurring task. Use <strong>Complete</strong> to move it to the next recurring date, or
-                <strong> Close Permanently</strong> to stop it.
+                {(isDoer && user?.id !== completeTask.assigned_by_id)
+                  ? 'This is a recurring task. Completing it will automatically create the next occurrence.'
+                  : <>This is a recurring task. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
               </p>
             )}
             {completeTask.attachment_required && completeTask.attachment_type === 'text' ? (
@@ -662,9 +824,9 @@ export const RedZone: React.FC = () => {
                   />
                   {attachmentFile && (
                     <p className="text-xs text-slate-500 mt-1">
+                      {uploading && `Uploading... ${Math.round(uploadProgress)}% — `}
+                      {!uploading && attachmentUrl && 'Done — '}
                       {attachmentFile.name}
-                      {uploading && ' - Uploading...'}
-                      {!uploading && attachmentUrl && ' - Done'}
                     </p>
                   )}
                   {uploadError && <p className="text-xs text-red-600 mt-1">{uploadError}</p>}
@@ -688,10 +850,20 @@ export const RedZone: React.FC = () => {
                 <p className="text-xs text-slate-500">
                   You must either upload a file or provide a link to mark this task complete.
                 </p>
+                {attachmentUrl.trim().length > 0 && (() => {
+                  try {
+                    const parsed = new URL(attachmentUrl.trim());
+                    return !(parsed.protocol === 'http:' || parsed.protocol === 'https:');
+                  } catch {
+                    return true;
+                  }
+                })() && (
+                    <p className="text-xs text-red-600 mt-1">Enter a valid URL (for example: https://...)</p>
+                  )}
               </div>
             ) : null}
             <div className="flex gap-2 justify-end">
-              {completeTask.recurring !== 'none' && (
+              {completeTask.recurring !== 'none' && (!isDoer || user?.id === completeTask.assigned_by_id) && (
                 <Button
                   variant="danger"
                   onClick={() =>
