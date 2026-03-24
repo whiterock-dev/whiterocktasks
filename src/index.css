@@ -77,11 +77,65 @@ button, a, input, select, textarea {
 }
 
 .table-container tbody tr {
-  @apply border-b border-slate-100 hover:bg-slate-50/50 transition-colors;
+  @apply bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors;
 }
 
 .table-container tbody td {
   @apply py-3 px-4 text-slate-700;
+}
+
+/* Specific to Task Table for sticky headers and columns */
+.task-table-container {
+  @apply overflow-x-auto overflow-y-auto relative;
+  max-height: calc(100vh - 250px);
+}
+
+.task-table-container thead {
+  @apply sticky top-0;
+  z-index: 30;
+}
+
+.task-table-container thead th {
+  @apply bg-slate-50 border-b border-slate-200;
+  box-shadow: 0 1px 0 theme('colors.slate.200'); /* Ensures no gap below */
+}
+
+/* Default minimum widths for smaller screens */
+.task-table-container .sticky-col-1 {
+  @apply min-w-44;
+}
+
+.task-table-container .sticky-col-2 {
+  @apply min-w-64;
+}
+
+@media (min-width: 1024px) {
+  /* Freeze First Two Columns on Desktop/Large devices */
+  .task-table-container .sticky-col-1 {
+    @apply sticky left-0 border-r border-slate-200;
+    width: 200px;
+    min-width: 200px;
+    max-width: 200px;
+    background-color: inherit;
+    z-index: 20;
+  }
+
+  .task-table-container .sticky-col-2 {
+    @apply sticky border-r border-slate-200;
+    left: 200px;
+    width: 250px;
+    min-width: 250px;
+    max-width: 250px;
+    background-color: inherit;
+    z-index: 20;
+  }
+
+  /* Header needs slightly higher z-index when intersecting with sticky columns */
+  .task-table-container thead .sticky-col-1,
+  .task-table-container thead .sticky-col-2 {
+    z-index: 40;
+    background-color: theme('colors.slate.50');
+  }
 }
 
 /* Page title consistency */

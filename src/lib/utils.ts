@@ -139,13 +139,29 @@ export function computeKpiByMember(
 
 const MAX_IMAGE_WIDTH = 1200;
 const JPEG_QUALITY = 0.75;
+const IMAGE_COMPRESS_TIMEOUT_MS = 12000;
 
 /** Compress an image file for faster upload (resize + JPEG). Returns original file if not an image or on error. */
 export function compressImageForUpload(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return Promise.resolve(file);
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result: File) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     const img = document.createElement('img');
     const url = URL.createObjectURL(file);
+
+    // Some image formats/device captures can hang decode/canvas callbacks.
+    // Timeout guarantees we fall back to original file instead of freezing UI.
+    const timeout = window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      settle(file);
+    }, IMAGE_COMPRESS_TIMEOUT_MS);
+
     img.onload = () => {
       URL.revokeObjectURL(url);
       const w = img.naturalWidth;
@@ -158,17 +174,19 @@ export function compressImageForUpload(file: File): Promise<File> {
       canvas.height = ch;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
-        resolve(file);
+        window.clearTimeout(timeout);
+        settle(file);
         return;
       }
       ctx.drawImage(img, 0, 0, cw, ch);
       canvas.toBlob(
         (blob) => {
+          window.clearTimeout(timeout);
           if (blob) {
             const name = file.name.replace(/\.[^.]+$/, '.jpg');
-            resolve(new File([blob], name, { type: 'image/jpeg' }));
+            settle(new File([blob], name, { type: 'image/jpeg' }));
           } else {
-            resolve(file);
+            settle(file);
           }
         },
         'image/jpeg',
@@ -176,8 +194,9 @@ export function compressImageForUpload(file: File): Promise<File> {
       );
     };
     img.onerror = () => {
+      window.clearTimeout(timeout);
       URL.revokeObjectURL(url);
-      resolve(file);
+      settle(file);
     };
     img.src = url;
   });

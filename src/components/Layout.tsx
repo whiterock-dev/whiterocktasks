@@ -15,12 +15,14 @@ import {
   BarChart3,
   Table2,
   ClipboardCheck,
+  CheckCircle2,
   Settings,
   LogOut,
   Menu,
   X,
   Users,
   Paperclip,
+  Repeat,
 } from 'lucide-react';
 
 const roleLabels: Record<UserRole, string> = {
@@ -74,11 +76,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const navItems: { to: string; icon: any; label: string }[] = isAuditor
     ? [
       { to: '/tasks', icon: Table2, label: 'Audit Tasks' },
+      { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
       { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ]
     : isVerifier
       ? [
+        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
         { to: '/settings', icon: Settings, label: 'Settings' },
       ]
@@ -88,9 +92,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue' }] : []),
         { to: '/kpi', icon: BarChart3, label: 'KPI' },
         { to: '/tasks', icon: Table2, label: 'Task Table' },
+        { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks' },
+        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
         ...(isManager ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
-        ...(isManager ? [{ to: '/bogus-attachment', icon: Paperclip, label: 'Bogus Attachment' }] : []),
         { to: '/settings', icon: Settings, label: 'Settings' },
       ];
 
@@ -195,18 +200,19 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main content */}
       <main className="flex-1 min-h-screen md:min-h-0 md:h-screen md:overflow-y-auto bg-slate-50/50">
-        <div className="max-w-6xl mx-auto p-4 md:p-8">
+        <div className="w-full max-w-450 mx-auto p-4 md:p-8">
           {(() => {
             const pathTitles: Record<string, string> = {
               '/': 'Dashboard',
               '/tasks': 'Task Table',
+              '/recurring-tasks': 'Recurring Tasks',
               '/assign': 'Assign Task',
               '/removal': 'Removal Request',
               '/redzone': 'Overdue',
               '/kpi': 'KPI Dashboard',
               '/members': 'Members',
+              '/completed-tasks': 'Completed Tasks',
               '/approve': 'Approve Task',
-              '/bogus-attachment': 'Bogus Attachment',
               '/settings': 'Settings',
             };
             const pageTitle = isAuditor && location.pathname === '/tasks'

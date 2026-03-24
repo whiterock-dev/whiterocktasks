@@ -15,10 +15,12 @@ const RemovalRequest = lazy(() => import('./pages/RemovalRequest').then((m) => (
 const RedZone = lazy(() => import('./pages/RedZone').then((m) => ({ default: m.RedZone })));
 const Kpi = lazy(() => import('./pages/Kpi').then((m) => ({ default: m.Kpi })));
 const TaskTable = lazy(() => import('./pages/TaskTable').then((m) => ({ default: m.TaskTable })));
+const CompletedTasks = lazy(() => import('./pages/CompletedTasks').then((m) => ({ default: m.CompletedTasks })));
 const ApproveTask = lazy(() => import('./pages/ApproveTask').then((m) => ({ default: m.ApproveTask })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Members = lazy(() => import('./pages/Members').then((m) => ({ default: m.Members })));
 const BogusAttachment = lazy(() => import('./pages/BogusAttachment').then((m) => ({ default: m.BogusAttachment })));
+const RecurringTasks = lazy(() => import('./pages/RecurringTasks').then((m) => ({ default: m.RecurringTasks })));
 
 const PageFallback = () => <div className="text-slate-500 py-8">Loading...</div>;
 
@@ -80,6 +82,22 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <TaskTable />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/completed-tasks"
+              element={
+                <ProtectedRoute>
+                  <CompletedTasks />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/recurring-tasks"
+              element={
+                <ProtectedRoute>
+                  <RecurringTasks />
                 </ProtectedRoute>
               }
             />
