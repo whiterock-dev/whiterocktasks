@@ -42,6 +42,7 @@ export type TaskStatus =
   | 'completed'
   | 'overdue'
   | 'cancelled'
+  | 'closed_permanently'
   | 'pending_verification'
   | 'correction_required';
 

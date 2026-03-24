@@ -191,3 +191,57 @@ export function getPendingDays(dueDate: string): number {
   const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   return diff;
 }
+
+const toAppWeekday = (date: Date): number => {
+  const jsWeekday = date.getUTCDay(); // 0 = Sun .. 6 = Sat
+  return jsWeekday === 0 ? 6 : jsWeekday - 1; // 0 = Mon .. 6 = Sun
+};
+
+export function getNextRecurringDueDate(
+  dueDate: string,
+  recurring: Task['recurring'],
+  recurringDays?: number[]
+): string | null {
+  if (!dueDate || recurring === 'none') return null;
+  const base = new Date(`${dueDate}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const next = new Date(base);
+  switch (recurring) {
+    case 'daily': {
+      const days = (recurringDays || []).slice().sort((a, b) => a - b);
+      if (days.length === 0) {
+        next.setUTCDate(next.getUTCDate() + 1);
+      } else {
+        const current = toAppWeekday(base);
+        const nextDay = days.find((d) => d > current);
+        const target = nextDay ?? days[0];
+        const delta = nextDay != null ? target - current : 7 - current + target;
+        next.setUTCDate(next.getUTCDate() + delta);
+      }
+      break;
+    }
+    case 'weekly':
+      next.setUTCDate(next.getUTCDate() + 7);
+      break;
+    case 'fortnightly':
+      next.setUTCDate(next.getUTCDate() + 14);
+      break;
+    case 'monthly':
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      break;
+    case 'quarterly':
+      next.setUTCMonth(next.getUTCMonth() + 3);
+      break;
+    case 'half_yearly':
+      next.setUTCMonth(next.getUTCMonth() + 6);
+      break;
+    case 'yearly':
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
+      break;
+    default:
+      return null;
+  }
+
+  return next.toISOString().split('T')[0];
+}

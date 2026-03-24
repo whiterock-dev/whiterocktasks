@@ -430,7 +430,9 @@ export const api = {
     };
     if (updates.completed_at) {
       toUpdate.completed_at = updates.completed_at;
-      toUpdate.status = 'completed';
+      if (!updates.status) {
+        toUpdate.status = 'completed';
+      }
     }
     await updateDoc(doc(db, COLLECTIONS.TASKS, id), toUpdate);
   },

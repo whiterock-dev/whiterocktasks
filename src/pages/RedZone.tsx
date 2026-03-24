@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { storage } from '../lib/firebase';
-import { compressImageForUpload, isHoliday } from '../lib/utils';
+import { compressImageForUpload, getNextRecurringDueDate, isHoliday } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link } from 'react-router-dom';
@@ -138,9 +138,10 @@ export const RedZone: React.FC = () => {
   }, [assignedByFilter, assignedToFilter, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, tasks, user?.id]);
 
   const handleComplete = useCallback(
-    async (task: Task, url?: string, text?: string) => {
+    async (task: Task, url?: string, text?: string, opts?: { closePermanently?: boolean }) => {
       if (!user) return;
-      if (task.attachment_required) {
+      const closePermanently = opts?.closePermanently === true;
+      if (task.attachment_required && !closePermanently) {
         const isText = task.attachment_type === 'text';
         if (isText && !text?.trim()) return;
         if (!isText && !url?.trim()) return;
@@ -152,16 +153,32 @@ export const RedZone: React.FC = () => {
           ...(text && { attachment_text: text }),
         };
 
-        if (task.verification_required) {
+        if (closePermanently && task.recurring !== 'none') {
+          await api.updateTask(task.id, {
+            ...baseUpdates,
+            status: 'closed_permanently',
+          });
+        } else if (task.verification_required) {
           await api.updateTask(task.id, {
             ...baseUpdates,
             status: 'pending_verification',
           });
         } else {
-          await api.updateTask(task.id, {
-            ...baseUpdates,
-            completed_at: new Date().toISOString(),
-          });
+          const completedAt = new Date().toISOString();
+          if (task.recurring !== 'none') {
+            const nextDueDate = getNextRecurringDueDate(task.due_date, task.recurring, task.recurring_days);
+            await api.updateTask(task.id, {
+              ...baseUpdates,
+              completed_at: completedAt,
+              status: 'pending',
+              due_date: nextDueDate || task.due_date,
+            });
+          } else {
+            await api.updateTask(task.id, {
+              ...baseUpdates,
+              completed_at: completedAt,
+            });
+          }
         }
 
         setCompleteTask(null);
@@ -179,7 +196,8 @@ export const RedZone: React.FC = () => {
   );
 
   const handleCompleteClick = (task: Task) => {
-    if (task.attachment_required) {
+    const isRecurringTask = task.recurring !== 'none';
+    if (task.attachment_required || isRecurringTask) {
       setCompleteTask(task);
       setAttachmentUrl('');
       setAttachmentText('');
@@ -600,17 +618,27 @@ export const RedZone: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-6 max-w-md w-full shadow-xl">
             <h3 className="text-lg font-semibold mb-2">
-              {completeTask.attachment_type === 'text'
-                ? 'Text required to mark complete'
-                : 'Upload media required to mark complete'}
+              {completeTask.attachment_required
+                ? completeTask.attachment_type === 'text'
+                  ? 'Text required to mark complete'
+                  : 'Upload media required to mark complete'
+                : 'Mark task complete'}
             </h3>
-            <p className="text-sm text-slate-600 mb-4">
-              {completeTask.attachment_description ||
-                (completeTask.attachment_type === 'text'
-                  ? 'You must enter text below to complete this task.'
-                  : 'Upload a photo/video or paste a link to your media.')}
-            </p>
-            {completeTask.attachment_type === 'text' ? (
+            {completeTask.attachment_required && (
+              <p className="text-sm text-slate-600 mb-4">
+                {completeTask.attachment_description ||
+                  (completeTask.attachment_type === 'text'
+                    ? 'You must enter text below to complete this task.'
+                    : 'Upload a photo/video or paste a link to your media.')}
+              </p>
+            )}
+            {completeTask.recurring !== 'none' && (
+              <p className="text-xs text-slate-600 mb-4">
+                This is a recurring task. Use <strong>Complete</strong> to move it to the next recurring date, or
+                <strong> Close Permanently</strong> to stop it.
+              </p>
+            )}
+            {completeTask.attachment_required && completeTask.attachment_type === 'text' ? (
               <textarea
                 value={attachmentText}
                 onChange={(e) => setAttachmentText(e.target.value)}
@@ -619,7 +647,7 @@ export const RedZone: React.FC = () => {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
                 required
               />
-            ) : (
+            ) : completeTask.attachment_required ? (
               <div className="space-y-3 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -661,8 +689,23 @@ export const RedZone: React.FC = () => {
                   You must either upload a file or provide a link to mark this task complete.
                 </p>
               </div>
-            )}
+            ) : null}
             <div className="flex gap-2 justify-end">
+              {completeTask.recurring !== 'none' && (
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    handleComplete(
+                      completeTask,
+                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
+                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                      { closePermanently: true }
+                    )
+                  }
+                >
+                  Close Permanently
+                </Button>
+              )}
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>
@@ -675,9 +718,11 @@ export const RedZone: React.FC = () => {
                   )
                 }
                 disabled={
-                  completeTask.attachment_type === 'text'
-                    ? !attachmentText.trim()
-                    : !attachmentUrl.trim()
+                  completeTask.attachment_required
+                    ? (completeTask.attachment_type === 'text'
+                      ? !attachmentText.trim()
+                      : !attachmentUrl.trim())
+                    : false
                 }
               >
                 Complete

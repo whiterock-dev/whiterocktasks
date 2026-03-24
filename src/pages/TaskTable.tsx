@@ -14,7 +14,7 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays } from '../lib/utils';
+import { isHoliday, compressImageForUpload, getPendingDays, getNextRecurringDueDate } from '../lib/utils';
 import {
   Paperclip,
   Check,
@@ -173,13 +173,13 @@ export const TaskTable: React.FC = () => {
       filters.status = statusFilter as Task['status'];
     }
     if (!isDoer && !isVerifier && !statusFilter) {
-      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
     }
     if (isDoer && statusFilter) {
       filters.status = statusFilter as Task['status'];
     }
     if (isDoer && !statusFilter) {
-      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
     }
     if (!isDoer && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
     if (isDoer) {
@@ -367,13 +367,15 @@ export const TaskTable: React.FC = () => {
           (t) =>
             t.due_date === today &&
             t.status !== 'completed' &&
-            t.status !== 'cancelled'
+            t.status !== 'cancelled' &&
+            t.status !== 'closed_permanently'
         ).length;
         const overdue = summaryRows.filter(
           (t) =>
             t.due_date < today &&
             t.status !== 'completed' &&
-            t.status !== 'cancelled'
+            t.status !== 'cancelled' &&
+            t.status !== 'closed_permanently'
         ).length;
 
         if (isMounted) setTaskSummary({ dueToday, overdue });
@@ -523,7 +525,8 @@ export const TaskTable: React.FC = () => {
   }, []);
 
   const handleCompleteClick = (t: Task) => {
-    if (t.attachment_required) {
+    const isRecurringTask = t.recurring !== 'none';
+    if (t.attachment_required || isRecurringTask) {
       setCompleteTask(t);
       setAttachmentUrl('');
       setAttachmentText('');
@@ -557,9 +560,15 @@ export const TaskTable: React.FC = () => {
     }
   };
 
-  const handleComplete = async (t: Task, url?: string, text?: string) => {
+  const handleComplete = async (
+    t: Task,
+    url?: string,
+    text?: string,
+    opts?: { closePermanently?: boolean }
+  ) => {
     if (!user) return;
-    if (t.attachment_required) {
+    const closePermanently = opts?.closePermanently === true;
+    if (t.attachment_required && !closePermanently) {
       const isText = t.attachment_type === 'text';
       if (isText && !text?.trim()) return;
       if (!isText && !url?.trim()) return;
@@ -570,16 +579,32 @@ export const TaskTable: React.FC = () => {
         ...(text && { attachment_text: text }),
       };
 
-      if (t.verification_required) {
+      if (closePermanently && t.recurring !== 'none') {
+        await api.updateTask(t.id, {
+          ...baseUpdates,
+          status: 'closed_permanently',
+        });
+      } else if (t.verification_required) {
         await api.updateTask(t.id, {
           ...baseUpdates,
           status: 'pending_verification',
         });
       } else {
-        await api.updateTask(t.id, {
-          ...baseUpdates,
-          completed_at: new Date().toISOString(),
-        });
+        const completedAt = new Date().toISOString();
+        if (t.recurring !== 'none') {
+          const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
+          await api.updateTask(t.id, {
+            ...baseUpdates,
+            completed_at: completedAt,
+            status: 'pending',
+            due_date: nextDueDate || t.due_date,
+          });
+        } else {
+          await api.updateTask(t.id, {
+            ...baseUpdates,
+            completed_at: completedAt,
+          });
+        }
       }
       setLoading(true);
       await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
@@ -996,8 +1021,10 @@ export const TaskTable: React.FC = () => {
                           ? 'bg-red-100 text-red-800'
                           : t.status === 'correction_required'
                             ? 'bg-amber-100 text-amber-800'
-                            : t.status === 'pending_verification'
+                          : t.status === 'pending_verification'
                               ? 'bg-sky-100 text-sky-800'
+                              : t.status === 'closed_permanently'
+                                ? 'bg-purple-100 text-purple-800'
                               : 'bg-slate-100 text-slate-600'
                         }`}
                     >
@@ -1005,6 +1032,8 @@ export const TaskTable: React.FC = () => {
                         ? 'Pending Verification'
                         : t.status === 'correction_required'
                           ? 'Correction Required'
+                          : t.status === 'closed_permanently'
+                            ? 'Closed Permanently'
                           : t.status}
                     </span>
                   </td>
@@ -1033,11 +1062,23 @@ export const TaskTable: React.FC = () => {
                           onClick={async () => {
                             if (!user) return;
                             try {
-                              await api.updateTask(t.id, {
-                                completed_at: new Date().toISOString(),
-                                verified_by: user.name,
-                                verified_at: new Date().toISOString(),
-                              });
+                              const completedAt = new Date().toISOString();
+                              if (t.recurring !== 'none') {
+                                const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
+                                await api.updateTask(t.id, {
+                                  completed_at: completedAt,
+                                  verified_by: user.name,
+                                  verified_at: completedAt,
+                                  status: 'pending',
+                                  due_date: nextDueDate || t.due_date,
+                                });
+                              } else {
+                                await api.updateTask(t.id, {
+                                  completed_at: completedAt,
+                                  verified_by: user.name,
+                                  verified_at: completedAt,
+                                });
+                              }
                               setLoading(true);
                               await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
                             } catch (err) {
@@ -1215,6 +1256,7 @@ export const TaskTable: React.FC = () => {
               <option value="completed">Completed</option>
               <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
+              <option value="closed_permanently">Closed Permanently</option>
               <option value="pending_verification">Pending Verification</option>
               <option value="correction_required">Correction Required</option>
             </select>
@@ -1287,7 +1329,8 @@ export const TaskTable: React.FC = () => {
               const isOverdue =
                 (t.status === 'overdue' || t.due_date < today) &&
                 t.status !== 'completed' &&
-                t.status !== 'cancelled';
+                t.status !== 'cancelled' &&
+                t.status !== 'closed_permanently';
               return (
                 <tr
                   key={t.id}
@@ -1346,8 +1389,10 @@ export const TaskTable: React.FC = () => {
                           ? 'bg-red-100 text-red-800'
                           : t.status === 'correction_required'
                             ? 'bg-amber-100 text-amber-800'
-                            : t.status === 'pending_verification'
+                          : t.status === 'pending_verification'
                               ? 'bg-sky-100 text-sky-800'
+                              : t.status === 'closed_permanently'
+                                ? 'bg-purple-100 text-purple-800'
                               : 'bg-slate-100 text-slate-600'
                         }`}
                     >
@@ -1355,6 +1400,8 @@ export const TaskTable: React.FC = () => {
                         ? 'Pending Verification'
                         : t.status === 'correction_required'
                           ? 'Correction Required'
+                          : t.status === 'closed_permanently'
+                            ? 'Closed Permanently'
                           : t.status}
                     </span>
                   </td>
@@ -1410,17 +1457,27 @@ export const TaskTable: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-6 max-w-md w-full shadow-xl">
             <h3 className="text-lg font-semibold mb-2">
-              {completeTask.attachment_type === 'text'
-                ? 'Text required to mark complete'
-                : 'Upload media required to mark complete'}
+              {completeTask.attachment_required
+                ? completeTask.attachment_type === 'text'
+                  ? 'Text required to mark complete'
+                  : 'Upload media required to mark complete'
+                : 'Mark task complete'}
             </h3>
-            <p className="text-sm text-slate-600 mb-4">
-              {completeTask.attachment_description ||
-                (completeTask.attachment_type === 'text'
-                  ? 'You must enter text below to complete this task.'
-                  : 'Upload a photo/video or paste a link to your media.')}
-            </p>
-            {completeTask.attachment_type === 'text' ? (
+            {completeTask.attachment_required && (
+              <p className="text-sm text-slate-600 mb-4">
+                {completeTask.attachment_description ||
+                  (completeTask.attachment_type === 'text'
+                    ? 'You must enter text below to complete this task.'
+                    : 'Upload a photo/video or paste a link to your media.')}
+              </p>
+            )}
+            {completeTask.recurring !== 'none' && (
+              <p className="text-xs text-slate-600 mb-4">
+                This is a recurring task. Use <strong>Complete</strong> to move it to the next recurring date, or
+                <strong> Close Permanently</strong> to stop it.
+              </p>
+            )}
+            {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
               <textarea
                 value={attachmentText}
                 onChange={(e) => setAttachmentText(e.target.value)}
@@ -1473,8 +1530,23 @@ export const TaskTable: React.FC = () => {
                   You must either upload a file or provide a link to mark this task complete.
                 </p>
               </div>
-            )}
+            ))}
             <div className="flex gap-2 justify-end">
+              {completeTask.recurring !== 'none' && (
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    handleComplete(
+                      completeTask,
+                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
+                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                      { closePermanently: true }
+                    )
+                  }
+                >
+                  Close Permanently
+                </Button>
+              )}
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>
@@ -1487,9 +1559,11 @@ export const TaskTable: React.FC = () => {
                   )
                 }
                 disabled={
-                  completeTask.attachment_type === 'text'
-                    ? !attachmentText.trim()
-                    : !attachmentUrl.trim()
+                  completeTask.attachment_required
+                    ? (completeTask.attachment_type === 'text'
+                      ? !attachmentText.trim()
+                      : !attachmentUrl.trim())
+                    : false
                 }
               >
                 Complete
