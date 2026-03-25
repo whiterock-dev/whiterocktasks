@@ -675,4 +675,91 @@ export const api = {
       link: task.link,
     });
   },
+
+  // --- Forgot Password (OTP) ---
+
+  /** Find a user by phone number (normalized). Returns user doc id + data if found. */
+  findUserByPhone: async (phone: string): Promise<{ id: string; name: string; phone: string } | null> => {
+    const digits = phone.replace(/\D/g, '');
+    // Try matching with +91 prefix, 91 prefix, and raw 10 digits
+    const variants = new Set<string>();
+    if (digits.length === 10) {
+      variants.add('+91' + digits);
+      variants.add('91' + digits);
+      variants.add(digits);
+    } else if (digits.length === 12 && digits.startsWith('91')) {
+      variants.add('+' + digits);
+      variants.add(digits);
+      variants.add(digits.slice(2));
+    } else {
+      variants.add(phone.trim());
+      variants.add(digits);
+    }
+
+    const usersRef = collection(db, COLLECTIONS.USERS);
+    for (const variant of variants) {
+      const q = query(usersRef, where('phone', '==', variant));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        const data = d.data();
+        return { id: d.id, name: data.name || '', phone: data.phone || '' };
+      }
+    }
+    return null;
+  },
+
+  /** Generate and store a 6-digit OTP for password reset. Returns the OTP string. */
+  createOtp: async (userId: string): Promise<string> => {
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+
+    // Delete any previous OTPs for this user
+    const otpRef = collection(db, COLLECTIONS.PASSWORD_RESET_OTPS);
+    const oldSnap = await getDocs(query(otpRef, where('user_id', '==', userId)));
+    for (const d of oldSnap.docs) {
+      await deleteDoc(d.ref);
+    }
+
+    await addDoc(otpRef, {
+      user_id: userId,
+      otp,
+      created_at: isoToTimestamp(now.toISOString()),
+      expires_at: isoToTimestamp(expiresAt.toISOString()),
+    });
+
+    return otp;
+  },
+
+  /** Verify the OTP for a user. Returns true if valid, false otherwise. Deletes OTP on success. */
+  verifyOtp: async (userId: string, otp: string): Promise<boolean> => {
+    const otpRef = collection(db, COLLECTIONS.PASSWORD_RESET_OTPS);
+    const q = query(otpRef, where('user_id', '==', userId), where('otp', '==', otp));
+    const snap = await getDocs(q);
+
+    if (snap.empty) return false;
+
+    const d = snap.docs[0];
+    const data = d.data();
+    const expiresAt = data.expires_at?.toDate ? data.expires_at.toDate() : new Date(data.expires_at);
+
+    if (new Date() > expiresAt) {
+      // OTP expired — delete it
+      await deleteDoc(d.ref);
+      return false;
+    }
+
+    // Valid — delete OTP
+    await deleteDoc(d.ref);
+    return true;
+  },
+
+  /** Reset user password in Firestore. */
+  resetPassword: async (userId: string, newPassword: string): Promise<void> => {
+    await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+      password: newPassword,
+      updated_at: isoToTimestamp(new Date().toISOString()),
+    });
+  },
 };

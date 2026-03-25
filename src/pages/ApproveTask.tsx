@@ -18,6 +18,7 @@ import {
     ChevronsRight,
     ExternalLink,
     FileText,
+    ClipboardCheck,
 } from 'lucide-react';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
@@ -38,6 +39,7 @@ export const ApproveTask: React.FC = () => {
 
     const isOwner = user?.role === UserRole.OWNER;
     const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
+    const isDoer = user?.role === UserRole.DOER;
     const canSeeAllApprovalTasks = isOwner || isManager;
 
     const getActiveFilters = useCallback(() => {
@@ -260,7 +262,7 @@ export const ApproveTask: React.FC = () => {
                             <th className="whitespace-nowrap">Title</th>
                             <th>Description</th>
                             <th className="whitespace-nowrap">Doer</th>
-                            <th className="whitespace-nowrap">Verifier</th>
+                            {!isDoer && <th className="whitespace-nowrap">Verifier</th>}
                             <th className="whitespace-nowrap text-center">Due Date</th>
                             <th className="whitespace-nowrap text-center">Priority</th>
                             <th className="whitespace-nowrap text-center">Attachment</th>
@@ -270,8 +272,11 @@ export const ApproveTask: React.FC = () => {
                     <tbody>
                         {tasks.length === 0 ? (
                             <tr>
-                                <td colSpan={8} className="py-6 text-center text-slate-500">
-                                    No approval tasks found.
+                                <td colSpan={isDoer ? 7 : 8} className="py-16">
+                                    <div className="flex flex-col items-center justify-center text-slate-500">
+                                        <ClipboardCheck className="w-12 h-12 text-slate-300 mb-3" />
+                                        <p className="text-base font-medium text-slate-600">No approval tasks found.</p>
+                                    </div>
                                 </td>
                             </tr>
                         ) : (
@@ -291,9 +296,11 @@ export const ApproveTask: React.FC = () => {
                                                 <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                                             )}
                                         </td>
-                                        <td>
-                                            <span className="text-sm font-medium text-slate-700">{task.verifier_name || '-'}</span>
-                                        </td>
+                                        {!isDoer && (
+                                            <td>
+                                                <span className="text-sm font-medium text-slate-700">{task.verifier_name || '-'}</span>
+                                            </td>
+                                        )}
                                         <td className="text-center whitespace-nowrap text-slate-600 font-medium">{task.due_date}</td>
                                         <td className="text-center">
                                             <span

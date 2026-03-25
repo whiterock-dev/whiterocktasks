@@ -5,13 +5,12 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronsLeft, ChevronLeft, ChevronRight, Search, ChevronDown, ExternalLink, FileText } from 'lucide-react';
+import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Search, ChevronDown, ExternalLink, FileText, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole } from '../types';
-import { Button } from '../components/ui/Button';
 
-const ROWS_PER_PAGE = 25;
+const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
 export const CompletedTasks: React.FC = () => {
     const { user } = useAuth();
@@ -19,6 +18,7 @@ export const CompletedTasks: React.FC = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
     const [dateFilter, setDateFilter] = useState('all_time');
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
@@ -181,10 +181,12 @@ export const CompletedTasks: React.FC = () => {
     }, [debouncedAssignedTo, debouncedAssignedBy, recurringFilter, tasks]);
 
     const totalResults = filteredTasks.length;
-    const totalPages = Math.max(1, Math.ceil(totalResults / ROWS_PER_PAGE));
+    const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
     const safePage = Math.min(currentPage, totalPages);
-    const startIndex = (safePage - 1) * ROWS_PER_PAGE;
-    const pageTasks = filteredTasks.slice(startIndex, startIndex + ROWS_PER_PAGE);
+    const startIndex = (safePage - 1) * rowsPerPage;
+    const pageTasks = filteredTasks.slice(startIndex, startIndex + rowsPerPage);
+    const startRow = totalResults === 0 ? 0 : startIndex + 1;
+    const endRow = totalResults === 0 ? 0 : Math.min(startIndex + rowsPerPage, totalResults);
 
     const nameOptions = Array.from(
         new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
@@ -197,31 +199,51 @@ export const CompletedTasks: React.FC = () => {
         name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
     );
 
-    const goToFirstPage = () => {
-        if (safePage === 1) return;
-        setCurrentPage(1);
-    };
 
-    const goToPrevPage = () => {
-        if (safePage <= 1) return;
-        setCurrentPage((prev) => Math.max(1, prev - 1));
-    };
 
-    const goToNextPage = () => {
-        if (safePage >= totalPages) return;
-        setCurrentPage((prev) => Math.min(totalPages, prev + 1));
-    };
+    const paginationControls = (
+        <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-slate-600">Rows per page</span>
+                    <select
+                        value={rowsPerPage}
+                        onChange={(e) => {
+                            setRowsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                        }}
+                        className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                        {ROWS_PER_PAGE_OPTIONS.map((size) => (
+                            <option key={size} value={size}>{size}</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="flex items-center gap-3 sm:gap-4">
+                    <p className="text-sm text-slate-500 whitespace-nowrap">
+                        Showing <span className="font-semibold text-slate-800">{startRow}-{endRow}</span> of{' '}
+                        <span className="font-semibold text-slate-800">{totalResults}</span> results
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                        <button type="button" aria-label="First page" onClick={() => setCurrentPage(1)} disabled={loading || safePage <= 1} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsLeft size={16} /></button>
+                        <button type="button" aria-label="Previous page" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={loading || safePage <= 1} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
+                        <button type="button" aria-label="Next page" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={loading || safePage >= totalPages} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
+                        <button type="button" aria-label="Last page" onClick={() => setCurrentPage(totalPages)} disabled={loading || safePage >= totalPages} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsRight size={16} /></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <div className="px-4 py-4 border-b border-slate-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-slate-600">
-                    {isManager ? 'Showing all completed tasks' : 'Showing your completed tasks'}
-                </p>
-                <p className="text-sm font-medium text-slate-700">Total: {totalResults}</p>
-            </div>
+        <div className="space-y-6">
+            {/* ── Description ── */}
+            <p className="text-slate-500 text-sm">
+                {isManager ? 'All tasks that have been successfully completed.' : 'Tasks you have successfully completed.'}
+            </p>
 
-            <div className="px-4 pt-4 pb-2 border-b border-slate-100">
+            {/* ── Filter Bar ── */}
+            <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 {isDoer ? (
                     <div className="flex flex-wrap items-center gap-3">
                         <select
@@ -348,32 +370,41 @@ export const CompletedTasks: React.FC = () => {
                 )}
             </div>
 
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+            {/* ── Top Pagination ── */}
+            <div>{paginationControls}</div>
+
+            {/* ── Table ── */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto min-h-[50vh]">
+                    <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 text-slate-600">
                         <tr>
                             <th className="text-left px-4 py-3 font-semibold">Task</th>
                             <th className="text-left px-4 py-3 font-semibold">Description</th>
                             <th className="text-left px-4 py-3 font-semibold">Due Date</th>
                             <th className="text-left px-4 py-3 font-semibold">Completed At</th>
-                            <th className="text-left px-4 py-3 font-semibold">Assigned To</th>
+                            {!isDoer && <th className="text-left px-4 py-3 font-semibold">Assigned To</th>}
                             <th className="text-left px-4 py-3 font-semibold">Assigned By</th>
                             <th className="text-left px-4 py-3 font-semibold">Verifier</th>
                             <th className="text-left px-4 py-3 font-semibold">Attachment</th>
                             <th className="text-left px-4 py-3 font-semibold">Priority</th>
+                            <th className="text-left px-4 py-3 font-semibold">Recurring</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                                <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                                     Loading completed tasks...
                                 </td>
                             </tr>
                         ) : pageTasks.length === 0 ? (
                             <tr>
-                                <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                                    No completed tasks found.
+                                <td colSpan={10} className="py-16">
+                                    <div className="flex flex-col items-center justify-center text-slate-500">
+                                        <CheckCircle2 className="w-12 h-12 text-slate-300 mb-3" />
+                                        <p className="text-base font-medium text-slate-600">No completed tasks found.</p>
+                                    </div>
                                 </td>
                             </tr>
                         ) : (
@@ -383,7 +414,7 @@ export const CompletedTasks: React.FC = () => {
                                     <td className="px-4 py-3 text-slate-600 wrap-anywhere">{task.description || '-'}</td>
                                     <td className="px-4 py-3 text-slate-600">{task.due_date || '-'}</td>
                                     <td className="px-4 py-3 text-slate-600">{formatDate(task.completed_at)}</td>
-                                    <td className="px-4 py-3 text-slate-600">{task.assigned_to_name || '-'}</td>
+                                    {!isDoer && <td className="px-4 py-3 text-slate-600">{task.assigned_to_name || '-'}</td>}
                                     <td className="px-4 py-3 text-slate-600">{task.assigned_by_name || '-'}</td>
                                     <td className="px-4 py-3 text-slate-600">{task.verifier_name || task.verified_by || '-'}</td>
                                     <td className="px-4 py-3 text-slate-600">
@@ -409,8 +440,17 @@ export const CompletedTasks: React.FC = () => {
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 uppercase">
-                                            {task.priority}
+                                        <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium uppercase ${
+                                            task.priority === 'high' ? "bg-red-50 text-red-700" :
+                                            task.priority === 'medium' ? "bg-amber-50 text-amber-700" :
+                                            "bg-slate-50 text-slate-700"
+                                        }`}>
+                                            {task.priority || '-'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 uppercase">
+                                            {task.recurring?.replace('_', ' ') || 'None'}
                                         </span>
                                     </td>
                                 </tr>
@@ -419,23 +459,10 @@ export const CompletedTasks: React.FC = () => {
                     </tbody>
                 </table>
             </div>
-
-            <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
-                <p className="text-sm text-slate-500">
-                    Page {safePage} of {totalPages}
-                </p>
-                <div className="flex items-center gap-2">
-                    <Button variant="secondary" onClick={goToFirstPage} disabled={loading || safePage === 1}>
-                        <ChevronsLeft size={16} />
-                    </Button>
-                    <Button variant="secondary" onClick={goToPrevPage} disabled={loading || safePage === 1}>
-                        <ChevronLeft size={16} />
-                    </Button>
-                    <Button variant="secondary" onClick={goToNextPage} disabled={loading || safePage >= totalPages}>
-                        <ChevronRight size={16} />
-                    </Button>
-                </div>
             </div>
+            
+            {/* ── Bottom Pagination ── */}
+            <div>{paginationControls}</div>
         </div>
     );
 };

@@ -61,4 +61,5 @@ export const COLLECTIONS = {
   HOLIDAYS: 'holidays',
   ABSENCES: 'absences',
   REMOVAL_REQUESTS: 'removal_requests',
+  PASSWORD_RESET_OTPS: 'password_reset_otps',
 };
