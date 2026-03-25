@@ -6,7 +6,6 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Search, ChevronDown, ExternalLink, FileText, CheckCircle2 } from 'lucide-react';
-import { clsx } from 'clsx';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole } from '../types';
@@ -441,12 +440,11 @@ export const CompletedTasks: React.FC = () => {
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <span className={clsx(
-                                            "inline-flex px-2 py-0.5 rounded-lg text-xs font-medium uppercase",
+                                        <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium uppercase ${
                                             task.priority === 'high' ? "bg-red-50 text-red-700" :
                                             task.priority === 'medium' ? "bg-amber-50 text-amber-700" :
                                             "bg-slate-50 text-slate-700"
-                                        )}>
+                                        }`}>
                                             {task.priority || '-'}
                                         </span>
                                     </td>
