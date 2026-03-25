@@ -5,6 +5,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { api } from '../services/api';
@@ -13,6 +14,7 @@ import { Task, User, UserRole } from '../types';
 
 export const Kpi: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [memberRows, setMemberRows] = useState<ReturnType<typeof computeKpiByMember>>([]);
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
@@ -235,7 +237,15 @@ export const Kpi: React.FC = () => {
                 return 0;
               })
               .map((row) => (
-                <tr key={row.userId} className="border-b border-slate-100 hover:bg-slate-50">
+                <tr
+                  key={row.userId}
+                  onClick={() => {
+                    if (!isDoer) {
+                      navigate(`/redzone?assignedTo=${encodeURIComponent(row.userName)}`);
+                    }
+                  }}
+                  className={`border-b border-slate-100 hover:bg-slate-50 ${!isDoer ? 'cursor-pointer' : ''}`}
+                >
                   <td className="py-3 px-4 font-medium text-slate-800">{row.userName}</td>
                   {!isDoer && <td className="py-3 px-4 text-slate-600">{row.city || '-'}</td>}
                   {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.total_assigned}</td>}

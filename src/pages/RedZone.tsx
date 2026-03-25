@@ -11,9 +11,21 @@ import { storage } from '../lib/firebase';
 import { compressImageForUpload, getNextRecurringDueDate, isHoliday } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { Pencil, User as UserIcon, Search, ChevronDown } from 'lucide-react';
+import {
+  Pencil,
+  User as UserIcon,
+  Search,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  AlertTriangle,
+} from 'lucide-react';
+
+const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
 const DAYS = [
   { value: 0, label: 'Mon' },
@@ -31,10 +43,13 @@ export const RedZone: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
   const [dateFilter, setDateFilter] = useState('all_time');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const [assignedToFilter, setAssignedToFilter] = useState('');
+  const [searchParams] = useSearchParams();
+  const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || '');
   const [assignedByFilter, setAssignedByFilter] = useState('');
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
@@ -183,6 +198,54 @@ export const RedZone: React.FC = () => {
       return true;
     });
   }, [debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, tasks, user?.id]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedAssignedTo, debouncedAssignedBy, recurringFilter, dateFilter, customStart, customEnd, tasks]);
+
+  // Pagination
+  const totalResults = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * rowsPerPage;
+  const pageItems = filtered.slice(startIndex, startIndex + rowsPerPage);
+  const startRow = totalResults === 0 ? 0 : startIndex + 1;
+  const endRow = totalResults === 0 ? 0 : Math.min(startIndex + rowsPerPage, totalResults);
+
+  const paginationControls = (
+    <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-600">Rows per page</span>
+          <select
+            value={rowsPerPage}
+            onChange={(e) => {
+              setRowsPerPage(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            {ROWS_PER_PAGE_OPTIONS.map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-3 sm:gap-4">
+          <p className="text-sm text-slate-500 whitespace-nowrap">
+            Showing <span className="font-semibold text-slate-800">{startRow}-{endRow}</span> of{' '}
+            <span className="font-semibold text-slate-800">{totalResults}</span> results
+          </p>
+          <div className="flex items-center gap-1.5">
+            <button type="button" aria-label="First page" onClick={() => setCurrentPage(1)} disabled={loading || safePage <= 1} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsLeft size={16} /></button>
+            <button type="button" aria-label="Previous page" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={loading || safePage <= 1} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
+            <button type="button" aria-label="Next page" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={loading || safePage >= totalPages} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
+            <button type="button" aria-label="Last page" onClick={() => setCurrentPage(totalPages)} disabled={loading || safePage >= totalPages} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronsRight size={16} /></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const handleComplete = useCallback(
     async (task: Task, url?: string, text?: string, opts?: { closePermanently?: boolean }) => {
@@ -360,174 +423,6 @@ export const RedZone: React.FC = () => {
 
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
-  if (filtered.length === 0 && !loading) {
-    return (
-      <div>
-        <p className="text-red-800/80 text-sm mb-4">Tasks that are past their due date and not yet completed.</p>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-          {isDoer ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="all_time">All Time</option>
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="last_7_days">Last 7 Days</option>
-                <option value="last_30_days">Last 30 Days</option>
-                <option value="custom">Custom Range</option>
-              </select>
-
-              {dateFilter === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <span className="text-slate-500 text-sm">to</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="all_time">All Time</option>
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="last_7_days">Last 7 Days</option>
-                <option value="last_30_days">Last 30 Days</option>
-                <option value="custom">Custom Range</option>
-              </select>
-
-              {dateFilter === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                  <span className="text-slate-500 text-sm">to</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              )}
-
-              <div ref={assignedToDropdownRef} className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                  type="text"
-                  value={assignedToFilter}
-                  onChange={(e) => {
-                    setAssignedToFilter(e.target.value);
-                    setAssignedToDropdownOpen(true);
-                  }}
-                  onFocus={() => setAssignedToDropdownOpen(true)}
-                  placeholder="Search Doer Name"
-                  className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                {assignedToDropdownOpen && (
-                  <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                    {assignedToNameOptions.length === 0 ? (
-                      <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                    ) : (
-                      assignedToNameOptions.map((name) => (
-                        <li
-                          key={`to-${name}`}
-                          onClick={() => {
-                            setAssignedToFilter(name);
-                            setAssignedToDropdownOpen(false);
-                          }}
-                          className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                        >
-                          {name}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                )}
-              </div>
-
-              <div ref={assignedByDropdownRef} className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                  type="text"
-                  value={assignedByFilter}
-                  onChange={(e) => {
-                    setAssignedByFilter(e.target.value);
-                    setAssignedByDropdownOpen(true);
-                  }}
-                  onFocus={() => setAssignedByDropdownOpen(true)}
-                  placeholder="Search Assigned By Name"
-                  className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-                />
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                {assignedByDropdownOpen && (
-                  <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                    {assignedByNameOptions.length === 0 ? (
-                      <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                    ) : (
-                      assignedByNameOptions.map((name) => (
-                        <li
-                          key={`by-${name}`}
-                          onClick={() => {
-                            setAssignedByFilter(name);
-                            setAssignedByDropdownOpen(false);
-                          }}
-                          className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                        >
-                          {name}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                )}
-              </div>
-
-              <select
-                value={recurringFilter}
-                onChange={(e) => setRecurringFilter(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-              >
-                <option value="">All Recurring Types</option>
-                <option value="none">None</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="fortnightly">Fortnightly</option>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="half_yearly">Half Yearly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="rounded-xl p-6 text-center text-green-800 bg-green-50 border border-green-200">
-          No overdue tasks match the current filters.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <p className="text-red-800/80 text-sm mb-4">Tasks that are past their due date and not yet completed.</p>
@@ -688,17 +583,21 @@ export const RedZone: React.FC = () => {
           </div>
         )}
       </div>
-      {filtered.length === 0 ? (
-        <div className="rounded-xl p-6 text-center text-green-800 bg-green-50 border border-green-200">
-          No overdue tasks match the current filters.
+      {paginationControls}
+      {pageItems.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm mt-4 p-16">
+          <div className="flex flex-col items-center justify-center text-slate-500">
+            <AlertTriangle className="w-12 h-12 text-slate-300 mb-3" />
+            <p className="text-base font-medium text-slate-600">No overdue tasks.</p>
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl border-2 border-red-200 overflow-hidden bg-white shadow-sm">
+        <div className="rounded-xl border-2 border-red-200 overflow-hidden bg-white shadow-sm mt-4">
           <h2 className="px-5 py-4 text-lg font-semibold text-white bg-red-600 border-b border-red-700">
             Overdue Follow-up ({filtered.length})
           </h2>
           <div className="divide-y divide-red-100">
-            {filtered.map((t) => {
+            {pageItems.map((t) => {
               const daysOverdue = Math.ceil(
                 (new Date().getTime() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24)
               );
@@ -774,6 +673,7 @@ export const RedZone: React.FC = () => {
           </div>
         </div>
       )}
+      <div className="mt-4">{paginationControls}</div>
 
       {completeTask && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">

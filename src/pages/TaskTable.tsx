@@ -33,6 +33,7 @@ import {
   ArrowUpDown,
   Search,
   ChevronDown,
+  Table2,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
@@ -1306,6 +1307,9 @@ export const TaskTable: React.FC = () => {
 
   return (
     <div>
+      <p className="text-slate-500 text-sm mb-4">
+        {isManager ? 'Manage and track all tasks across the team.' : 'View and manage your assigned tasks.'}
+      </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Today</p>
@@ -1508,139 +1512,159 @@ export const TaskTable: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {sortedTasks.map((t) => {
-              const onHoliday = isHoliday(t.due_date, holidays);
-              const today = getTodayLocal();
-              const isOverdue =
-                (t.status === 'overdue' || t.due_date < today) &&
-                t.status !== 'completed' &&
-                t.status !== 'cancelled' &&
-                t.status !== 'closed_permanently';
-              return (
-                <tr
-                  key={t.id}
-                  className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50' : ''
-                    } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50' : ''}`}
-                >
-                  <td className="sticky-col-1">
-                    <span className="font-medium text-slate-800">{t.title}</span>
-                    {onHoliday && (
-                      <span className="ml-2 text-xs text-orange-600">(Holiday)</span>
+            {loading ? (
+              <tr>
+                <td colSpan={isDoer ? 11 : 12} className="py-12 text-center text-slate-500">
+                  <div className="flex justify-center mb-4">
+                    <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin"></div>
+                  </div>
+                  Loading tasks...
+                </td>
+              </tr>
+            ) : sortedTasks.length === 0 ? (
+              <tr>
+                <td colSpan={isDoer ? 11 : 12} className="py-16">
+                  <div className="flex flex-col items-center justify-center text-slate-500">
+                    <Table2 className="w-12 h-12 text-slate-300 mb-3" />
+                    <p className="text-base font-medium text-slate-600">No tasks found.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              sortedTasks.map((t) => {
+                const onHoliday = isHoliday(t.due_date, holidays);
+                const today = getTodayLocal();
+                const isOverdue =
+                  (t.status === 'overdue' || t.due_date < today) &&
+                  t.status !== 'completed' &&
+                  t.status !== 'cancelled' &&
+                  t.status !== 'closed_permanently';
+                return (
+                  <tr
+                    key={t.id}
+                    className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50' : ''
+                      } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50' : ''}`}
+                  >
+                    <td className="sticky-col-1">
+                      <span className="font-medium text-slate-800">{t.title}</span>
+                      {onHoliday && (
+                        <span className="ml-2 text-xs text-orange-600">(Holiday)</span>
+                      )}
+                      {t.assignee_deleted && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                      )}
+                    </td>
+                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
+                      {t.description || '-'}
+                    </td>
+                    {!isDoer && (
+                      <td>
+                        <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                          {t.assigned_to_name}
+                          {t.assignee_deleted && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                          )}
+                        </span>
+                      </td>
                     )}
-                    {t.assignee_deleted && (
-                      <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                    )}
-                  </td>
-                  <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
-                    {t.description || '-'}
-                  </td>
-                  {!isDoer && (
+
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
-                        {t.assigned_to_name}
-                        {t.assignee_deleted && (
-                          <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                        )}
+                        {t.assigned_by_name}
                       </span>
                     </td>
-                  )}
-
-                  <td>
-                    <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
-                      {t.assigned_by_name}
-                    </span>
-                  </td>
-                  <td className="text-center whitespace-nowrap text-slate-600">{t.start_date || '-'}</td>
-                  <td className="text-center whitespace-nowrap text-slate-600 font-medium">{t.due_date}</td>
-                  <td className="text-center">
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
-                        ? 'bg-red-100 text-red-800'
-                        : t.priority === 'high'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-100 text-slate-600'
-                        }`}
-                    >
-                      {t.priority}
-                    </span>
-                  </td>
-                  <td className="text-center">
-                    <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 capitalize whitespace-nowrap">
-                      {t.recurring || 'None'}
-                    </span>
-                  </td>
-                  <td className="text-center">
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : t.status === 'overdue'
+                    <td className="text-center whitespace-nowrap text-slate-600">{t.start_date || '-'}</td>
+                    <td className="text-center whitespace-nowrap text-slate-600 font-medium">{t.due_date}</td>
+                    <td className="text-center">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
                           ? 'bg-red-100 text-red-800'
-                          : t.status === 'correction_required'
+                          : t.priority === 'high'
                             ? 'bg-amber-100 text-amber-800'
-                          : t.status === 'pending_verification'
-                              ? 'bg-sky-100 text-sky-800'
-                              : t.status === 'closed_permanently'
-                                ? 'bg-purple-100 text-purple-800'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                    >
-                      {t.status === 'pending_verification'
-                        ? 'Pending Verification'
-                        : t.status === 'correction_required'
-                          ? 'Correction Required'
-                          : t.status === 'closed_permanently'
-                            ? 'Closed Permanently'
-                          : t.status}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
-                      {t.verifier_name || t.verified_by || (t.verification_required ? 'Required' : '-')}
-                    </span>
-                  </td>
-                  <td className="text-center">
-                    {(t.attachment_url || t.attachment_text) ? (
-                      <button
-                        type="button"
-                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
-                        className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
+                            : 'bg-slate-100 text-slate-600'
+                          }`}
                       >
-                        {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
-                        View
-                      </button>
-                    ) : t.attachment_required ? (
-                      <span className="text-amber-600 text-xs font-medium whitespace-nowrap">Required</span>
-                    ) : (
-                      <span className="text-slate-400">-</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-right pr-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
-                      {t.assigned_to_id === user?.id &&
-                        t.status !== 'completed' &&
-                        t.status !== 'pending_verification' && (
-                          <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
-                            Complete
-                          </Button>
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 capitalize whitespace-nowrap">
+                        {t.recurring || 'None'}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : t.status === 'overdue'
+                            ? 'bg-red-100 text-red-800'
+                            : t.status === 'correction_required'
+                              ? 'bg-amber-100 text-amber-800'
+                            : t.status === 'pending_verification'
+                                ? 'bg-sky-100 text-sky-800'
+                                : t.status === 'closed_permanently'
+                                  ? 'bg-purple-100 text-purple-800'
+                                : 'bg-slate-100 text-slate-600'
+                          }`}
+                      >
+                        {t.status === 'pending_verification'
+                          ? 'Pending Verification'
+                          : t.status === 'correction_required'
+                            ? 'Correction Required'
+                            : t.status === 'closed_permanently'
+                              ? 'Closed Permanently'
+                            : t.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                        {t.verifier_name || t.verified_by || (t.verification_required ? 'Required' : '-')}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      {(t.attachment_url || t.attachment_text) ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                          className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
+                        >
+                          {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                          View
+                        </button>
+                      ) : t.attachment_required ? (
+                        <span className="text-amber-600 text-xs font-medium whitespace-nowrap">Required</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-2 text-right pr-4">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
+                        {t.assigned_to_id === user?.id &&
+                          t.status !== 'completed' &&
+                          t.status !== 'pending_verification' && (
+                            <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
+                              Complete
+                            </Button>
+                          )}
+                        {(isOwner || isManager || t.assigned_by_id === user?.id) && (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
+                              <Pencil size={15} />
+                            </Button>
+                            <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="!px-2" title="Delete Task">
+                              <Trash2 size={15} />
+                            </Button>
+                          </>
                         )}
-                      {(isOwner || isManager || t.assigned_by_id === user?.id) && (
-                        <>
-                          <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
-                            <Pencil size={15} />
-                          </Button>
-                          <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="!px-2" title="Delete Task">
-                            <Trash2 size={15} />
-                          </Button>
-                        </>
-                      )}
-                      {!(t.assigned_to_id === user?.id && t.status !== 'completed') && !(isOwner || isManager || t.assigned_by_id === user?.id) && (
-                        <span className="text-slate-400 text-center">-</span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+                        {!(t.assigned_to_id === user?.id && t.status !== 'completed') && !(isOwner || isManager || t.assigned_by_id === user?.id) && (
+                          <span className="text-slate-400 text-center">-</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

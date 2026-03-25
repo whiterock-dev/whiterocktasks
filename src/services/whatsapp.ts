@@ -119,6 +119,38 @@ class WhatsappService {
       throw error;
     }
   }
+
+  /**
+   * Send a WhatsApp OTP verification message.
+   */
+  public async sendOtp(params: { phone: string; otp: string }): Promise<void> {
+    const { phone, otp } = params;
+    const normalizedPhone = this.normalizePhone(phone);
+    const sanitizedOrigin = this.sanitizeOrigin(ORIGIN_WEBSITE);
+
+    if (!AUTH_TOKEN) {
+      console.warn('[WhatsappService] VITE_11ZA_AUTH_TOKEN not set; skipping OTP send');
+      return;
+    }
+
+    const payload = {
+      sendto: normalizedPhone,
+      authToken: AUTH_TOKEN,
+      originWebsite: sanitizedOrigin,
+      language: "en",
+      templateName: 'otp_verification',
+      data: [otp],
+    };
+
+    try {
+      await axios.post(API_URL, payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error: any) {
+      console.error('[WhatsappService] Error sending OTP:', error?.response?.data || error.message);
+      throw error;
+    }
+  }
 }
 
 export const whatsappService = new WhatsappService();

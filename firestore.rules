@@ -16,5 +16,8 @@ service cloud.firestore {
     match /removal_requests/{docId} {
       allow read, write: if true;
     }
+    match /password_reset_otps/{docId} {
+      allow read, write: if true;
+    }
   }
 }

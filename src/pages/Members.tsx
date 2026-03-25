@@ -320,9 +320,77 @@ export const Members: React.FC = () => {
   if (loading) return <div className="text-slate-500">Loading...</div>;
   if (!isOwner && !isManager) return <div className="text-slate-500">Access denied. Only Owner and Managers can view Members.</div>;
 
+  const paginationControls = (
+    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded-xl mb-4">
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-slate-600">Rows per page</span>
+        <select
+          value={rowsPerPage}
+          onChange={(e) => {
+            setRowsPerPage(Number(e.target.value));
+            setCurrentPage(1); // Reset to first page when changing row count
+          }}
+          className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+        >
+          {ROWS_PER_PAGE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center gap-3 sm:gap-4">
+        <p className="text-sm text-slate-500 whitespace-nowrap">
+          Showing <span className="font-semibold text-slate-800">{users.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, users.length)}</span> of{' '}
+          <span className="font-semibold text-slate-800">{users.length}</span> results
+        </p>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="First page"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage <= 1}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronsLeft size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Previous page"
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage <= 1}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next page"
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(users.length / rowsPerPage)))}
+            disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Last page"
+            onClick={() => setCurrentPage(Math.ceil(users.length / rowsPerPage))}
+            disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronsRight size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <p className="text-slate-500 text-sm mb-4">Manage your team members and users.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         {(isOwner || isManager) && (
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => setShowAddForm(true)}>
@@ -435,7 +503,9 @@ export const Members: React.FC = () => {
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      {paginationControls}
+
+      <div className="overflow-x-auto mt-4">
         <table className="w-full border-collapse bg-white rounded-xl border border-slate-200 shadow-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
@@ -492,69 +562,8 @@ export const Members: React.FC = () => {
         </table>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded-xl">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-slate-600">Rows per page</span>
-          <select
-            value={rowsPerPage}
-            onChange={(e) => {
-              setRowsPerPage(Number(e.target.value));
-              setCurrentPage(1); // Reset to first page when changing row count
-            }}
-            className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-          >
-            {ROWS_PER_PAGE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-3 sm:gap-4">
-          <p className="text-sm text-slate-500 whitespace-nowrap">
-            Showing <span className="font-semibold text-slate-800">{users.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, users.length)}</span> of{' '}
-            <span className="font-semibold text-slate-800">{users.length}</span> results
-          </p>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              aria-label="First page"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage <= 1}
-              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronsLeft size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label="Previous page"
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage <= 1}
-              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label="Next page"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(users.length / rowsPerPage)))}
-              disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
-              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronRight size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label="Last page"
-              onClick={() => setCurrentPage(Math.ceil(users.length / rowsPerPage))}
-              disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
-              className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronsRight size={16} />
-            </button>
-          </div>
-        </div>
+      <div className="mt-4">
+        {paginationControls}
       </div>
 
       {editingUser && (
