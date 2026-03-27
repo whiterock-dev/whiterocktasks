@@ -11,14 +11,46 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Pencil,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+
+const DAYS = [
+  { value: 0, label: 'Mon' },
+  { value: 1, label: 'Tue' },
+  { value: 2, label: 'Wed' },
+  { value: 3, label: 'Thu' },
+  { value: 4, label: 'Fri' },
+  { value: 5, label: 'Sat' },
+  { value: 6, label: 'Sun' },
+] as const;
 
 export const RecurringTasks: React.FC = () => {
   const { user } = useAuth();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewTask, setViewTask] = useState<Task | null>(null);
+  const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+
+  // Edit recurring master task
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editAssignedToId, setEditAssignedToId] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
+  const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
+  const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
+  const [editAttachmentRequired, setEditAttachmentRequired] = useState(false);
+  const [editAttachmentType, setEditAttachmentType] = useState<'media' | 'text'>('media');
+  const [editAttachmentDescription, setEditAttachmentDescription] = useState('');
+  const [editVerificationRequired, setEditVerificationRequired] = useState(false);
+  const [editVerifierId, setEditVerifierId] = useState('');
+  const [editError, setEditError] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -161,7 +193,27 @@ export const RecurringTasks: React.FC = () => {
         filtered = filtered.filter((t) => t.recurring === recurringFilter);
       }
 
-      setAllTasks(filtered);
+      // Show one row per logical recurring stream (latest due_date),
+      // so spawned/legacy duplicates don't appear multiple times.
+      const streamMap = new Map<string, Task>();
+      for (const task of filtered) {
+        const key = JSON.stringify({
+          title: task.title || '',
+          assigned_to_id: task.assigned_to_id || '',
+          assigned_by_id: task.assigned_by_id || '',
+          recurring: task.recurring || '',
+          recurring_days: Array.isArray(task.recurring_days)
+            ? [...task.recurring_days].sort((a, b) => a - b)
+            : [],
+          verifier_id: task.verifier_id || '',
+        });
+        const prev = streamMap.get(key);
+        if (!prev || String(task.due_date || '') > String(prev.due_date || '')) {
+          streamMap.set(key, task);
+        }
+      }
+
+      setAllTasks(Array.from(streamMap.values()));
     } catch (err) {
       console.error(err);
     } finally {
@@ -208,6 +260,72 @@ export const RecurringTasks: React.FC = () => {
       await loadTasks();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const openEditModal = (t: Task) => {
+    setEditingTask(t);
+    setEditError('');
+    setEditTitle(t.title);
+    setEditDesc(t.description || '');
+    setEditAssignedToId(t.assigned_to_id);
+    setEditDueDate(t.due_date);
+    setEditPriority(t.priority);
+    setEditRecurring(t.recurring);
+    setEditRecurringDays(t.recurring_days || []);
+    setEditAttachmentRequired(Boolean(t.attachment_required));
+    setEditAttachmentType((t.attachment_type as 'media' | 'text') || 'media');
+    setEditAttachmentDescription(t.attachment_description || '');
+    setEditVerificationRequired(Boolean(t.verification_required));
+    setEditVerifierId(t.verifier_id || '');
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    setEditError('');
+
+    if (editVerificationRequired && !editVerifierId) {
+      setEditError('Please select a verifier when verification is required.');
+      return;
+    }
+
+    if (editVerificationRequired && editVerifierId === editAssignedToId) {
+      setEditError('Verifier and assignee cannot be the same member.');
+      return;
+    }
+
+    setEditSubmitting(true);
+    try {
+      const assigneeUser = allUsers.find((u) => u.id === editAssignedToId);
+      const verifierUser = allUsers.find((u) => u.id === editVerifierId);
+
+      const updates: Partial<Task> = {
+        title: editTitle,
+        description: editDesc,
+        assigned_to_id: editAssignedToId,
+        assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
+        assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
+        due_date: editDueDate,
+        priority: editPriority,
+        recurring: editRecurring,
+        recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : undefined,
+        attachment_required: editAttachmentRequired,
+        attachment_type: editAttachmentRequired ? editAttachmentType : undefined,
+        attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : undefined,
+        verification_required: editVerificationRequired,
+        verifier_id: editVerificationRequired ? editVerifierId : undefined,
+        verifier_name: editVerificationRequired ? (verifierUser?.name || '') : undefined,
+      };
+
+      await api.updateTask(editingTask.id, updates);
+      setEditingTask(null);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to update recurring task:', err);
+      setEditError('Failed to update recurring task.');
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -419,27 +537,31 @@ export const RecurringTasks: React.FC = () => {
       {/* ── Table ── */}
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto min-h-[50vh]">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+          <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3 font-medium text-slate-600">Task</th>
-                <th className="px-4 py-3 font-medium text-slate-600">Frequency</th>
-                {!isDoer && <th className="px-4 py-3 font-medium text-slate-600">Assigned To</th>}
-                <th className="px-4 py-3 font-medium text-slate-600">Assigned By</th>
-                <th className="px-4 py-3 font-medium text-slate-600">Next Due</th>
-                {isManager && <th className="px-4 py-3 font-medium text-slate-600 text-right">Actions</th>}
+                <th className="px-4 py-3 font-medium text-slate-600 w-72">Title</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-96">Description</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-32">Frequency</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-24 text-center">Priority</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned To</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned By</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-52">Verifier</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Attachment</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Next Due</th>
+                {isManager && <th className="px-4 py-3 font-medium text-slate-600 w-48">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={isManager ? 6 : isDoer ? 4 : 5} className="p-8 text-center text-slate-500">
+                  <td colSpan={isManager ? 10 : 9} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={isManager ? 6 : isDoer ? 4 : 5} className="p-8">
+                  <td colSpan={isManager ? 10 : 9} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -449,26 +571,63 @@ export const RecurringTasks: React.FC = () => {
               ) : (
                 pageTasks.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900 truncate max-w-[200px] sm:max-w-xs">{t.title}</p>
+                    <td className="px-4 py-3 whitespace-normal wrap-break-word align-top leading-6">
+                      {t.title}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 capitalize">
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
+                      {t.description || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 capitalize whitespace-normal wrap-break-word align-top leading-6">
                       {t.recurring.replace('_', ' ')}
                     </td>
-                    {!isDoer && <td className="px-4 py-3 text-slate-600">{t.assigned_to_name}</td>}
-                    <td className="px-4 py-3 text-slate-600">{t.assigned_by_name || '-'}</td>
-                    <td className="px-4 py-3 text-slate-600">
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 capitalize">
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">{t.assigned_to_name}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">{t.assigned_by_name || '-'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
+                      {t.verification_required ? (t.verifier_name || 'Required') : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-center">
+                      {(t.attachment_url || t.attachment_text) ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                          className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
+                        >
+                          {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                          View
+                        </button>
+                      ) : t.attachment_required ? (
+                        <span className="text-amber-600 text-xs font-medium whitespace-nowrap">Required</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-center whitespace-nowrap">
                       {new Date(t.due_date).toLocaleDateString('en-GB')}
                     </td>
                     {isManager && (
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleClosePermanently(t.id)}
-                        >
-                          Close Permanently
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openEditModal(t)}
+                            title="Edit Recurring Task"
+                          >
+                            <Pencil size={14} />
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleClosePermanently(t.id)}
+                          >
+                            Close Permanently
+                          </Button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -481,6 +640,296 @@ export const RecurringTasks: React.FC = () => {
 
       {/* ── Bottom Pagination ── */}
       <div>{paginationControls}</div>
+
+      {viewTask && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewTask(null)}>
+          <div className="card p-6 max-w-2xl w-full max-h-[85vh] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Recurring Task Details</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Title</p>
+                <p className="text-slate-800 font-medium mt-1 whitespace-pre-wrap">{viewTask.title}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Description</p>
+                <p className="text-slate-700 mt-1 whitespace-pre-wrap">{viewTask.description || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Frequency</p>
+                <p className="text-slate-700 mt-1 capitalize">{viewTask.recurring.replace('_', ' ')}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Next Due Date</p>
+                <p className="text-slate-700 mt-1">{viewTask.due_date}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Assigned To</p>
+                <p className="text-slate-700 mt-1">{viewTask.assigned_to_name || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Assigned By</p>
+                <p className="text-slate-700 mt-1">{viewTask.assigned_by_name || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Priority</p>
+                <p className="text-slate-700 mt-1 capitalize">{viewTask.priority}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Verifier</p>
+                <p className="text-slate-700 mt-1">{viewTask.verifier_name || (viewTask.verification_required ? 'Required' : '-')}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Attachment Required</p>
+                <p className="text-slate-700 mt-1">{viewTask.attachment_required ? 'Yes' : 'No'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Attachment Type</p>
+                <p className="text-slate-700 mt-1 capitalize">{viewTask.attachment_type || '-'}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Attachment Note</p>
+                <p className="text-slate-700 mt-1 whitespace-pre-wrap">{viewTask.attachment_description || '-'}</p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <Button variant="secondary" onClick={() => setViewTask(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewAttachment && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewAttachment(null)}>
+          <div className="card p-6 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Attachment</h3>
+            {viewAttachment.url && (
+              <div className="mb-4">
+                <a
+                  href={viewAttachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-teal-600 hover:underline font-medium"
+                >
+                  <ExternalLink size={18} />
+                  Open media / link
+                </a>
+              </div>
+            )}
+            {viewAttachment.text != null && viewAttachment.text !== '' && (
+              <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50">
+                {viewAttachment.text}
+              </pre>
+            )}
+            {viewAttachment.url && !viewAttachment.text && <p className="text-sm text-slate-500">Media or link attached. Use the link above to view.</p>}
+            <div className="mt-4 flex justify-end">
+              <Button variant="secondary" onClick={() => setViewAttachment(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingTask && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="card p-6 max-w-lg w-full shadow-xl">
+            <h3 className="text-lg font-semibold mb-4 text-slate-800">Edit Recurring Task</h3>
+            {editError && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {editError}
+              </div>
+            )}
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  required
+                  className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+                  <select
+                    value={editAssignedToId}
+                    onChange={(e) => setEditAssignedToId(e.target.value)}
+                    required
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">Select a member</option>
+                    {allUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Next Due Date</label>
+                  <input
+                    type="date"
+                    value={editDueDate}
+                    onChange={(e) => setEditDueDate(e.target.value)}
+                    required
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as Task['priority'])}
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
+                  <select
+                    value={editRecurring}
+                    onChange={(e) => setEditRecurring(e.target.value as Task['recurring'])}
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="fortnightly">Fortnightly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="half_yearly">Half Yearly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+              </div>
+
+              {editRecurring === 'daily' && (
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-xs text-slate-600 mb-2 font-medium">Recurring Days</p>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map((d) => (
+                      <button
+                        key={d.value}
+                        type="button"
+                        onClick={() => {
+                          setEditRecurringDays((prev) =>
+                            prev.includes(d.value)
+                              ? prev.filter((x) => x !== d.value)
+                              : [...prev, d.value].sort((a, b) => a - b)
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded text-xs transition-colors ${editRecurringDays.includes(d.value)
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                          }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="rec-edit-attach-required"
+                    type="checkbox"
+                    checked={editAttachmentRequired}
+                    onChange={(e) => setEditAttachmentRequired(e.target.checked)}
+                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <label htmlFor="rec-edit-attach-required" className="text-sm font-medium text-slate-700">
+                    Attachment Required
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="rec-edit-verification-required"
+                    type="checkbox"
+                    checked={editVerificationRequired}
+                    onChange={(e) => {
+                      setEditVerificationRequired(e.target.checked);
+                      if (!e.target.checked) setEditVerifierId('');
+                    }}
+                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <label htmlFor="rec-edit-verification-required" className="text-sm font-medium text-slate-700">
+                    Verification Required
+                  </label>
+                </div>
+              </div>
+
+              {editAttachmentRequired && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Attachment Type</label>
+                    <select
+                      value={editAttachmentType}
+                      onChange={(e) => setEditAttachmentType(e.target.value as 'media' | 'text')}
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="media">Media</option>
+                      <option value="text">Text</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Attachment Note</label>
+                    <input
+                      type="text"
+                      value={editAttachmentDescription}
+                      onChange={(e) => setEditAttachmentDescription(e.target.value)}
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {editVerificationRequired && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Verifier</label>
+                  <select
+                    value={editVerifierId}
+                    onChange={(e) => setEditVerifierId(e.target.value)}
+                    required={editVerificationRequired}
+                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                  >
+                    <option value="">Select verifier</option>
+                    {allUsers
+                      .filter((u) => u.id !== editAssignedToId)
+                      .map((u) => (
+                        <option key={`rec-verifier-${u.id}`} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <Button type="button" variant="secondary" onClick={() => setEditingTask(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={editSubmitting}>Save Changes</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

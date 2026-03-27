@@ -26,7 +26,11 @@ body {
 }
 
 /* Smooth transitions for interactive elements */
-button, a, input, select, textarea {
+button,
+a,
+input,
+select,
+textarea {
   @apply transition-colors duration-150;
 }
 
@@ -80,6 +84,14 @@ button, a, input, select, textarea {
   @apply bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors;
 }
 
+.table-container tbody tr.overdue-row {
+  @apply bg-red-50 hover:bg-red-50;
+}
+
+.table-container tbody tr.holiday-row {
+  @apply bg-orange-50 hover:bg-orange-50;
+}
+
 .table-container tbody td {
   @apply py-3 px-4 text-slate-700;
 }
@@ -97,7 +109,7 @@ button, a, input, select, textarea {
 
 .task-table-container thead th {
   @apply bg-slate-50 border-b border-slate-200;
-  box-shadow: 0 1px 0 theme('colors.slate.200'); /* Ensures no gap below */
+  box-shadow: 0 1px 0 theme("colors.slate.200"); /* Ensures no gap below */
 }
 
 /* Default minimum widths for smaller screens */
@@ -134,7 +146,7 @@ button, a, input, select, textarea {
   .task-table-container thead .sticky-col-1,
   .task-table-container thead .sticky-col-2 {
     z-index: 40;
-    background-color: theme('colors.slate.50');
+    background-color: theme("colors.slate.50");
   }
 }
 

@@ -86,6 +86,14 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/my-tasks"
+              element={
+                <ProtectedRoute>
+                  <TaskTable />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/completed-tasks"
               element={
                 <ProtectedRoute>
