@@ -8,13 +8,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays, getNextRecurringDueDate } from '../lib/utils';
+import { isHoliday, compressImageForUpload, getPendingDays } from '../lib/utils';
 import {
   Paperclip,
   Check,
@@ -52,6 +52,7 @@ const DAYS = [
 
 export const TaskTable: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const highlightId = searchParams.get('highlight');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -126,6 +127,9 @@ export const TaskTable: React.FC = () => {
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
   const isDoer = user?.role === UserRole.DOER;
   const isVerifier = user?.role === UserRole.VERIFIER;
+  const isMyTasksRoute = location.pathname === '/my-tasks';
+  const isManagerMyTasksView = isManager && isMyTasksRoute;
+  const isSelfTasksView = isDoer || (isManager && isMyTasksRoute);
 
   const getTodayLocal = useCallback(() => {
     const now = new Date();
@@ -183,7 +187,7 @@ export const TaskTable: React.FC = () => {
       dueDateTo?: string;
       verifierId?: string;
     } = {};
-    if (isDoer) {
+    if (isSelfTasksView) {
       filters.assignedTo = user?.id ?? '';
     }
     if (isAuditor) {
@@ -193,26 +197,27 @@ export const TaskTable: React.FC = () => {
       filters.verifierId = user?.id ?? '';
       filters.status = 'pending_verification';
     }
-    if (!isDoer && !isVerifier && statusFilter) {
+    if (!isSelfTasksView && !isVerifier && statusFilter) {
       filters.status = statusFilter as Task['status'];
     }
-    if (!isDoer && !isVerifier && !statusFilter) {
+    if (!isSelfTasksView && !isVerifier && !statusFilter) {
       filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
     }
-    if (isDoer && statusFilter) {
+    if (isSelfTasksView && statusFilter) {
       filters.status = statusFilter as Task['status'];
     }
-    if (isDoer && !statusFilter) {
+    if (isSelfTasksView && !statusFilter) {
       filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
     }
-    if (!isDoer && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
-    if (isDoer) {
-      const range = resolveDoerDateRange();
-      if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-      if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
-    }
+    if (!isSelfTasksView && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
+
+    // Apply date range filters for both doer and manager views
+    const range = resolveDoerDateRange();
+    if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
+    if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
+
     return filters;
-  }, [user?.id, isDoer, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter]);
+  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter]);
 
   const getDoerBaseFilters = useCallback(() => {
     const filters: {
@@ -259,20 +264,24 @@ export const TaskTable: React.FC = () => {
     if (!user?.id) return [];
 
     const baseFilters = getDoerBaseFilters();
-    const [assignedToRows, assignedByRows] = await Promise.all([
-      api.getAllTasksByFilters({
-        assignedTo: user.id,
-        sortBy: sortConfig?.key,
-        sortDirection: sortConfig?.direction,
-        ...baseFilters,
-      }),
-      api.getAllTasksByFilters({
-        assignedBy: user.id,
-        sortBy: sortConfig?.key,
-        sortDirection: sortConfig?.direction,
-        ...baseFilters,
-      }),
-    ]);
+    const assignedToRows = await api.getAllTasksByFilters({
+      assignedTo: user.id,
+      sortBy: sortConfig?.key,
+      sortDirection: sortConfig?.direction,
+      ...baseFilters,
+    });
+
+    // In owner/manager My Tasks, show only tasks assigned to the logged-in user.
+    if (isManagerMyTasksView) {
+      return sortRowsByConfig(assignedToRows);
+    }
+
+    const assignedByRows = await api.getAllTasksByFilters({
+      assignedBy: user.id,
+      sortBy: sortConfig?.key,
+      sortDirection: sortConfig?.direction,
+      ...baseFilters,
+    });
 
     const mergedById = new Map<string, Task>();
     [...assignedToRows, ...assignedByRows].forEach((task) => {
@@ -280,7 +289,7 @@ export const TaskTable: React.FC = () => {
     });
 
     return sortRowsByConfig(Array.from(mergedById.values()));
-  }, [getDoerBaseFilters, sortConfig, sortRowsByConfig, user?.id]);
+  }, [getDoerBaseFilters, isManagerMyTasksView, sortConfig, sortRowsByConfig, user?.id]);
 
   const applyNameFilters = useCallback(
     (list: Task[]) => {
@@ -382,7 +391,7 @@ export const TaskTable: React.FC = () => {
       setPageCursors([null]);
       const filters = getActiveFilters();
 
-      if (isDoer) {
+      if (isSelfTasksView) {
         setLoading(true);
         try {
           const doerRows = await getDoerVisibleRows();
@@ -460,7 +469,7 @@ export const TaskTable: React.FC = () => {
     applyNameFilters,
     getActiveFilters,
     getDoerVisibleRows,
-    isDoer,
+    isSelfTasksView,
     loadPage,
     refreshToken,
     setClientPageFromRows,
@@ -468,10 +477,10 @@ export const TaskTable: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (isDoer && !sortConfig) {
+    if (isSelfTasksView && !sortConfig) {
       setSortConfig({ key: 'due_date', direction: 'asc' });
     }
-  }, [isDoer, sortConfig]);
+  }, [isSelfTasksView, sortConfig]);
 
   useEffect(() => {
     if (isAuditor || isVerifier) return;
@@ -482,7 +491,7 @@ export const TaskTable: React.FC = () => {
       try {
         let summaryTasks: Task[] = [];
 
-        if (isDoer) {
+        if (isSelfTasksView) {
           summaryTasks = await getDoerVisibleRows();
         } else {
           const filters = getActiveFilters();
@@ -525,7 +534,7 @@ export const TaskTable: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isDoer, isVerifier]);
+  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isSelfTasksView, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -544,7 +553,8 @@ export const TaskTable: React.FC = () => {
     return aValue > bValue ? -1 : 1;
   });
 
-  const isClientMode = hasNameFilter || isDoer;
+  const isClientMode = hasNameFilter || isSelfTasksView;
+  const tableColumnCount = 12;
 
   const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)
@@ -568,7 +578,7 @@ export const TaskTable: React.FC = () => {
   };
 
   const handleExportCsv = async () => {
-    if (!isManager || isDoer || exportingCsv) return;
+    if (!isManager || isSelfTasksView || exportingCsv) return;
 
     setExportingCsv(true);
     try {
@@ -631,15 +641,54 @@ export const TaskTable: React.FC = () => {
   // We will assume basic extraction from loaded tasks for now to avoid additional reads if not necessary,
   // OR we can fetch users. Let's fetch all users to populate the dropdowns properly.)
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [doerRestrictedNames, setDoerRestrictedNames] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
+
+  // Initialize Assigned To filter with logged-in doer's name when in self view
+  useEffect(() => {
+    if (isSelfTasksView && isDoer && user?.name && !assignedToFilter) {
+      setAssignedToFilter(user.name);
+    }
+  }, [isSelfTasksView, isDoer, user?.name]);
+
+  // For doer view, build the set of names that doer has assigned tasks to
+  useEffect(() => {
+    if (!isSelfTasksView || !isDoer || !user?.name) {
+      setDoerRestrictedNames(new Set());
+      return;
+    }
+
+    // Extract names from all loaded rows where current user is the assigner
+    const rowsToCheck = nameFilteredRows || tasks;
+    const restricted = new Set<string>();
+
+    // Always include current user's own name
+    restricted.add(user.name);
+
+    // Also add names of people they've assigned tasks to
+    rowsToCheck.forEach((task) => {
+      if (task.assigned_by_id === user.id && task.assigned_to_name) {
+        restricted.add(task.assigned_to_name);
+      }
+    });
+
+    setDoerRestrictedNames(restricted);
+  }, [isSelfTasksView, isDoer, user?.id, user?.name, tasks, nameFilteredRows]);
 
   const nameOptions = Array.from(
     new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
   ).sort((a, b) => a.localeCompare(b));
 
-  const assignedToNameOptions = nameOptions.filter((name) =>
+  // For doer view, restrict assignedToNameOptions to only names they've assigned to
+  // For manager view, show all names
+  const baseAssignedToOptions = isSelfTasksView && isDoer
+    ? nameOptions.filter((name) => doerRestrictedNames.has(name))
+    : nameOptions;
+
+  const assignedToNameOptions = baseAssignedToOptions.filter((name) =>
     name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
   );
   const assignedByNameOptions = nameOptions.filter((name) =>
@@ -755,14 +804,8 @@ export const TaskTable: React.FC = () => {
           status: 'completed',
           completed_at: completedAt,
         });
-        if (t.recurring !== 'none') {
-          const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
-          if (nextDueDate) {
-            await api.cloneRecurringTask(t, nextDueDate);
-          }
-        }
       }
-      if (isDoer) {
+      if (isSelfTasksView) {
         setRefreshToken((prev) => prev + 1);
       } else {
         setLoading(true);
@@ -1071,7 +1114,15 @@ export const TaskTable: React.FC = () => {
             </thead>
             <tbody>
               {filteredTasks.map((t) => (
-                <tr key={t.id} className={highlightId === t.id ? 'bg-amber-50' : ''}>
+                <tr
+                  key={t.id}
+                  className={`${(t.status === 'overdue' || t.due_date < getTodayLocal()) &&
+                    t.status !== 'completed' &&
+                    t.status !== 'cancelled' &&
+                    t.status !== 'closed_permanently'
+                    ? 'overdue-row'
+                    : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
+                >
                   <td className="sticky-col-1">{t.title}</td>
                   <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
                     {t.description || '-'}
@@ -1176,7 +1227,15 @@ export const TaskTable: React.FC = () => {
             </thead>
             <tbody>
               {filteredTasks.map((t) => (
-                <tr key={t.id} className={highlightId === t.id ? 'bg-amber-50' : ''}>
+                <tr
+                  key={t.id}
+                  className={`${(t.status === 'overdue' || t.due_date < getTodayLocal()) &&
+                    t.status !== 'completed' &&
+                    t.status !== 'cancelled' &&
+                    t.status !== 'closed_permanently'
+                    ? 'overdue-row'
+                    : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
+                >
                   <td className="sticky-col-1">
                     <span className="font-medium text-slate-800">{t.title}</span>
                   </td>
@@ -1210,11 +1269,11 @@ export const TaskTable: React.FC = () => {
                           ? 'bg-red-100 text-red-800'
                           : t.status === 'correction_required'
                             ? 'bg-amber-100 text-amber-800'
-                          : t.status === 'pending_verification'
+                            : t.status === 'pending_verification'
                               ? 'bg-sky-100 text-sky-800'
                               : t.status === 'closed_permanently'
                                 ? 'bg-purple-100 text-purple-800'
-                              : 'bg-slate-100 text-slate-600'
+                                : 'bg-slate-100 text-slate-600'
                         }`}
                     >
                       {t.status === 'pending_verification'
@@ -1223,7 +1282,7 @@ export const TaskTable: React.FC = () => {
                           ? 'Correction Required'
                           : t.status === 'closed_permanently'
                             ? 'Closed Permanently'
-                          : t.status}
+                            : t.status}
                     </span>
                   </td>
                   <td className="text-center">
@@ -1308,7 +1367,11 @@ export const TaskTable: React.FC = () => {
   return (
     <div>
       <p className="text-slate-500 text-sm mb-4">
-        {isManager ? 'Manage and track all tasks across the team.' : 'View and manage your assigned tasks.'}
+        {isMyTasksRoute
+          ? 'View and manage only your own tasks.'
+          : isManager
+            ? 'Manage and track all tasks across the team.'
+            : 'View and manage your assigned tasks.'}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -1326,8 +1389,112 @@ export const TaskTable: React.FC = () => {
       </div>
 
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
-        {isDoer ? (
+        {isSelfTasksView ? (
           <div className="flex flex-wrap items-center gap-3">
+            <div ref={assignedToDropdownRef} className="relative z-50">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedToFilter}
+                onChange={(e) => {
+                  setAssignedToFilter(e.target.value);
+                  setAssignedToDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedToDropdownOpen(true)}
+                placeholder="Search Doer Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedToDropdownOpen && (
+                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedToNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedToNameOptions.map((name) => (
+                      <li
+                        key={`to-${name}`}
+                        onClick={() => {
+                          setAssignedToFilter(name);
+                          setAssignedToDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
+
+            <div ref={assignedByDropdownRef} className="relative z-50">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={assignedByFilter}
+                onChange={(e) => {
+                  setAssignedByFilter(e.target.value);
+                  setAssignedByDropdownOpen(true);
+                }}
+                onFocus={() => setAssignedByDropdownOpen(true)}
+                placeholder="Search Assigned By Name"
+                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+              />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+              {assignedByDropdownOpen && (
+                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  {assignedByNameOptions.length === 0 ? (
+                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                  ) : (
+                    assignedByNameOptions.map((name) => (
+                      <li
+                        key={`by-${name}`}
+                        onClick={() => {
+                          setAssignedByFilter(name);
+                          setAssignedByDropdownOpen(false);
+                        }}
+                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                      >
+                        {name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              <option value="">Status</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="closed_permanently">Closed Permanently</option>
+              <option value="pending_verification">Pending Verification</option>
+              <option value="correction_required">Correction Required</option>
+            </select>
+
+            <select
+              value={recurringFilter}
+              onChange={(e) => setRecurringFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              <option value="">All Recurring Types</option>
+              <option value="none">None</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="fortnightly">Fortnightly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="half_yearly">Half Yearly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
@@ -1464,9 +1631,40 @@ export const TaskTable: React.FC = () => {
               <option value="half_yearly">Half Yearly</option>
               <option value="yearly">Yearly</option>
             </select>
+
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            >
+              <option value="all_time">All Time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last_7_days">Last 7 Days</option>
+              <option value="last_30_days">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+
+            {dateFilter === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+                <span className="text-slate-500 text-sm">to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            )}
           </div>
         )}
-        {isManager && !isDoer && (
+        {isManager && !isSelfTasksView && (
           <CsvExportButton
             onClick={handleExportCsv}
             loading={exportingCsv}
@@ -1481,7 +1679,7 @@ export const TaskTable: React.FC = () => {
             <tr>
               <th className="sticky-col-1 text-center">Title</th>
               <th className="sticky-col-2 text-center">Description</th>
-              {!isDoer && <th className="whitespace-nowrap text-center">Assigned To</th>}
+              <th className="whitespace-nowrap text-center">Assigned To</th>
               <th className="whitespace-nowrap text-center">Assigned By</th>
               <th className="whitespace-nowrap text-center">
                 <button
@@ -1514,7 +1712,7 @@ export const TaskTable: React.FC = () => {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={isDoer ? 11 : 12} className="py-12 text-center text-slate-500">
+                <td colSpan={tableColumnCount} className="py-12 text-center text-slate-500">
                   <div className="flex justify-center mb-4">
                     <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin"></div>
                   </div>
@@ -1523,7 +1721,7 @@ export const TaskTable: React.FC = () => {
               </tr>
             ) : sortedTasks.length === 0 ? (
               <tr>
-                <td colSpan={isDoer ? 11 : 12} className="py-16">
+                <td colSpan={tableColumnCount} className="py-16">
                   <div className="flex flex-col items-center justify-center text-slate-500">
                     <Table2 className="w-12 h-12 text-slate-300 mb-3" />
                     <p className="text-base font-medium text-slate-600">No tasks found.</p>
@@ -1542,8 +1740,7 @@ export const TaskTable: React.FC = () => {
                 return (
                   <tr
                     key={t.id}
-                    className={`${highlightId === t.id ? 'bg-amber-50' : ''} ${highlightId !== t.id && isOverdue ? 'bg-red-50' : ''
-                      } ${highlightId !== t.id && !isOverdue && onHoliday ? 'bg-orange-50' : ''}`}
+                    className={`${isOverdue ? 'overdue-row' : ''} ${!isOverdue && onHoliday ? 'holiday-row' : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                   >
                     <td className="sticky-col-1">
                       <span className="font-medium text-slate-800">{t.title}</span>
@@ -1557,16 +1754,14 @@ export const TaskTable: React.FC = () => {
                     <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
                       {t.description || '-'}
                     </td>
-                    {!isDoer && (
-                      <td>
-                        <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
-                          {t.assigned_to_name}
-                          {t.assignee_deleted && (
-                            <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                          )}
-                        </span>
-                      </td>
-                    )}
+                    <td>
+                      <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                        {t.assigned_to_name}
+                        {t.assignee_deleted && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                        )}
+                      </span>
+                    </td>
 
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
@@ -1600,11 +1795,11 @@ export const TaskTable: React.FC = () => {
                             ? 'bg-red-100 text-red-800'
                             : t.status === 'correction_required'
                               ? 'bg-amber-100 text-amber-800'
-                            : t.status === 'pending_verification'
+                              : t.status === 'pending_verification'
                                 ? 'bg-sky-100 text-sky-800'
                                 : t.status === 'closed_permanently'
                                   ? 'bg-purple-100 text-purple-800'
-                                : 'bg-slate-100 text-slate-600'
+                                  : 'bg-slate-100 text-slate-600'
                           }`}
                       >
                         {t.status === 'pending_verification'
@@ -1613,7 +1808,7 @@ export const TaskTable: React.FC = () => {
                             ? 'Correction Required'
                             : t.status === 'closed_permanently'
                               ? 'Closed Permanently'
-                            : t.status}
+                              : t.status}
                       </span>
                     </td>
                     <td>
@@ -1646,7 +1841,7 @@ export const TaskTable: React.FC = () => {
                               Complete
                             </Button>
                           )}
-                        {(isOwner || isManager || t.assigned_by_id === user?.id) && (
+                        {!isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id) && (
                           <>
                             <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
                               <Pencil size={15} />
@@ -1656,7 +1851,7 @@ export const TaskTable: React.FC = () => {
                             </Button>
                           </>
                         )}
-                        {!(t.assigned_to_id === user?.id && t.status !== 'completed') && !(isOwner || isManager || t.assigned_by_id === user?.id) && (
+                        {!(t.assigned_to_id === user?.id && t.status !== 'completed') && !(!isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id)) && (
                           <span className="text-slate-400 text-center">-</span>
                         )}
                       </div>
@@ -1690,9 +1885,7 @@ export const TaskTable: React.FC = () => {
             )}
             {completeTask.recurring !== 'none' && (
               <p className="text-xs text-slate-600 mb-4">
-                {(isDoer && user?.id !== completeTask.assigned_by_id)
-                  ? 'This is a recurring task. Completing it will automatically create the next occurrence.'
-                  : <>This is a recurring task. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
+                This is a recurring master task. New task instances are created by the scheduler.
               </p>
             )}
             {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
@@ -1760,21 +1953,6 @@ export const TaskTable: React.FC = () => {
               </div>
             ))}
             <div className="flex gap-2 justify-end">
-              {completeTask.recurring !== 'none' && (!isDoer || user?.id === completeTask.assigned_by_id) && (
-                <Button
-                  variant="danger"
-                  onClick={() =>
-                    handleComplete(
-                      completeTask,
-                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                      { closePermanently: true }
-                    )
-                  }
-                >
-                  Close Permanently
-                </Button>
-              )}
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>
