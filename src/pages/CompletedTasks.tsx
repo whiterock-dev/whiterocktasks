@@ -9,6 +9,7 @@ import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Search, Chevron
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole } from '../types';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -101,17 +102,6 @@ export const CompletedTasks: React.FC = () => {
             return { dueDateFrom: customStart || undefined, dueDateTo: customEnd || undefined };
         }
         return {};
-    };
-
-    const formatDate = (value?: string) => {
-        if (!value) return '-';
-        const parsed = new Date(value);
-        if (Number.isNaN(parsed.getTime())) return value;
-        return parsed.toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-        });
     };
 
     useEffect(() => {
@@ -412,8 +402,12 @@ export const CompletedTasks: React.FC = () => {
                                 <tr key={task.id} className="border-t border-slate-100">
                                     <td className="px-4 py-3 text-slate-800">{task.title}</td>
                                     <td className="px-4 py-3 text-slate-600 wrap-anywhere">{task.description || '-'}</td>
-                                    <td className="px-4 py-3 text-slate-600">{task.due_date || '-'}</td>
-                                    <td className="px-4 py-3 text-slate-600">{formatDate(task.completed_at)}</td>
+                                    <td className="px-4 py-3 text-slate-600">
+                                        {task.due_date ? formatDateDDMMYYYY(task.due_date) : '-'}
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-600">
+                                        {formatDateDDMMYYYY(task.completed_at, { emptyValue: '-' })}
+                                    </td>
                                     {!isDoer && <td className="px-4 py-3 text-slate-600">{task.assigned_to_name || '-'}</td>}
                                     <td className="px-4 py-3 text-slate-600">{task.assigned_by_name || '-'}</td>
                                     <td className="px-4 py-3 text-slate-600">{task.verifier_name || task.verified_by || '-'}</td>

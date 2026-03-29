@@ -120,6 +120,8 @@ export interface RemovalRequest {
   created_at: string;
   resolved_at?: string;
   resolved_by?: string;
+  /** Owner/manager note when rejecting; visible to the requester (doer). */
+  rejection_reason?: string;
 }
 
 export interface KpiMetrics {

@@ -15,6 +15,7 @@ import {
   ExternalLink,
   FileText,
 } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -607,7 +608,7 @@ export const RecurringTasks: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-600 text-center whitespace-nowrap">
-                      {new Date(t.due_date).toLocaleDateString('en-GB')}
+                      {formatDateDDMMYYYY(t.due_date)}
                     </td>
                     {isManager && (
                       <td className="px-4 py-3 text-right">
@@ -660,7 +661,7 @@ export const RecurringTasks: React.FC = () => {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Next Due Date</p>
-                <p className="text-slate-700 mt-1">{viewTask.due_date}</p>
+                <p className="text-slate-700 mt-1">{formatDateDDMMYYYY(viewTask.due_date)}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Assigned To</p>

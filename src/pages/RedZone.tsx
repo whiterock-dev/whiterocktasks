@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { storage } from '../lib/firebase';
-import { compressImageForUpload, getNextRecurringDueDate, isHoliday } from '../lib/utils';
+import { compressImageForUpload, getNextRecurringDueDate, isHoliday, formatDateDDMMYYYY } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -624,7 +624,8 @@ export const RedZone: React.FC = () => {
                           </span>
                         ) : null}
                         <span>
-                          <span className="font-medium text-slate-700">Due:</span> {t.due_date}
+                          <span className="font-medium text-slate-700">Due:</span>{' '}
+                          {formatDateDDMMYYYY(t.due_date)}
                         </span>
                         <span className="text-red-700 font-semibold">{daysOverdue} day(s) overdue</span>
                         <span>

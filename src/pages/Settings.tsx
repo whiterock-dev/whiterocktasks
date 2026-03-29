@@ -11,6 +11,7 @@ import { Holiday, Absence, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Calendar, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const LIST_MAX_HEIGHT = 'min(20rem, 50vh)';
 
@@ -147,7 +148,7 @@ export const Settings: React.FC = () => {
                         ) : (
                           holidays.map((h) => (
                             <tr key={h.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                              <td className="py-2.5 px-4 text-slate-700">{h.date}</td>
+                              <td className="py-2.5 px-4 text-slate-700">{formatDateDDMMYYYY(h.date)}</td>
                               <td className="py-2.5 px-4 font-medium text-slate-800">{h.name}</td>
                               {isManager && (
                                 <td className="py-2.5 px-4 text-right">
@@ -211,8 +212,8 @@ export const Settings: React.FC = () => {
                           absences.map((a) => (
                             <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50/50">
                               <td className="py-2.5 px-4 font-medium text-slate-800">{a.user_name}</td>
-                              <td className="py-2.5 px-4 text-slate-700">{a.from_date}</td>
-                              <td className="py-2.5 px-4 text-slate-700">{a.to_date}</td>
+                              <td className="py-2.5 px-4 text-slate-700">{formatDateDDMMYYYY(a.from_date)}</td>
+                              <td className="py-2.5 px-4 text-slate-700">{formatDateDDMMYYYY(a.to_date)}</td>
                               <td className="py-2.5 px-4 text-slate-600">{a.reason || '-'}</td>
                             </tr>
                           ))

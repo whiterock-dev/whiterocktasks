@@ -601,6 +601,7 @@ export const api = {
         created_at: timestampToISO(data.created_at),
         resolved_at: data.resolved_at ? timestampToISO(data.resolved_at) : undefined,
         resolved_by: data.resolved_by,
+        rejection_reason: data.rejection_reason || undefined,
       };
     });
   },
@@ -630,6 +631,7 @@ export const api = {
         created_at: timestampToISO(data.created_at),
         resolved_at: data.resolved_at ? timestampToISO(data.resolved_at) : undefined,
         resolved_by: data.resolved_by,
+        rejection_reason: data.rejection_reason || undefined,
       };
     });
     const lastDoc = snap.docs.length === limitCount ? snap.docs[snap.docs.length - 1] : null;
@@ -655,13 +657,20 @@ export const api = {
   resolveRemovalRequest: async (
     id: string,
     status: 'approved' | 'rejected',
-    resolvedBy: string
+    resolvedBy: string,
+    options?: { rejectionReason?: string }
   ): Promise<void> => {
-    await updateDoc(doc(db, COLLECTIONS.REMOVAL_REQUESTS, id), {
+    const payload: Record<string, unknown> = {
       status,
       resolved_at: isoToTimestamp(new Date().toISOString()),
       resolved_by: resolvedBy,
-    });
+    };
+    if (status === 'rejected') {
+      payload.rejection_reason = (options?.rejectionReason ?? '').trim() || null;
+    } else {
+      payload.rejection_reason = null;
+    }
+    await updateDoc(doc(db, COLLECTIONS.REMOVAL_REQUESTS, id), payload);
   },
 
   // --- WhatsApp (11za) ---
