@@ -202,6 +202,30 @@ export function compressImageForUpload(file: File): Promise<File> {
   });
 }
 
+/** Display dates as DD-MM-YYYY (and optional time for full ISO timestamps). */
+export function formatDateDDMMYYYY(
+  value?: string,
+  opts?: { includeTime?: boolean; emptyValue?: string }
+): string {
+  const { includeTime = false, emptyValue = '' } = opts || {};
+  if (!value) return emptyValue;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const parsed = dateOnly ? new Date(`${value}T12:00:00`) : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const yyyy = parsed.getFullYear();
+  const base = `${dd}-${mm}-${yyyy}`;
+  if (includeTime && !dateOnly) {
+    return `${base}, ${parsed.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })}`;
+  }
+  return base;
+}
+
 export function getPendingDays(dueDate: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -20,6 +20,7 @@ import {
     FileText,
     ClipboardCheck,
 } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -36,6 +37,8 @@ export const ApproveTask: React.FC = () => {
     const [totalResults, setTotalResults] = useState(0);
     const [loading, setLoading] = useState(true);
     const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+    const [rejectTask, setRejectTask] = useState<Task | null>(null);
+    const [rejectComment, setRejectComment] = useState('');
 
     const isOwner = user?.role === UserRole.OWNER;
     const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
@@ -107,9 +110,17 @@ export const ApproveTask: React.FC = () => {
         }
     };
 
-    const handleReject = async (task: Task) => {
+    const submitReject = async () => {
+        if (!rejectTask || !user || !rejectComment.trim()) return;
         try {
-            await api.updateTask(task.id, { status: 'correction_required' as Task['status'] });
+            await api.updateTask(rejectTask.id, {
+                status: 'correction_required',
+                verification_rejection_comment: rejectComment.trim(),
+                verification_rejected_at: new Date().toISOString(),
+                verification_rejected_by: user.name,
+            } as Partial<Task>);
+            setRejectTask(null);
+            setRejectComment('');
             setLoading(true);
             await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
         } catch (err) {
@@ -301,7 +312,7 @@ export const ApproveTask: React.FC = () => {
                                                 <span className="text-sm font-medium text-slate-700">{task.verifier_name || '-'}</span>
                                             </td>
                                         )}
-                                        <td className="text-center whitespace-nowrap text-slate-600 font-medium">{task.due_date}</td>
+                                        <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateDDMMYYYY(task.due_date)}</td>
                                         <td className="text-center">
                                             <span
                                                 className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${task.priority === 'urgent'
@@ -344,7 +355,10 @@ export const ApproveTask: React.FC = () => {
                                                     <Button
                                                         size="sm"
                                                         variant="danger"
-                                                        onClick={() => handleReject(task)}
+                                                        onClick={() => {
+                                                            setRejectTask(task);
+                                                            setRejectComment('');
+                                                        }}
                                                         className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
                                                     >
                                                         Reject
@@ -364,6 +378,38 @@ export const ApproveTask: React.FC = () => {
                 </table>
             </div>
             <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">{paginationControls}</div>
+
+            {rejectTask && user && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                    <div className="card p-6 max-w-md w-full shadow-xl">
+                        <h3 className="text-lg font-semibold mb-2 text-slate-800">Reject verification</h3>
+                        <p className="text-sm text-slate-600 mb-3">
+                            Add a comment for <strong>{rejectTask.assigned_to_name}</strong>. They will see it on the task.
+                        </p>
+                        <textarea
+                            value={rejectComment}
+                            onChange={(e) => setRejectComment(e.target.value)}
+                            rows={4}
+                            placeholder="Reason for rejection (required)…"
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="secondary"
+                                onClick={() => {
+                                    setRejectTask(null);
+                                    setRejectComment('');
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button variant="danger" disabled={!rejectComment.trim()} onClick={() => submitReject()}>
+                                Submit rejection
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {viewAttachment && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewAttachment(null)}>

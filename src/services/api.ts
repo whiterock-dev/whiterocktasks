@@ -74,6 +74,14 @@ const docToTask = (d: any): Task => {
     assignee_deleted: data.assignee_deleted === true,
     verified_at: data.verified_at ? timestampToISO(data.verified_at) : undefined,
     verified_by: data.verified_by,
+    verification_rejection_comment: data.verification_rejection_comment,
+    verification_rejected_at:
+      data.verification_rejected_at == null
+        ? undefined
+        : typeof data.verification_rejected_at === 'string'
+          ? data.verification_rejected_at
+          : timestampToISO(data.verification_rejected_at),
+    verification_rejected_by: data.verification_rejected_by,
   };
 };
 

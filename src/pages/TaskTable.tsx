@@ -14,7 +14,7 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays } from '../lib/utils';
+import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getNextRecurringDueDate } from '../lib/utils';
 import {
   Paperclip,
   Check,
@@ -103,6 +103,8 @@ export const TaskTable: React.FC = () => {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [rejectTask, setRejectTask] = useState<Task | null>(null);
+  const [rejectComment, setRejectComment] = useState('');
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -187,6 +189,17 @@ export const TaskTable: React.FC = () => {
       dueDateTo?: string;
       verifierId?: string;
     } = {};
+    const openStatuses: Task['status'][] = [
+      'pending',
+      'in_progress',
+      'overdue',
+      'cancelled',
+      'closed_permanently',
+      'pending_verification',
+      'correction_required',
+    ];
+    const withCompleted: Task['status'][] = [...openStatuses, 'completed'];
+
     if (isSelfTasksView) {
       filters.assignedTo = user?.id ?? '';
     }
@@ -197,27 +210,28 @@ export const TaskTable: React.FC = () => {
       filters.verifierId = user?.id ?? '';
       filters.status = 'pending_verification';
     }
-    if (!isSelfTasksView && !isVerifier && statusFilter) {
-      filters.status = statusFilter as Task['status'];
-    }
-    if (!isSelfTasksView && !isVerifier && !statusFilter) {
-      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
-    }
-    if (isSelfTasksView && statusFilter) {
-      filters.status = statusFilter as Task['status'];
-    }
-    if (isSelfTasksView && !statusFilter) {
-      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'closed_permanently', 'pending_verification', 'correction_required'];
-    }
-    if (!isSelfTasksView && !isVerifier && recurringFilter) filters.recurring = recurringFilter;
 
-    // Apply date range filters for both doer and manager views
+    if (!isAuditor && !isVerifier) {
+      if (!isSelfTasksView && statusFilter) {
+        filters.status = statusFilter as Task['status'];
+      } else if (isSelfTasksView && statusFilter) {
+        filters.status = statusFilter as Task['status'];
+      } else if (!isSelfTasksView && !statusFilter) {
+        filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+      } else if (isSelfTasksView && !statusFilter) {
+        filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+      }
+      if (recurringFilter) {
+        filters.recurring = recurringFilter;
+      }
+    }
+
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
     if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
 
     return filters;
-  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter]);
+  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter, dateFilter]);
 
   const getDoerBaseFilters = useCallback(() => {
     const filters: {
@@ -225,12 +239,28 @@ export const TaskTable: React.FC = () => {
       statusIn?: Task['status'][];
       dueDateFrom?: string;
       dueDateTo?: string;
+      recurring?: string;
     } = {};
+
+    const openStatuses: Task['status'][] = [
+      'pending',
+      'in_progress',
+      'overdue',
+      'cancelled',
+      'closed_permanently',
+      'pending_verification',
+      'correction_required',
+    ];
+    const withCompleted: Task['status'][] = [...openStatuses, 'completed'];
 
     if (statusFilter) {
       filters.status = statusFilter as Task['status'];
     } else {
-      filters.statusIn = ['pending', 'in_progress', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+      filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+    }
+
+    if (recurringFilter) {
+      filters.recurring = recurringFilter;
     }
 
     const range = resolveDoerDateRange();
@@ -238,7 +268,7 @@ export const TaskTable: React.FC = () => {
     if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
 
     return filters;
-  }, [resolveDoerDateRange, statusFilter]);
+  }, [resolveDoerDateRange, statusFilter, recurringFilter, dateFilter]);
 
   const sortRowsByConfig = useCallback(
     (rows: Task[]) => {
@@ -309,32 +339,10 @@ export const TaskTable: React.FC = () => {
 
   const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
 
-  const formatDateValue = useCallback(
-    (value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
-      const { includeTime = false, emptyValue = '' } = opts || {};
-      if (!value) return emptyValue;
-
-      const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
-        ? new Date(`${value}T00:00:00`)
-        : new Date(value);
-
-      if (Number.isNaN(parsed.getTime())) return value;
-
-      if (includeTime) {
-        return parsed.toLocaleString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
-      }
-
-      return parsed.toISOString().split('T')[0];
-    },
-    []
-  );
+  const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
+    const { includeTime = false, emptyValue = '' } = opts || {};
+    return formatDateDDMMYYYY(value, { includeTime, emptyValue });
+  }, []);
 
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -954,49 +962,96 @@ export const TaskTable: React.FC = () => {
     if (!editingTask || !user) return;
     setEditError('');
 
-    if (editVerificationRequired && !editVerifierId) {
-      setEditError('Please select a verifier when verification is required.');
-      return;
-    }
+    const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user.id;
 
-    if (editVerificationRequired && editVerifierId === editAssignedToId) {
-      setEditError('Verifier and assignee cannot be the same member.');
-      return;
+    if (!isAssigneeLimitedEdit) {
+      if (editVerificationRequired && !editVerifierId) {
+        setEditError('Please select a verifier when verification is required.');
+        return;
+      }
+
+      if (editVerificationRequired && editVerifierId === editAssignedToId) {
+        setEditError('Verifier and assignee cannot be the same member.');
+        return;
+      }
     }
 
     setEditSubmitting(true);
     try {
-      const assigneeUser = allUsers.find((u) => u.id === editAssignedToId);
-      const verifierUser = allUsers.find((u) => u.id === editVerifierId);
-      const updates: Partial<Task> = {
-        title: editTitle,
-        description: editDesc,
-        start_date: editStartDate || (null as any),
-        assigned_to_id: editAssignedToId,
-        assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
-        assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
-        due_date: editDueDate,
-        priority: editPriority,
-        recurring: editRecurring,
-        recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
-        attachment_required: editAttachmentRequired,
-        attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
-        attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
-        verification_required: editVerificationRequired,
-        verifier_id: editVerificationRequired ? editVerifierId : (null as any),
-        verifier_name: editVerificationRequired ? (verifierUser?.name || '') : (null as any),
-        assignee_deleted: false, // Reset flag if reassigned to active user
-      };
+      if (isAssigneeLimitedEdit) {
+        const updates: Partial<Task> = {
+          title: editTitle,
+          description: editDesc,
+          start_date: editStartDate || (null as any),
+          due_date: editDueDate,
+          priority: editPriority,
+          recurring: editRecurring,
+          recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+          attachment_required: editAttachmentRequired,
+          attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
+          attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
+        };
+        if (editingTask.due_date !== editDueDate) {
+          updates.is_holiday = isHoliday(editDueDate, holidays);
+        }
+        await api.updateTask(editingTask.id, updates);
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t
+          )
+        );
+        setNameFilteredRows((prev) =>
+          prev
+            ? prev.map((t) =>
+                t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t
+              )
+            : null
+        );
+        setEditingTask(null);
+        setRefreshToken((x) => x + 1);
+      } else {
+        const assigneeUser = allUsers.find((u) => u.id === editAssignedToId);
+        const verifierUser = allUsers.find((u) => u.id === editVerifierId);
+        const updates: Partial<Task> = {
+          title: editTitle,
+          description: editDesc,
+          start_date: editStartDate || (null as any),
+          assigned_to_id: editAssignedToId,
+          assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
+          assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
+          due_date: editDueDate,
+          priority: editPriority,
+          recurring: editRecurring,
+          recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+          attachment_required: editAttachmentRequired,
+          attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
+          attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
+          verification_required: editVerificationRequired,
+          verifier_id: editVerificationRequired ? editVerifierId : (null as any),
+          verifier_name: editVerificationRequired ? (verifierUser?.name || '') : (null as any),
+          assignee_deleted: false,
+        };
 
-      // Update holiday status if due date changed
-      if (editingTask.due_date !== editDueDate) {
-        updates.is_holiday = isHoliday(editDueDate, holidays);
+        if (editingTask.due_date !== editDueDate) {
+          updates.is_holiday = isHoliday(editDueDate, holidays);
+        }
+
+        await api.updateTask(editingTask.id, updates);
+
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t
+          )
+        );
+        setNameFilteredRows((prev) =>
+          prev
+            ? prev.map((t) =>
+                t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t
+              )
+            : null
+        );
+        setEditingTask(null);
       }
-
-      await api.updateTask(editingTask.id, updates);
-
-      setTasks((prev) => prev.map((t) => (t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t)));
-      setEditingTask(null);
     } catch (err) {
       console.error('Failed to update task:', err);
     } finally {
@@ -1248,7 +1303,7 @@ export const TaskTable: React.FC = () => {
                       <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                     )}
                   </td>
-                  <td className="text-center whitespace-nowrap text-slate-600 font-medium">{t.due_date}</td>
+                  <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateValue(t.due_date)}</td>
                   <td className="text-center">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
@@ -1336,14 +1391,9 @@ export const TaskTable: React.FC = () => {
                         <Button
                           size="sm"
                           variant="danger"
-                          onClick={async () => {
-                            try {
-                              await api.updateTask(t.id, { status: 'correction_required' as Task['status'] });
-                              setLoading(true);
-                              await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
-                            } catch (err) {
-                              console.error(err);
-                            }
+                          onClick={() => {
+                            setRejectTask(t);
+                            setRejectComment('');
                           }}
                           className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
                         >
@@ -1768,8 +1818,12 @@ export const TaskTable: React.FC = () => {
                         {t.assigned_by_name}
                       </span>
                     </td>
-                    <td className="text-center whitespace-nowrap text-slate-600">{t.start_date || '-'}</td>
-                    <td className="text-center whitespace-nowrap text-slate-600 font-medium">{t.due_date}</td>
+                    <td className="text-center whitespace-nowrap text-slate-600">
+                      {t.start_date ? formatDateValue(t.start_date) : '-'}
+                    </td>
+                    <td className="text-center whitespace-nowrap text-slate-600 font-medium">
+                      {formatDateValue(t.due_date)}
+                    </td>
                     <td className="text-center">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
@@ -1788,28 +1842,36 @@ export const TaskTable: React.FC = () => {
                       </span>
                     </td>
                     <td className="text-center">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : t.status === 'overdue'
-                            ? 'bg-red-100 text-red-800'
+                      <div className="flex flex-col items-center gap-1 max-w-[14rem] mx-auto">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : t.status === 'overdue'
+                              ? 'bg-red-100 text-red-800'
+                              : t.status === 'correction_required'
+                                ? 'bg-amber-100 text-amber-800'
+                                : t.status === 'pending_verification'
+                                  ? 'bg-sky-100 text-sky-800'
+                                  : t.status === 'closed_permanently'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : 'bg-slate-100 text-slate-600'
+                            }`}
+                        >
+                          {t.status === 'pending_verification'
+                            ? 'Pending Verification'
                             : t.status === 'correction_required'
-                              ? 'bg-amber-100 text-amber-800'
-                              : t.status === 'pending_verification'
-                                ? 'bg-sky-100 text-sky-800'
-                                : t.status === 'closed_permanently'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : 'bg-slate-100 text-slate-600'
-                          }`}
-                      >
-                        {t.status === 'pending_verification'
-                          ? 'Pending Verification'
-                          : t.status === 'correction_required'
-                            ? 'Correction Required'
-                            : t.status === 'closed_permanently'
-                              ? 'Closed Permanently'
-                              : t.status}
-                      </span>
+                              ? 'Correction Required'
+                              : t.status === 'closed_permanently'
+                                ? 'Closed Permanently'
+                                : t.status}
+                        </span>
+                        {t.status === 'correction_required' && t.verification_rejection_comment && (
+                          <p className="text-xs text-amber-900 text-left w-full break-words" title={t.verification_rejection_comment}>
+                            <span className="font-medium">Verifier: </span>
+                            {t.verification_rejection_comment}
+                          </p>
+                        )}
+                      </div>
                     </td>
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
@@ -1834,26 +1896,39 @@ export const TaskTable: React.FC = () => {
                     </td>
                     <td className="py-3 px-2 text-right pr-4">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
-                        {t.assigned_to_id === user?.id &&
-                          t.status !== 'completed' &&
-                          t.status !== 'pending_verification' && (
-                            <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
-                              Complete
-                            </Button>
-                          )}
-                        {!isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id) && (
-                          <>
-                            <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
-                              <Pencil size={15} />
-                            </Button>
-                            <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="!px-2" title="Delete Task">
-                              <Trash2 size={15} />
-                            </Button>
-                          </>
-                        )}
-                        {!(t.assigned_to_id === user?.id && t.status !== 'completed') && !(!isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id)) && (
-                          <span className="text-slate-400 text-center">-</span>
-                        )}
+                        {(() => {
+                          const showComplete =
+                            t.assigned_to_id === user?.id &&
+                            t.status !== 'completed' &&
+                            t.status !== 'pending_verification';
+                          const canEditTask =
+                            (isSelfTasksView && t.assigned_to_id === user?.id) ||
+                            (!isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id)) ||
+                            (isSelfTasksView && (isOwner || isManager) && t.assigned_by_id === user?.id);
+                          const canDeleteTask =
+                            !isSelfTasksView && (isOwner || isManager || t.assigned_by_id === user?.id);
+                          const hasAnyAction = showComplete || canEditTask || canDeleteTask;
+                          return (
+                            <>
+                              {showComplete && (
+                                <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
+                                  Complete
+                                </Button>
+                              )}
+                              {canEditTask && (
+                                <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
+                                  <Pencil size={15} />
+                                </Button>
+                              )}
+                              {canDeleteTask && (
+                                <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="!px-2" title="Delete Task">
+                                  <Trash2 size={15} />
+                                </Button>
+                              )}
+                              {!hasAnyAction && <span className="text-slate-400 text-center">-</span>}
+                            </>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -1952,7 +2027,22 @@ export const TaskTable: React.FC = () => {
                   )}
               </div>
             ))}
-            <div className="flex gap-2 justify-end">
+            <div className="flex flex-wrap gap-2 justify-end">
+              {completeTask.recurring !== 'none' && (
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    handleComplete(
+                      completeTask,
+                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
+                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                      { closePermanently: true }
+                    )
+                  }
+                >
+                  Close Permanently
+                </Button>
+              )}
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>
@@ -2009,6 +2099,58 @@ export const TaskTable: React.FC = () => {
         </div>
       )}
 
+      {rejectTask && user && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="card p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-semibold mb-2 text-slate-800">Reject verification</h3>
+            <p className="text-sm text-slate-600 mb-3">
+              Add a comment for <strong>{rejectTask.assigned_to_name}</strong>. They will see it on the task.
+            </p>
+            <textarea
+              value={rejectComment}
+              onChange={(e) => setRejectComment(e.target.value)}
+              rows={4}
+              placeholder="Reason for rejection (required)…"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRejectTask(null);
+                  setRejectComment('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                disabled={!rejectComment.trim()}
+                onClick={async () => {
+                  if (!rejectComment.trim()) return;
+                  try {
+                    await api.updateTask(rejectTask.id, {
+                      status: 'correction_required',
+                      verification_rejection_comment: rejectComment.trim(),
+                      verification_rejected_at: new Date().toISOString(),
+                      verification_rejected_by: user.name,
+                    } as Partial<Task>);
+                    setRejectTask(null);
+                    setRejectComment('');
+                    setLoading(true);
+                    await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+              >
+                Submit rejection
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingTask && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="card p-6 max-w-lg w-full shadow-xl">
@@ -2018,6 +2160,9 @@ export const TaskTable: React.FC = () => {
                 {editError}
               </div>
             )}
+            {(() => {
+              const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user?.id;
+              return (
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
@@ -2041,6 +2186,11 @@ export const TaskTable: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+                  {isAssigneeLimitedEdit ? (
+                    <p className="h-10 flex items-center text-sm text-slate-800 border border-slate-200 rounded-lg px-3 bg-slate-50">
+                      {editingTask.assigned_to_name}
+                    </p>
+                  ) : (
                   <select
                     value={editAssignedToId}
                     onChange={(e) => setEditAssignedToId(e.target.value)}
@@ -2054,6 +2204,7 @@ export const TaskTable: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
@@ -2148,6 +2299,7 @@ export const TaskTable: React.FC = () => {
                 </div>
               )}
 
+              {!isAssigneeLimitedEdit && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-2">
                   <input
@@ -2187,6 +2339,7 @@ export const TaskTable: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
               {editRecurring === 'daily' && (
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                   <p className="text-xs text-slate-600 mb-2 font-medium">Recurring Days</p>
@@ -2222,6 +2375,8 @@ export const TaskTable: React.FC = () => {
                 </Button>
               </div>
             </form>
+              );
+            })()}
           </div>
         </div>
       )}
