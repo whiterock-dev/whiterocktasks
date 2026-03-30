@@ -214,7 +214,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/my-tasks': 'My Tasks',
               '/assigned-by-me': 'Assigned By Me',
               '/members': 'Members',
-              '/completed-tasks': 'Completed Tasks',
+              '/completed-tasks': 'Completed & Closed Tasks',
               '/approve': 'Approve Task',
               '/settings': 'Settings',
             };
