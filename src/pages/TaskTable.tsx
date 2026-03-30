@@ -944,6 +944,11 @@ export const TaskTable: React.FC = () => {
     if (!editingTask || !user) return;
     setEditError('');
 
+    if (editStartDate && editDueDate < editStartDate) {
+      setEditError('Due date cannot be before start date.');
+      return;
+    }
+
     const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user.id;
 
     if (!isAssigneeLimitedEdit) {
@@ -2210,6 +2215,7 @@ export const TaskTable: React.FC = () => {
                         type="date"
                         value={editDueDate}
                         onChange={(e) => setEditDueDate(e.target.value)}
+                        min={editStartDate || undefined}
                         required
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                       />

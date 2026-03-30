@@ -297,9 +297,7 @@ export const AssignedByMe: React.FC = () => {
       ...baseFilters,
     });
 
-    const filteredRows = assignedByRows.filter((task) => task.assigned_to_id !== user.id);
-
-    return sortRowsByConfig(filteredRows);
+    return sortRowsByConfig(assignedByRows);
   }, [getDoerBaseFilters, sortConfig, sortRowsByConfig, user?.id]);
 
   const applyNameFilters = useCallback(
@@ -921,6 +919,11 @@ export const AssignedByMe: React.FC = () => {
     e.preventDefault();
     if (!editingTask || !user) return;
     setEditError('');
+
+    if (editStartDate && editDueDate < editStartDate) {
+      setEditError('Due date cannot be before start date.');
+      return;
+    }
 
     const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user.id;
 
@@ -2184,6 +2187,7 @@ export const AssignedByMe: React.FC = () => {
                         type="date"
                         value={editDueDate}
                         onChange={(e) => setEditDueDate(e.target.value)}
+                        min={editStartDate || undefined}
                         required
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                       />
