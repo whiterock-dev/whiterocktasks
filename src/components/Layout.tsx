@@ -65,6 +65,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   if (!user) return <>{children}</>;
 
+  const isDoer = user.role === UserRole.DOER;
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
@@ -91,6 +92,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         { to: '/kpi', icon: BarChart3, label: 'KPI' },
         { to: '/tasks', icon: Table2, label: 'Task Table' },
         ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks' }] : []),
+        ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me' }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks' },
         { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
@@ -210,6 +212,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/redzone': 'Overdue',
               '/kpi': 'KPI Dashboard',
               '/my-tasks': 'My Tasks',
+              '/assigned-by-me': 'Assigned By Me',
               '/members': 'Members',
               '/completed-tasks': 'Completed Tasks',
               '/approve': 'Approve Task',
