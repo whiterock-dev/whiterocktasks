@@ -50,7 +50,7 @@ const DAYS = [
   { value: 6, label: 'Sun' },
 ];
 
-export const TaskTable: React.FC = () => {
+export const AssignedByMe: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -129,9 +129,8 @@ export const TaskTable: React.FC = () => {
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
   const isDoer = user?.role === UserRole.DOER;
   const isVerifier = user?.role === UserRole.VERIFIER;
-  const isMyTasksRoute = location.pathname === '/my-tasks';
-  const isManagerMyTasksView = isManager && isMyTasksRoute;
-  const isSelfTasksView = isDoer || (isManager && isMyTasksRoute);
+  const isMyTasksRoute = false;
+  const isSelfTasksView = true;
 
   const getTodayLocal = useCallback(() => {
     const now = new Date();
@@ -294,17 +293,6 @@ export const TaskTable: React.FC = () => {
     if (!user?.id) return [];
 
     const baseFilters = getDoerBaseFilters();
-    const assignedToRows = await api.getAllTasksByFilters({
-      assignedTo: user.id,
-      sortBy: sortConfig?.key,
-      sortDirection: sortConfig?.direction,
-      ...baseFilters,
-    });
-
-    // In owner/manager My Tasks, show only tasks assigned to the logged-in user.
-    if (isManagerMyTasksView) {
-      return sortRowsByConfig(assignedToRows);
-    }
 
     const assignedByRows = await api.getAllTasksByFilters({
       assignedBy: user.id,
@@ -313,13 +301,10 @@ export const TaskTable: React.FC = () => {
       ...baseFilters,
     });
 
-    const mergedById = new Map<string, Task>();
-    [...assignedToRows, ...assignedByRows].forEach((task) => {
-      mergedById.set(task.id, task);
-    });
+    const filteredRows = assignedByRows.filter((task) => task.assigned_to_id !== user.id);
 
-    return sortRowsByConfig(Array.from(mergedById.values()));
-  }, [getDoerBaseFilters, isManagerMyTasksView, sortConfig, sortRowsByConfig, user?.id]);
+    return sortRowsByConfig(filteredRows);
+  }, [getDoerBaseFilters, sortConfig, sortRowsByConfig, user?.id]);
 
   const applyNameFilters = useCallback(
     (list: Task[]) => {
@@ -672,13 +657,6 @@ export const TaskTable: React.FC = () => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
 
-  // Initialize Assigned To filter with logged-in doer's name when in self view
-  useEffect(() => {
-    if (isSelfTasksView && isDoer && user?.name && !assignedToFilter) {
-      setAssignedToFilter(user.name);
-    }
-  }, [isSelfTasksView, isDoer, user?.name]);
-
   // For doer view, build the set of names that doer has assigned tasks to
   useEffect(() => {
     if (!isSelfTasksView || !isDoer || !user?.name) {
@@ -689,9 +667,6 @@ export const TaskTable: React.FC = () => {
     // Extract names from all loaded rows where current user is the assigner
     const rowsToCheck = nameFilteredRows || tasks;
     const restricted = new Set<string>();
-
-    // Always include current user's own name
-    restricted.add(user.name);
 
     // Also add names of people they've assigned tasks to
     rowsToCheck.forEach((task) => {
@@ -1434,11 +1409,7 @@ export const TaskTable: React.FC = () => {
   return (
     <div>
       <p className="text-slate-500 text-sm mb-4">
-        {isMyTasksRoute
-          ? 'View and manage only your own tasks.'
-          : isManager
-            ? 'Manage and track all tasks across the team.'
-            : 'View and manage your assigned tasks.'}
+        View and manage tasks you have assigned to others.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">

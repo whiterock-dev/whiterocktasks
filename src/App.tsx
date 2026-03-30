@@ -21,6 +21,7 @@ const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m
 const Members = lazy(() => import('./pages/Members').then((m) => ({ default: m.Members })));
 const BogusAttachment = lazy(() => import('./pages/BogusAttachment').then((m) => ({ default: m.BogusAttachment })));
 const RecurringTasks = lazy(() => import('./pages/RecurringTasks').then((m) => ({ default: m.RecurringTasks })));
+const AssignedByMe = lazy(() => import('./pages/AssignedByMe').then((m) => ({ default: m.AssignedByMe })));
 
 const PageFallback = () => <div className="text-slate-500 py-8">Loading...</div>;
 
@@ -90,6 +91,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <TaskTable />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/assigned-by-me"
+              element={
+                <ProtectedRoute>
+                  <AssignedByMe />
                 </ProtectedRoute>
               }
             />

@@ -40,17 +40,14 @@ export const ApproveTask: React.FC = () => {
     const [rejectTask, setRejectTask] = useState<Task | null>(null);
     const [rejectComment, setRejectComment] = useState('');
 
-    const isOwner = user?.role === UserRole.OWNER;
-    const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
     const isDoer = user?.role === UserRole.DOER;
-    const canSeeAllApprovalTasks = isOwner || isManager;
 
     const getActiveFilters = useCallback(() => {
         return {
             status: 'pending_verification' as Task['status'],
-            verifierId: canSeeAllApprovalTasks ? undefined : user?.id ?? '',
+            verifierId: user?.id ?? '',
         };
-    }, [canSeeAllApprovalTasks, user?.id]);
+    }, [user?.id]);
 
     const loadPage = useCallback(
         async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -261,9 +258,7 @@ export const ApproveTask: React.FC = () => {
     return (
         <div>
             <p className="text-slate-500 text-sm mb-4">
-                {canSeeAllApprovalTasks
-                    ? 'All tasks awaiting verification. You can approve only the tasks where you are the selected verifier.'
-                    : 'Tasks awaiting your verification. Approve or reject after review.'}
+                Tasks awaiting your verification. Approve or reject after review.
             </p>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">{paginationControls}</div>
             <div className="table-container">

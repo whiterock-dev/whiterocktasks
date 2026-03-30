@@ -247,7 +247,7 @@ export const api = {
     const hasDueDateRange = Boolean(dueDateFrom || dueDateTo);
     const effectiveSortBy = sortBy || (hasDueDateRange ? 'due_date' : 'updated_at');
     const effectiveSortDirection = sortDirection || 'desc';
-    const constraints: unknown[] = [
+    const constraints: any[] = [
       orderBy(effectiveSortBy, effectiveSortDirection),
     ];
     if (assignedTo) {
@@ -287,55 +287,51 @@ export const api = {
       return { tasks, lastDoc };
     } catch (error) {
       const firestoreError = error as FirestoreError;
-      const isIndexError = firestoreError?.code === 'failed-precondition';
-      if (!isIndexError) throw error;
+      const isFallbackError = firestoreError?.code === 'failed-precondition' || firestoreError?.code === 'invalid-argument';
+      if (!isFallbackError) throw error;
 
-      // Fallback when composite index is missing: query without orderBy/startAfter,
-      // then sort client-side and return all matches in a single batch.
-      const fallbackConstraints: unknown[] = [];
+      // Fallback when composite index is missing or multi-inequality is rejected:
+      // Query primarily by ONE equality field, then filter and sort client-side
+      // to avoid any further index or equality-mixing errors.
+      const fallbackConstraints: any[] = [];
       if (assignedTo) {
         fallbackConstraints.push(where('assigned_to_id', '==', assignedTo));
-      }
-      if (assignedBy) {
+      } else if (assignedBy) {
         fallbackConstraints.push(where('assigned_by_id', '==', assignedBy));
-      }
-      if (verifierId) {
+      } else if (verifierId) {
         fallbackConstraints.push(where('verifier_id', '==', verifierId));
-      }
-      if (status) {
+      } else if (status) {
         fallbackConstraints.push(where('status', '==', status));
-      }
-      if (statusIn && statusIn.length > 0) {
-        fallbackConstraints.push(where('status', 'in', statusIn));
-      }
-      if (recurring) {
-        fallbackConstraints.push(where('recurring', '==', recurring));
-      }
-      if (dueDateFrom) {
-        fallbackConstraints.push(where('due_date', '>=', dueDateFrom));
-      }
-      if (dueDateTo) {
-        fallbackConstraints.push(where('due_date', '<=', dueDateTo));
       }
 
       const fallbackQuery =
         fallbackConstraints.length > 0
-          ? query(tasksRef, ...fallbackConstraints)
+          ? query(tasksRef, fallbackConstraints[0]) // Only use the FIRST constraint!
           : query(tasksRef);
+      
       const fallbackSnap = await getDocs(fallbackQuery);
-      const tasks = fallbackSnap.docs
-        .map((d) => docToTask(d))
-        .sort((a, b) => {
-          const aValue = (a[effectiveSortBy] || '') as string;
-          const bValue = (b[effectiveSortBy] || '') as string;
-          if (aValue === bValue) return 0;
-          if (!aValue) return 1;
-          if (!bValue) return -1;
-          if (effectiveSortDirection === 'asc') {
-            return aValue < bValue ? -1 : 1;
-          }
-          return aValue > bValue ? -1 : 1;
-        });
+      let rawTasks = fallbackSnap.docs.map((d) => docToTask(d));
+
+      if (assignedTo) rawTasks = rawTasks.filter((t) => t.assigned_to_id === assignedTo);
+      if (assignedBy) rawTasks = rawTasks.filter((t) => t.assigned_by_id === assignedBy);
+      if (verifierId) rawTasks = rawTasks.filter((t) => t.verifier_id === verifierId);
+      if (status) rawTasks = rawTasks.filter((t) => t.status === status);
+      if (statusIn && statusIn.length > 0) rawTasks = rawTasks.filter((t) => statusIn.includes(t.status as TaskStatus));
+      if (recurring) rawTasks = rawTasks.filter((t) => t.recurring === recurring);
+      if (dueDateFrom) rawTasks = rawTasks.filter((t) => t.due_date && t.due_date >= dueDateFrom);
+      if (dueDateTo) rawTasks = rawTasks.filter((t) => t.due_date && t.due_date <= dueDateTo);
+
+      const tasks = rawTasks.sort((a, b) => {
+        const aValue = (a[effectiveSortBy] || '') as string;
+        const bValue = (b[effectiveSortBy] || '') as string;
+        if (aValue === bValue) return 0;
+        if (!aValue) return 1;
+        if (!bValue) return -1;
+        if (effectiveSortDirection === 'asc') {
+          return aValue < bValue ? -1 : 1;
+        }
+        return aValue > bValue ? -1 : 1;
+      });
 
       return { tasks, lastDoc: null };
     }
@@ -390,7 +386,7 @@ export const api = {
     verifierId?: string;
   }): Promise<number> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
-    const constraints: unknown[] = [];
+    const constraints: any[] = [];
     if (filters?.assignedTo) constraints.push(where('assigned_to_id', '==', filters.assignedTo));
     if (filters?.assignedBy) constraints.push(where('assigned_by_id', '==', filters.assignedBy));
     if (filters?.verifierId) constraints.push(where('verifier_id', '==', filters.verifierId));
