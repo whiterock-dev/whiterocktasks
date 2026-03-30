@@ -193,11 +193,9 @@ export const AssignedByMe: React.FC = () => {
       'in_progress',
       'overdue',
       'cancelled',
-      'closed_permanently',
       'pending_verification',
       'correction_required',
     ];
-    const withCompleted: Task['status'][] = [...openStatuses, 'completed'];
 
     if (isSelfTasksView) {
       filters.assignedTo = user?.id ?? '';
@@ -216,9 +214,9 @@ export const AssignedByMe: React.FC = () => {
       } else if (isSelfTasksView && statusFilter) {
         filters.status = statusFilter as Task['status'];
       } else if (!isSelfTasksView && !statusFilter) {
-        filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+        filters.statusIn = openStatuses;
       } else if (isSelfTasksView && !statusFilter) {
-        filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+        filters.statusIn = openStatuses;
       }
       if (recurringFilter) {
         filters.recurring = recurringFilter;
@@ -246,16 +244,14 @@ export const AssignedByMe: React.FC = () => {
       'in_progress',
       'overdue',
       'cancelled',
-      'closed_permanently',
       'pending_verification',
       'correction_required',
     ];
-    const withCompleted: Task['status'][] = [...openStatuses, 'completed'];
 
     if (statusFilter) {
       filters.status = statusFilter as Task['status'];
     } else {
-      filters.statusIn = dateFilter === 'all_time' ? withCompleted : openStatuses;
+      filters.statusIn = openStatuses;
     }
 
     if (recurringFilter) {
@@ -651,48 +647,20 @@ export const AssignedByMe: React.FC = () => {
   // We will assume basic extraction from loaded tasks for now to avoid additional reads if not necessary,
   // OR we can fetch users. Let's fetch all users to populate the dropdowns properly.)
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [doerRestrictedNames, setDoerRestrictedNames] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
 
-  // For doer view, build the set of names that doer has assigned tasks to
-  useEffect(() => {
-    if (!isSelfTasksView || !isDoer || !user?.name) {
-      setDoerRestrictedNames(new Set());
-      return;
-    }
-
-    // Extract names from all loaded rows where current user is the assigner
-    const rowsToCheck = nameFilteredRows || tasks;
-    const restricted = new Set<string>();
-
-    // Also add names of people they've assigned tasks to
-    rowsToCheck.forEach((task) => {
-      if (task.assigned_by_id === user.id && task.assigned_to_name) {
-        restricted.add(task.assigned_to_name);
-      }
-    });
-
-    setDoerRestrictedNames(restricted);
-  }, [isSelfTasksView, isDoer, user?.id, user?.name, tasks, nameFilteredRows]);
-
   const nameOptions = Array.from(
     new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
   ).sort((a, b) => a.localeCompare(b));
 
-  // For doer view, restrict assignedToNameOptions to only names they've assigned to
-  // For manager view, show all names
-  const baseAssignedToOptions = isSelfTasksView && isDoer
-    ? nameOptions.filter((name) => doerRestrictedNames.has(name))
-    : nameOptions;
-
-  const assignedToNameOptions = baseAssignedToOptions.filter((name) =>
-    name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
+  const assignedToNameOptions = nameOptions.filter((name) =>
+    name.toLowerCase().includes(debouncedAssignedTo.toLowerCase().trim())
   );
   const assignedByNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
+    name.toLowerCase().includes(debouncedAssignedBy.toLowerCase().trim())
   );
 
   useEffect(() => {
@@ -1063,8 +1031,6 @@ export const AssignedByMe: React.FC = () => {
       setLoading(false);
     }
   };
-
-  if (loading) return <div className="text-slate-500">Loading...</div>;
 
   const startRow = effectiveTotalResults === 0 || sortedTasks.length === 0
     ? 0
@@ -1890,15 +1856,13 @@ export const AssignedByMe: React.FC = () => {
                             t.status !== 'completed' &&
                             t.status !== 'pending_verification';
                           const isAssigner = t.assigned_by_id === user?.id;
-                          const isAssignee = t.assigned_to_id === user?.id;
                           const isManagerOrOwner = isOwner || isManager;
                           const assignerUser = allUsers.find(u => u.id === t.assigned_by_id);
                           const isAssignedByDoer = assignerUser?.role === UserRole.DOER;
 
                           const canEditTask =
                             isAssigner ||
-                            (isSelfTasksView && isAssignee && !(isManagerOrOwner && isAssignedByDoer)) ||
-                            (!isSelfTasksView && isManagerOrOwner && !isAssignedByDoer);
+                            (isManagerOrOwner && !isAssignedByDoer);
 
                           const canDeleteTask =
                             isAssigner ||
