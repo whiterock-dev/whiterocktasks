@@ -54,14 +54,14 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            <Route
+            {/* <Route
               path="/removal"
               element={
                 <ProtectedRoute>
                   <RemovalRequest />
                 </ProtectedRoute>
               }
-            />
+            /> */}
             <Route
               path="/redzone"
               element={

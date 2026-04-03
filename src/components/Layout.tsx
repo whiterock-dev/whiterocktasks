@@ -128,7 +128,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       ]
       : [
         ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
-        { to: '/removal', icon: Trash2, label: 'Removal Request' },
+        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
+        // { to: '/removal', icon: Trash2, label: 'Removal Request' },
         ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue' }] : []),
         { to: '/kpi', icon: BarChart3, label: 'KPI' },
         { to: '/tasks', icon: Table2, label: 'Task Table' },
@@ -136,7 +137,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me' }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks' },
         { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
-        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
         ...(isManager ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
         { to: '/settings', icon: Settings, label: 'Settings' },
       ];

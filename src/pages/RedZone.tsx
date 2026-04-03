@@ -57,6 +57,7 @@ export const RedZone: React.FC = () => {
   const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
+  const [doerRemark, setDoerRemark] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentText, setAttachmentText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -68,7 +69,7 @@ export const RedZone: React.FC = () => {
   const [editDesc, setEditDesc] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
-  const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
+  // const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -248,9 +249,10 @@ export const RedZone: React.FC = () => {
   );
 
   const handleComplete = useCallback(
-    async (task: Task, url?: string, text?: string, opts?: { closePermanently?: boolean }) => {
+    async (task: Task, url?: string, text?: string, remark?: string, opts?: { closePermanently?: boolean }) => {
       if (!user) return;
       const closePermanently = opts?.closePermanently === true;
+      if (!closePermanently && !remark?.trim()) return;
       if (task.attachment_required && !closePermanently) {
         const isText = task.attachment_type === 'text';
         if (isText && !text?.trim()) return;
@@ -274,6 +276,7 @@ export const RedZone: React.FC = () => {
         const baseUpdates: Partial<Task> = {
           ...(url && { attachment_url: url }),
           ...(text && { attachment_text: text }),
+          ...(!closePermanently && { doer_remark: remark?.trim() }),
         };
 
         if (closePermanently && task.recurring !== 'none') {
@@ -296,6 +299,7 @@ export const RedZone: React.FC = () => {
         }
 
         setCompleteTask(null);
+        setDoerRemark('');
         setAttachmentUrl('');
         setAttachmentText('');
         setAttachmentFile(null);
@@ -311,19 +315,14 @@ export const RedZone: React.FC = () => {
   );
 
   const handleCompleteClick = (task: Task) => {
-    const isRecurringTask = task.recurring !== 'none';
-    if (task.attachment_required || isRecurringTask) {
-      setCompleteTask(task);
-      setAttachmentUrl('');
-      setAttachmentText('');
-      setAttachmentFile(null);
-      setUploading(false);
-      setUploadProgress(0);
-      setUploadError(null);
-      return;
-    }
-
-    handleComplete(task, undefined, undefined).catch(console.error);
+    setCompleteTask(task);
+    setDoerRemark('');
+    setAttachmentUrl('');
+    setAttachmentText('');
+    setAttachmentFile(null);
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadError(null);
   };
 
   const handleMediaFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,6 +361,7 @@ export const RedZone: React.FC = () => {
 
   const closeCompleteModal = () => {
     setCompleteTask(null);
+    setDoerRemark('');
     setAttachmentUrl('');
     setAttachmentText('');
     setAttachmentFile(null);
@@ -376,7 +376,7 @@ export const RedZone: React.FC = () => {
     setEditDesc(task.description || '');
     setEditAssignedToId(task.assigned_to_id);
     setEditDueDate(task.due_date);
-    setEditPriority(task.priority);
+    // setEditPriority(task.priority);
     setEditRecurring(task.recurring);
     setEditRecurringDays(task.recurring_days || []);
   };
@@ -387,6 +387,7 @@ export const RedZone: React.FC = () => {
 
     setEditSubmitting(true);
     try {
+      const immutableRecurring = editingTask.recurring;
       const assigneeUser = allUsers.find((member) => member.id === editAssignedToId);
       const updates: Partial<Task> = {
         title: editTitle,
@@ -395,9 +396,8 @@ export const RedZone: React.FC = () => {
         assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
         assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
         due_date: editDueDate,
-        priority: editPriority,
-        recurring: editRecurring,
-        recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+        recurring: immutableRecurring,
+        recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
         assignee_deleted: false,
       };
 
@@ -636,9 +636,11 @@ export const RedZone: React.FC = () => {
                     </div>
                   </Link>
                   <div className="flex items-center gap-2 shrink-0 pt-1">
+                    {/*
                     <span className="px-2 py-1 rounded-lg text-xs font-medium bg-red-100 text-red-800 shrink-0 capitalize">
                       {t.priority}
                     </span>
+                    */}
                     {canComplete && (
                       <Button
                         size="sm"
@@ -695,6 +697,19 @@ export const RedZone: React.FC = () => {
                   : <>This is a recurring task. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
               </p>
             )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Doer's Remark <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                value={doerRemark}
+                onChange={(e) => setDoerRemark(e.target.value)}
+                placeholder="Add a completion remark (required)..."
+                rows={3}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+              />
+            </div>
             {completeTask.attachment_required && completeTask.attachment_type === 'text' ? (
               <textarea
                 value={attachmentText}
@@ -766,6 +781,7 @@ export const RedZone: React.FC = () => {
                       completeTask,
                       completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
                       completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                      undefined,
                       { closePermanently: true }
                     )
                   }
@@ -781,15 +797,17 @@ export const RedZone: React.FC = () => {
                   handleComplete(
                     completeTask,
                     completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                    completeTask.attachment_type === 'text' ? attachmentText : undefined
+                    completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                    doerRemark
                   )
                 }
                 disabled={
-                  completeTask.attachment_required
+                  !doerRemark.trim() ||
+                  (completeTask.attachment_required
                     ? (completeTask.attachment_type === 'text'
                       ? !attachmentText.trim()
                       : !attachmentUrl.trim())
-                    : false
+                    : false)
                 }
               >
                 Complete
@@ -852,24 +870,26 @@ export const RedZone: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                  <select
-                    value={editPriority}
-                    onChange={(e) => setEditPriority(e.target.value as Task['priority'])}
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
+                {/*
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+                      <select
+                        value={editPriority}
+                        onChange={(e) => setEditPriority(e.target.value as Task['priority'])}
+                        className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+                    */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                   <select
                     value={editRecurring}
-                    onChange={(e) => setEditRecurring(e.target.value as Task['recurring'])}
+                    disabled
                     className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                   >
                     <option value="none">None</option>
@@ -881,6 +901,7 @@ export const RedZone: React.FC = () => {
                     <option value="half_yearly">Half Yearly</option>
                     <option value="yearly">Yearly</option>
                   </select>
+                  <p className="mt-1 text-xs text-slate-500">Recurring type cannot be changed after task creation.</p>
                 </div>
               </div>
               {editRecurring === 'daily' && (

@@ -90,6 +90,7 @@ export const AssignedByMe: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
+  const [doerRemark, setDoerRemark] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentText, setAttachmentText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -113,7 +114,7 @@ export const AssignedByMe: React.FC = () => {
   const [editStartDate, setEditStartDate] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
-  const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
+  // const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editAttachmentRequired, setEditAttachmentRequired] = useState(false);
@@ -607,7 +608,7 @@ export const AssignedByMe: React.FC = () => {
         { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
         { header: 'Start Date', accessor: (t) => formatDateValue(t.start_date, { emptyValue: '###' }) },
         { header: 'Due Date', accessor: (t) => formatDateValue(t.due_date, { emptyValue: '###' }) },
-        { header: 'Priority', accessor: (t) => t.priority || '' },
+        // { header: 'Priority', accessor: (t) => t.priority || '' },
         { header: 'Recurring', accessor: (t) => t.recurring || '' },
         { header: 'Status', accessor: (t) => t.status || '' },
         { header: 'Verification Required', accessor: (t) => (t.verification_required ? 'Yes' : 'No') },
@@ -680,18 +681,14 @@ export const AssignedByMe: React.FC = () => {
   }, []);
 
   const handleCompleteClick = (t: Task) => {
-    const isRecurringTask = t.recurring !== 'none';
-    if (t.attachment_required || isRecurringTask) {
-      setCompleteTask(t);
-      setAttachmentUrl('');
-      setAttachmentText('');
-      setAttachmentFile(null);
-      setUploading(false);
-      setUploadProgress(0);
-      setUploadError(null);
-    } else {
-      handleComplete(t, undefined, undefined);
-    }
+    setCompleteTask(t);
+    setDoerRemark('');
+    setAttachmentUrl('');
+    setAttachmentText('');
+    setAttachmentFile(null);
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadError(null);
   };
 
   const handleMediaFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -729,11 +726,13 @@ export const AssignedByMe: React.FC = () => {
     t: Task,
     url?: string,
     text?: string,
+    remark?: string,
     opts?: { closePermanently?: boolean }
   ) => {
     if (!user) return;
     if (isRecurringMasterTask(t)) return;
     const closePermanently = opts?.closePermanently === true;
+    if (!closePermanently && !remark?.trim()) return;
     if (t.attachment_required && !closePermanently) {
       const isText = t.attachment_type === 'text';
       if (isText && !text?.trim()) return;
@@ -757,6 +756,7 @@ export const AssignedByMe: React.FC = () => {
       const baseUpdates: Partial<Task> = {
         ...(url && { attachment_url: url }),
         ...(text && { attachment_text: text }),
+        ...(!closePermanently && { doer_remark: remark?.trim() }),
       };
 
       if (closePermanently && t.recurring !== 'none') {
@@ -784,6 +784,7 @@ export const AssignedByMe: React.FC = () => {
         await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
       }
       setCompleteTask(null);
+      setDoerRemark('');
       setAttachmentUrl('');
       setAttachmentText('');
       setAttachmentFile(null);
@@ -797,6 +798,7 @@ export const AssignedByMe: React.FC = () => {
 
   const closeCompleteModal = () => {
     setCompleteTask(null);
+    setDoerRemark('');
     setAttachmentUrl('');
     setAttachmentText('');
     setAttachmentFile(null);
@@ -911,7 +913,7 @@ export const AssignedByMe: React.FC = () => {
     setEditStartDate(t.start_date || '');
     setEditAssignedToId(t.assigned_to_id);
     setEditDueDate(t.due_date);
-    setEditPriority(t.priority);
+    // setEditPriority(t.priority);
     setEditRecurring(t.recurring);
     setEditRecurringDays(t.recurring_days || []);
     setEditAttachmentRequired(Boolean(t.attachment_required));
@@ -947,15 +949,15 @@ export const AssignedByMe: React.FC = () => {
 
     setEditSubmitting(true);
     try {
+      const immutableRecurring = editingTask.recurring;
       if (isAssigneeLimitedEdit) {
         const updates: Partial<Task> = {
           title: editTitle,
           description: editDesc,
           start_date: editStartDate || (null as any),
           due_date: editDueDate,
-          priority: editPriority,
-          recurring: editRecurring,
-          recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+          recurring: immutableRecurring,
+          recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
           attachment_required: editAttachmentRequired,
           attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
           attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
@@ -989,9 +991,8 @@ export const AssignedByMe: React.FC = () => {
           assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
           assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
           due_date: editDueDate,
-          priority: editPriority,
-          recurring: editRecurring,
-          recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
+          recurring: immutableRecurring,
+          recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
           attachment_required: editAttachmentRequired,
           attachment_type: editAttachmentRequired ? editAttachmentType : (null as any),
           attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : (null as any),
@@ -1266,7 +1267,7 @@ export const AssignedByMe: React.FC = () => {
                 <th className="sticky-col-2 text-center">Description</th>
                 <th className="whitespace-nowrap text-center">Doer</th>
                 <th className="whitespace-nowrap text-center">Due Date</th>
-                <th className="whitespace-nowrap text-center">Priority</th>
+                {/* <th className="whitespace-nowrap text-center">Priority</th> */}
                 <th className="whitespace-nowrap text-center">Status</th>
                 <th className="whitespace-nowrap text-center">Attachment</th>
                 <th className="whitespace-nowrap text-center pr-4">Action</th>
@@ -1296,6 +1297,7 @@ export const AssignedByMe: React.FC = () => {
                     )}
                   </td>
                   <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateValue(t.due_date)}</td>
+                  {/*
                   <td className="text-center">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
@@ -1308,6 +1310,7 @@ export const AssignedByMe: React.FC = () => {
                       {t.priority}
                     </span>
                   </td>
+                  */}
                   <td className="text-center">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
@@ -1733,7 +1736,7 @@ export const AssignedByMe: React.FC = () => {
                   {renderSortIcon('due_date')}
                 </button>
               </th>
-              <th className="whitespace-nowrap text-center">Priority</th>
+              {/* <th className="whitespace-nowrap text-center">Priority</th> */}
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
               <th className="whitespace-nowrap text-center">Verifier</th>
@@ -1806,6 +1809,7 @@ export const AssignedByMe: React.FC = () => {
                     <td className="text-center whitespace-nowrap text-slate-600 font-medium">
                       {formatDateValue(t.due_date)}
                     </td>
+                    {/*
                     <td className="text-center">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
@@ -1818,6 +1822,7 @@ export const AssignedByMe: React.FC = () => {
                         {t.priority}
                       </span>
                     </td>
+                    */}
                     <td className="text-center">
                       <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 capitalize whitespace-nowrap">
                         {t.recurring || 'None'}
@@ -1963,6 +1968,19 @@ export const AssignedByMe: React.FC = () => {
                 This is a recurring master task. New task instances are created by the scheduler.
               </p>
             )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Doer's Remark <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                value={doerRemark}
+                onChange={(e) => setDoerRemark(e.target.value)}
+                placeholder="Add a completion remark (required)..."
+                rows={3}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+              />
+            </div>
             {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
               <textarea
                 value={attachmentText}
@@ -2036,15 +2054,17 @@ export const AssignedByMe: React.FC = () => {
                   handleComplete(
                     completeTask,
                     completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                    completeTask.attachment_type === 'text' ? attachmentText : undefined
+                    completeTask.attachment_type === 'text' ? attachmentText : undefined,
+                    doerRemark
                   )
                 }
                 disabled={
-                  completeTask.attachment_required
+                  !doerRemark.trim() ||
+                  (completeTask.attachment_required
                     ? (completeTask.attachment_type === 'text'
                       ? !attachmentText.trim()
                       : !attachmentUrl.trim())
-                    : false
+                    : false)
                 }
               >
                 Complete
@@ -2213,6 +2233,7 @@ export const AssignedByMe: React.FC = () => {
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                       />
                     </div>
+                    {/*
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
                       <select
@@ -2226,13 +2247,14 @@ export const AssignedByMe: React.FC = () => {
                         <option value="urgent">Urgent</option>
                       </select>
                     </div>
+                    */}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                       <select
                         value={editRecurring}
-                        onChange={(e) => setEditRecurring(e.target.value as Task['recurring'])}
+                        disabled
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                       >
                         <option value="none">None</option>
@@ -2244,6 +2266,7 @@ export const AssignedByMe: React.FC = () => {
                         <option value="half_yearly">Half Yearly</option>
                         <option value="yearly">Yearly</option>
                       </select>
+                      <p className="mt-1 text-xs text-slate-500">Recurring type cannot be changed after task creation.</p>
                     </div>
                     <div className="flex items-center gap-2 pt-7">
                       <input

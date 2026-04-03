@@ -43,7 +43,7 @@ export const RecurringTasks: React.FC = () => {
   const [editDesc, setEditDesc] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
-  const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
+  // const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editAttachmentRequired, setEditAttachmentRequired] = useState(false);
@@ -162,6 +162,7 @@ export const RecurringTasks: React.FC = () => {
       const filters: {
         statusIn?: Task['status'][];
         assignedTo?: string;
+        assignedBy?: string;
         recurring?: string;
         dueDateFrom?: string;
         dueDateTo?: string;
@@ -169,10 +170,6 @@ export const RecurringTasks: React.FC = () => {
 
       // Base: only active statuses
       filters.statusIn = ['pending', 'in_progress', 'overdue', 'pending_verification', 'correction_required'];
-
-      if (isDoer && user?.id) {
-        filters.assignedTo = user.id;
-      }
 
       if (recurringFilter) {
         filters.recurring = recurringFilter;
@@ -185,7 +182,21 @@ export const RecurringTasks: React.FC = () => {
         if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
       }
 
-      const allActive = await api.getAllTasksByFilters({ ...filters, includeRecurringMasters: true });
+      let allActive: Task[] = [];
+      if (isDoer && user?.id) {
+        const [assignedToRows, assignedByRows] = await Promise.all([
+          api.getAllTasksByFilters({ ...filters, assignedTo: user.id, includeRecurringMasters: true }),
+          api.getAllTasksByFilters({ ...filters, assignedBy: user.id, includeRecurringMasters: true }),
+        ]);
+
+        const mergedById = new Map<string, Task>();
+        [...assignedToRows, ...assignedByRows].forEach((task) => {
+          mergedById.set(task.id, task);
+        });
+        allActive = Array.from(mergedById.values());
+      } else {
+        allActive = await api.getAllTasksByFilters({ ...filters, includeRecurringMasters: true });
+      }
 
       // Client-side filtering: show only recurring masters (legacy-safe fallback).
       let filtered = allActive.filter(
@@ -292,7 +303,7 @@ export const RecurringTasks: React.FC = () => {
     setEditDesc(t.description || '');
     setEditAssignedToId(t.assigned_to_id);
     setEditDueDate(t.due_date);
-    setEditPriority(t.priority);
+    // setEditPriority(t.priority);
     setEditRecurring(t.recurring);
     setEditRecurringDays(t.recurring_days || []);
     setEditAttachmentRequired(Boolean(t.attachment_required));
@@ -319,6 +330,7 @@ export const RecurringTasks: React.FC = () => {
 
     setEditSubmitting(true);
     try {
+      const immutableRecurring = editingTask.recurring;
       const assigneeUser = allUsers.find((u) => u.id === editAssignedToId);
       const verifierUser = allUsers.find((u) => u.id === editVerifierId);
 
@@ -329,9 +341,8 @@ export const RecurringTasks: React.FC = () => {
         assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
         assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
         due_date: editDueDate,
-        priority: editPriority,
-        recurring: editRecurring,
-        recurring_days: editRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : undefined,
+        recurring: immutableRecurring,
+        recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : undefined,
         attachment_required: editAttachmentRequired,
         attachment_type: editAttachmentRequired ? editAttachmentType : undefined,
         attachment_description: editAttachmentRequired ? (editAttachmentDescription || '') : undefined,
@@ -428,129 +439,129 @@ export const RecurringTasks: React.FC = () => {
 
       {/* ── Filter Bar ── */}
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        {isDoer ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-            >
-              <option value="all_time">All Time</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="last_7_days">Last 7 Days</option>
-              <option value="last_30_days">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
-            </select>
-
-            {dateFilter === 'custom' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-                <span className="text-slate-500 text-sm">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div ref={assignedToDropdownRef} className="relative z-50">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              value={assignedToFilter}
+              onChange={(e) => {
+                setAssignedToFilter(e.target.value);
+                setAssignedToDropdownOpen(true);
+              }}
+              onFocus={() => setAssignedToDropdownOpen(true)}
+              placeholder="Search Doer Name"
+              className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+            {assignedToDropdownOpen && (
+              <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                {assignedToNameOptions.length === 0 ? (
+                  <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                ) : (
+                  assignedToNameOptions.map((name) => (
+                    <li
+                      key={`to-${name}`}
+                      onClick={() => {
+                        setAssignedToFilter(name);
+                        setAssignedToDropdownOpen(false);
+                      }}
+                      className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                    >
+                      {name}
+                    </li>
+                  ))
+                )}
+              </ul>
             )}
           </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <div ref={assignedToDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedToFilter}
-                onChange={(e) => {
-                  setAssignedToFilter(e.target.value);
-                  setAssignedToDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedToDropdownOpen(true)}
-                placeholder="Search Doer Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedToDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedToNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedToNameOptions.map((name) => (
-                      <li
-                        key={`to-${name}`}
-                        onClick={() => {
-                          setAssignedToFilter(name);
-                          setAssignedToDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
 
-            <div ref={assignedByDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedByFilter}
-                onChange={(e) => {
-                  setAssignedByFilter(e.target.value);
-                  setAssignedByDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedByDropdownOpen(true)}
-                placeholder="Search Assigned By Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedByDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedByNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedByNameOptions.map((name) => (
-                      <li
-                        key={`by-${name}`}
-                        onClick={() => {
-                          setAssignedByFilter(name);
-                          setAssignedByDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
-
-            <select
-              value={recurringFilter}
-              onChange={(e) => setRecurringFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">All Recurring Types</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="fortnightly">Fortnightly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="half_yearly">Half Yearly</option>
-              <option value="yearly">Yearly</option>
-            </select>
+          <div ref={assignedByDropdownRef} className="relative z-50">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              value={assignedByFilter}
+              onChange={(e) => {
+                setAssignedByFilter(e.target.value);
+                setAssignedByDropdownOpen(true);
+              }}
+              onFocus={() => setAssignedByDropdownOpen(true)}
+              placeholder="Search Assigned By Name"
+              className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
+            />
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+            {assignedByDropdownOpen && (
+              <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                {assignedByNameOptions.length === 0 ? (
+                  <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
+                ) : (
+                  assignedByNameOptions.map((name) => (
+                    <li
+                      key={`by-${name}`}
+                      onClick={() => {
+                        setAssignedByFilter(name);
+                        setAssignedByDropdownOpen(false);
+                      }}
+                      className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
+                    >
+                      {name}
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
           </div>
-        )}
+
+          <select
+            value={recurringFilter}
+            onChange={(e) => setRecurringFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+          >
+            <option value="">All Recurring Types</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="fortnightly">Fortnightly</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="half_yearly">Half Yearly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+
+          {isDoer && (
+            <>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              >
+                <option value="all_time">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last_7_days">Last 7 Days</option>
+                <option value="last_30_days">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+
+              {dateFilter === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                  <span className="text-slate-500 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Pagination ── */}
@@ -565,7 +576,7 @@ export const RecurringTasks: React.FC = () => {
                 <th className="px-4 py-3 font-medium text-slate-600 w-72">Title</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-96">Description</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32">Frequency</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-24 text-center">Priority</th>
+                {/* <th className="px-4 py-3 font-medium text-slate-600 w-24 text-center">Priority</th> */}
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned To</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned By</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-52">Verifier</th>
@@ -602,11 +613,13 @@ export const RecurringTasks: React.FC = () => {
                     <td className="px-4 py-3 text-slate-600 capitalize whitespace-normal wrap-break-word align-top leading-6">
                       {t.recurring.replace('_', ' ')}
                     </td>
+                    {/*
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 capitalize">
                         {t.priority}
                       </span>
                     </td>
+                    */}
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">{t.assigned_to_name}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">{t.assigned_by_name || '-'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
@@ -707,10 +720,12 @@ export const RecurringTasks: React.FC = () => {
                 <p className="text-xs uppercase tracking-wide text-slate-500">Assigned By</p>
                 <p className="text-slate-700 mt-1">{viewTask.assigned_by_name || '-'}</p>
               </div>
+              {/*
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Priority</p>
                 <p className="text-slate-700 mt-1 capitalize">{viewTask.priority}</p>
               </div>
+              */}
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Verifier</p>
                 <p className="text-slate-700 mt-1">{viewTask.verifier_name || (viewTask.verification_required ? 'Required' : '-')}</p>
@@ -823,6 +838,7 @@ export const RecurringTasks: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/*
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
                   <select
@@ -836,11 +852,12 @@ export const RecurringTasks: React.FC = () => {
                     <option value="urgent">Urgent</option>
                   </select>
                 </div>
+                */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                   <select
                     value={editRecurring}
-                    onChange={(e) => setEditRecurring(e.target.value as Task['recurring'])}
+                    disabled
                     className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                   >
                     <option value="daily">Daily</option>
@@ -851,6 +868,7 @@ export const RecurringTasks: React.FC = () => {
                     <option value="half_yearly">Half Yearly</option>
                     <option value="yearly">Yearly</option>
                   </select>
+                  <p className="mt-1 text-xs text-slate-500">Recurring type cannot be changed after task creation.</p>
                 </div>
               </div>
 
