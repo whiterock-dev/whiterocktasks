@@ -95,6 +95,13 @@ function getRecurringStreamKey(task: FirebaseFirestore.DocumentData): string {
   });
 }
 
+function isRecurringMaster(task: FirebaseFirestore.DocumentData): boolean {
+  if (!task) return false;
+  if (task.is_recurring_master === true) return true;
+  // Backward compatibility for legacy recurring masters without explicit flag.
+  return task.recurring !== 'none' && !task.parent_task_id;
+}
+
 /** Normalize phone to 11za format: country code + number, no + or spaces */
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -361,6 +368,8 @@ export const generateRecurringTasksDaily = onSchedule(
     for (const taskDoc of recurringSnap.docs) {
       const task = taskDoc.data();
       if (!task?.due_date) continue;
+      if (!isRecurringMaster(task)) continue;
+      if (task.status === 'completed') continue;
       if (task.status === 'closed_permanently') continue;
       const streamKey = getRecurringStreamKey(task);
       const existing = streamMap.get(streamKey) || [];
@@ -410,6 +419,7 @@ export const generateRecurringTasksDaily = onSchedule(
             priority: template.priority || 'medium',
             status: 'pending',
             recurring: 'none',
+            is_recurring_master: false,
             recurring_days: null,
             verification_required: template.verification_required === true,
             verifier_id: template.verifier_id || null,

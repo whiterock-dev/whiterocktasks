@@ -77,6 +77,8 @@ export interface Task {
   updated_at: string;
   completed_at?: string;
   is_holiday?: boolean;
+  /** True for scheduler/controller record of a recurring stream. */
+  is_recurring_master?: boolean;
   parent_task_id?: string;
   audit_status?: AuditStatus;
   audited_at?: string;
