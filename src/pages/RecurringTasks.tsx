@@ -12,6 +12,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Pencil,
+  Trash2,
   ExternalLink,
   FileText,
 } from 'lucide-react';
@@ -263,6 +264,24 @@ export const RecurringTasks: React.FC = () => {
       await loadTasks();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleDeleteRecurringStream = async (taskId: string) => {
+    if (!window.confirm('Delete this recurring stream? This will remove the parent and all linked child tasks.')) return;
+    try {
+      const all = await api.getAllTasksByFilters({ includeRecurringMasters: true, batchSize: 5000 });
+      const idsToDelete = all
+        .filter((t) => t.id === taskId || t.parent_task_id === taskId)
+        .map((t) => t.id);
+
+      for (const id of idsToDelete) {
+        await api.deleteTask(id);
+      }
+
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to delete recurring stream:', err);
     }
   };
 
@@ -552,19 +571,19 @@ export const RecurringTasks: React.FC = () => {
                 <th className="px-4 py-3 font-medium text-slate-600 w-52">Verifier</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Attachment</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Next Due</th>
-                {isManager && <th className="px-4 py-3 font-medium text-slate-600 w-48">Actions</th>}
+                <th className="px-4 py-3 font-medium text-slate-600 w-48">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={isManager ? 10 : 9} className="p-8 text-center text-slate-500">
+                  <td colSpan={10} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={isManager ? 10 : 9} className="p-8">
+                  <td colSpan={10} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -612,9 +631,9 @@ export const RecurringTasks: React.FC = () => {
                     <td className="px-4 py-3 text-slate-600 text-center whitespace-nowrap">
                       {formatDateDDMMYYYY(t.due_date)}
                     </td>
-                    {isManager && (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {(isManager || t.assigned_by_id === user?.id) && (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -623,6 +642,8 @@ export const RecurringTasks: React.FC = () => {
                           >
                             <Pencil size={14} />
                           </Button>
+                        )}
+                        {(isManager || t.assigned_by_id === user?.id) && (
                           <Button
                             variant="danger"
                             size="sm"
@@ -630,9 +651,22 @@ export const RecurringTasks: React.FC = () => {
                           >
                             Close Permanently
                           </Button>
-                        </div>
-                      </td>
-                    )}
+                        )}
+                        {(isManager || t.assigned_by_id === user?.id) && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteRecurringStream(t.id)}
+                            title="Delete Recurring Stream"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        )}
+                        {!isManager && t.assigned_by_id !== user?.id && (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

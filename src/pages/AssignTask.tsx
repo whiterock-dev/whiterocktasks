@@ -69,10 +69,15 @@ export const AssignTask: React.FC = () => {
   }, [attachmentRequired]);
 
   useEffect(() => {
-    if (verificationRequired && !verifierId && user?.id) {
+    if (
+      verificationRequired &&
+      !verifierId &&
+      user?.id &&
+      user.id !== assignedToId
+    ) {
       setVerifierId(user.id);
     }
-  }, [verificationRequired, verifierId, user?.id]);
+  }, [verificationRequired, verifierId, user?.id, assignedToId]);
 
   const DAYS = [
     { value: 0, label: 'Mon' },
@@ -411,7 +416,7 @@ export const AssignTask: React.FC = () => {
                   if (!e.target.checked) {
                     setVerifierId('');
                     setVerifierSearch('');
-                  } else if (user?.id && !verifierId) {
+                  } else if (user?.id && !verifierId && user.id !== assignedToId) {
                     setVerifierId(user.id);
                   }
                 }}
