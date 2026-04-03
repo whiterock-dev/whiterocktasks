@@ -14,7 +14,7 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getNextRecurringDueDate } from '../lib/utils';
+import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY } from '../lib/utils';
 import {
   Paperclip,
   Check,
@@ -131,6 +131,10 @@ export const AssignedByMe: React.FC = () => {
   const isVerifier = user?.role === UserRole.VERIFIER;
   const isMyTasksRoute = false;
   const isSelfTasksView = true;
+
+  const isRecurringMasterTask = useCallback((task: Task) => {
+    return task.is_recurring_master === true || (task.recurring !== 'none' && !task.parent_task_id);
+  }, []);
 
   const getTodayLocal = useCallback(() => {
     const now = new Date();
@@ -296,9 +300,10 @@ export const AssignedByMe: React.FC = () => {
       sortDirection: sortConfig?.direction,
       ...baseFilters,
     });
+    const safeAssignedByRows = assignedByRows.filter((task) => !isRecurringMasterTask(task));
 
-    return sortRowsByConfig(assignedByRows);
-  }, [getDoerBaseFilters, sortConfig, sortRowsByConfig, user?.id]);
+    return sortRowsByConfig(safeAssignedByRows);
+  }, [getDoerBaseFilters, isRecurringMasterTask, sortConfig, sortRowsByConfig, user?.id]);
 
   const applyNameFilters = useCallback(
     (list: Task[]) => {
@@ -727,6 +732,7 @@ export const AssignedByMe: React.FC = () => {
     opts?: { closePermanently?: boolean }
   ) => {
     if (!user) return;
+    if (isRecurringMasterTask(t)) return;
     const closePermanently = opts?.closePermanently === true;
     if (t.attachment_required && !closePermanently) {
       const isText = t.attachment_type === 'text';
@@ -1035,6 +1041,31 @@ export const AssignedByMe: React.FC = () => {
     }
   };
 
+  const handleClosePermanentlyTask = async (task: Task) => {
+    if (task.recurring === 'none') return;
+    if (!window.confirm('Are you sure you want to permanently close this recurring task? It will never spawn again.')) return;
+    setLoading(true);
+    try {
+      await api.updateTask(task.id, { status: 'closed_permanently' });
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id ? { ...t, status: 'closed_permanently', updated_at: new Date().toISOString() } : t
+        )
+      );
+      setNameFilteredRows((prev) =>
+        prev
+          ? prev.map((t) =>
+            t.id === task.id ? { ...t, status: 'closed_permanently', updated_at: new Date().toISOString() } : t
+          )
+          : null
+      );
+    } catch (err) {
+      console.error('Failed to close recurring task permanently:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const startRow = effectiveTotalResults === 0 || sortedTasks.length === 0
     ? 0
     : (currentPage - 1) * rowsPerPage + 1;
@@ -1333,12 +1364,6 @@ export const AssignedByMe: React.FC = () => {
                                 verified_by: user.name,
                                 verified_at: completedAt,
                               });
-                              if (t.recurring !== 'none') {
-                                const nextDueDate = getNextRecurringDueDate(t.due_date, t.recurring, t.recurring_days);
-                                if (nextDueDate) {
-                                  await api.cloneRecurringTask(t, nextDueDate);
-                                }
-                              }
                               setLoading(true);
                               await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
                             } catch (err) {
@@ -1856,6 +1881,7 @@ export const AssignedByMe: React.FC = () => {
                         {(() => {
                           const showComplete =
                             t.assigned_to_id === user?.id &&
+                            !isRecurringMasterTask(t) &&
                             t.status !== 'completed' &&
                             t.status !== 'pending_verification';
                           const isAssigner = t.assigned_by_id === user?.id;
@@ -1871,12 +1897,22 @@ export const AssignedByMe: React.FC = () => {
                             isAssigner ||
                             (!isSelfTasksView && isManagerOrOwner && !isAssignedByDoer);
 
-                          const hasAnyAction = showComplete || canEditTask || canDeleteTask;
+                          const canClosePermanently =
+                            t.recurring !== 'none' &&
+                            t.status !== 'closed_permanently' &&
+                            (isAssigner || isManagerOrOwner);
+
+                          const hasAnyAction = showComplete || canEditTask || canDeleteTask || canClosePermanently;
                           return (
                             <>
                               {showComplete && (
                                 <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
                                   Complete
+                                </Button>
+                              )}
+                              {canClosePermanently && (
+                                <Button size="sm" variant="danger" onClick={() => handleClosePermanentlyTask(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
+                                  Close Permanently
                                 </Button>
                               )}
                               {canEditTask && (
@@ -1992,21 +2028,6 @@ export const AssignedByMe: React.FC = () => {
               </div>
             ))}
             <div className="flex flex-wrap gap-2 justify-end">
-              {completeTask.recurring !== 'none' && (
-                <Button
-                  variant="danger"
-                  onClick={() =>
-                    handleComplete(
-                      completeTask,
-                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                      { closePermanently: true }
-                    )
-                  }
-                >
-                  Close Permanently
-                </Button>
-              )}
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>

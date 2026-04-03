@@ -184,10 +184,12 @@ export const RecurringTasks: React.FC = () => {
         if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
       }
 
-      const allActive = await api.getAllTasksByFilters(filters);
+      const allActive = await api.getAllTasksByFilters({ ...filters, includeRecurringMasters: true });
 
-      // Client-side filtering: recurring != 'none'
-      let filtered = allActive.filter((t) => t.recurring !== 'none');
+      // Client-side filtering: show only recurring masters (legacy-safe fallback).
+      let filtered = allActive.filter(
+        (t) => t.recurring !== 'none' && (t.is_recurring_master === true || !t.parent_task_id)
+      );
 
       // Apply recurringFilter client-side if API doesn't handle it perfectly
       if (recurringFilter && recurringFilter !== 'none') {

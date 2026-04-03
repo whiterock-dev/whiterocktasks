@@ -18,6 +18,7 @@ import {
   getCountFromServer,
   addDoc,
   updateDoc,
+  deleteField,
   deleteDoc,
   query,
   where,
@@ -65,6 +66,7 @@ const docToTask = (d: any): Task => {
     updated_at: timestampToISO(data.updated_at),
     completed_at: data.completed_at ? timestampToISO(data.completed_at) : undefined,
     is_holiday: data.is_holiday,
+    is_recurring_master: data.is_recurring_master === true,
     parent_task_id: data.parent_task_id,
     audit_status: data.audit_status,
     audited_at: data.audited_at ? timestampToISO(data.audited_at) : undefined,
@@ -83,6 +85,15 @@ const docToTask = (d: any): Task => {
           : timestampToISO(data.verification_rejected_at),
     verification_rejected_by: data.verification_rejected_by,
   };
+};
+
+const isRecurringMasterTask = (task: Task): boolean => {
+  return task.is_recurring_master === true || (task.recurring !== 'none' && !task.parent_task_id);
+};
+
+const filterRecurringMasters = (tasks: Task[], includeRecurringMasters?: boolean): Task[] => {
+  if (includeRecurringMasters) return tasks;
+  return tasks.filter((task) => !isRecurringMasterTask(task));
 };
 
 export const api = {
@@ -136,6 +147,7 @@ export const api = {
     assignedTo?: string;
     assignedBy?: string;
     status?: TaskStatus;
+    includeRecurringMasters?: boolean;
   }): Promise<Task[]> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     let q = query(tasksRef, orderBy('updated_at', 'desc'));
@@ -151,7 +163,7 @@ export const api = {
     if (filters?.assignedTo && filters?.status) {
       tasks = tasks.filter((t) => t.status === filters.status);
     }
-    return tasks;
+    return filterRecurringMasters(tasks, filters?.includeRecurringMasters);
   },
 
   getTaskById: async (id: string): Promise<Task | null> => {
@@ -160,7 +172,7 @@ export const api = {
   },
 
   /** Recent completed tasks for sidebar (e.g. limit 10). Requires Firestore index: status asc, completed_at desc. */
-  getRecentCompletedTasks: async (limitCount: number = 10): Promise<Task[]> => {
+  getRecentCompletedTasks: async (limitCount: number = 10, includeRecurringMasters: boolean = false): Promise<Task[]> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const q = query(
       tasksRef,
@@ -169,14 +181,14 @@ export const api = {
       limit(limitCount)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => docToTask(d));
+    return filterRecurringMasters(snap.docs.map((d) => docToTask(d)), includeRecurringMasters);
   },
 
   /** Overdue tasks (server-side). Optional assignedToId for doer. Requires composite index. */
   getOverdueTasks: async (
-    opts: { assignedToId?: string; limitCount?: number } = {}
+    opts: { assignedToId?: string; limitCount?: number; includeRecurringMasters?: boolean } = {}
   ): Promise<Task[]> => {
-    const { assignedToId, limitCount = 50 } = opts;
+    const { assignedToId, limitCount = 50, includeRecurringMasters = false } = opts;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const today = new Date().toISOString().split('T')[0];
     let q = query(
@@ -197,11 +209,11 @@ export const api = {
       );
     }
     const snap = await getDocs(q);
-    return snap.docs.map((d) => docToTask(d));
+    return filterRecurringMasters(snap.docs.map((d) => docToTask(d)), includeRecurringMasters);
   },
 
   /** Completed tasks with required attachment for Bogus Attachment page. */
-  getBogusAttachmentTasks: async (limitCount: number = 50): Promise<Task[]> => {
+  getBogusAttachmentTasks: async (limitCount: number = 50, includeRecurringMasters: boolean = false): Promise<Task[]> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const q = query(
       tasksRef,
@@ -211,7 +223,7 @@ export const api = {
       limit(limitCount)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => docToTask(d));
+    return filterRecurringMasters(snap.docs.map((d) => docToTask(d)), includeRecurringMasters);
   },
 
   /** Paginated tasks. Returns tasks and lastDoc for next page. */
@@ -228,6 +240,7 @@ export const api = {
     verifierId?: string;
     sortBy?: 'updated_at' | 'start_date' | 'due_date' | 'completed_at';
     sortDirection?: 'asc' | 'desc';
+    includeRecurringMasters?: boolean;
   }): Promise<{ tasks: Task[]; lastDoc: QueryDocumentSnapshot | null }> => {
     const {
       pageSize,
@@ -242,6 +255,7 @@ export const api = {
       verifierId,
       sortBy,
       sortDirection,
+      includeRecurringMasters = false,
     } = opts;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const hasDueDateRange = Boolean(dueDateFrom || dueDateTo);
@@ -281,7 +295,7 @@ export const api = {
     try {
       const q = query(tasksRef, ...constraints);
       const snap = await getDocs(q);
-      const tasks = snap.docs.map((d) => docToTask(d));
+      const tasks = filterRecurringMasters(snap.docs.map((d) => docToTask(d)), includeRecurringMasters);
       const lastDoc =
         snap.docs.length === pageSize ? snap.docs[snap.docs.length - 1] : null;
       return { tasks, lastDoc };
@@ -308,7 +322,7 @@ export const api = {
         fallbackConstraints.length > 0
           ? query(tasksRef, fallbackConstraints[0]) // Only use the FIRST constraint!
           : query(tasksRef);
-      
+
       const fallbackSnap = await getDocs(fallbackQuery);
       let rawTasks = fallbackSnap.docs.map((d) => docToTask(d));
 
@@ -321,7 +335,7 @@ export const api = {
       if (dueDateFrom) rawTasks = rawTasks.filter((t) => t.due_date && t.due_date >= dueDateFrom);
       if (dueDateTo) rawTasks = rawTasks.filter((t) => t.due_date && t.due_date <= dueDateTo);
 
-      const tasks = rawTasks.sort((a, b) => {
+      const tasks = filterRecurringMasters(rawTasks, includeRecurringMasters).sort((a, b) => {
         const aValue = (a[effectiveSortBy] || '') as string;
         const bValue = (b[effectiveSortBy] || '') as string;
         if (aValue === bValue) return 0;
@@ -350,6 +364,7 @@ export const api = {
     sortBy?: 'updated_at' | 'start_date' | 'due_date' | 'completed_at';
     sortDirection?: 'asc' | 'desc';
     batchSize?: number;
+    includeRecurringMasters?: boolean;
   }): Promise<Task[]> => {
     const { batchSize = 1000, ...filters } = opts;
     const allTasks: Task[] = [];
@@ -384,7 +399,13 @@ export const api = {
     dueDateFrom?: string;
     dueDateTo?: string;
     verifierId?: string;
+    includeRecurringMasters?: boolean;
   }): Promise<number> => {
+    if (!filters?.includeRecurringMasters) {
+      const all = await api.getAllTasksByFilters({ ...(filters || {}), includeRecurringMasters: false, batchSize: 1000 });
+      return all.length;
+    }
+
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const constraints: any[] = [];
     if (filters?.assignedTo) constraints.push(where('assigned_to_id', '==', filters.assignedTo));
@@ -418,13 +439,20 @@ export const api = {
     t: Omit<Task, 'id' | 'created_at' | 'updated_at'>
   ): Promise<Task> => {
     const now = new Date().toISOString();
-    const cleanData = Object.fromEntries(Object.entries(t).filter(([_, v]) => v !== undefined));
+    const normalizedRecurring = t.recurring && t.recurring.trim() !== '' ? t.recurring : 'none';
+    const normalizedTask: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
+      ...t,
+      recurring: normalizedRecurring,
+      is_recurring_master: normalizedRecurring !== 'none' ? t.is_recurring_master === true : false,
+      recurring_days: normalizedRecurring === 'daily' ? t.recurring_days : undefined,
+    };
+    const cleanData = Object.fromEntries(Object.entries(normalizedTask).filter(([_, v]) => v !== undefined));
     const ref = await addDoc(collection(db, COLLECTIONS.TASKS), {
       ...cleanData,
       created_at: isoToTimestamp(now),
       updated_at: isoToTimestamp(now),
     });
-    return { ...t, id: ref.id, created_at: now, updated_at: now };
+    return { ...normalizedTask, id: ref.id, created_at: now, updated_at: now };
   },
 
   cloneRecurringTask: async (original: Task, nextDueDate: string): Promise<Task> => {
@@ -442,6 +470,9 @@ export const api = {
       attachment_text,
       status,
       due_date,
+      recurring,
+      recurring_days,
+      parent_task_id,
       is_holiday,
       ...baseFields
     } = original;
@@ -450,12 +481,19 @@ export const api = {
       ...baseFields,
       due_date: nextDueDate,
       status: 'pending',
+      recurring: 'none',
+      is_recurring_master: false,
+      recurring_days: undefined,
+      parent_task_id: parent_task_id || id,
     } as Omit<Task, 'id' | 'created_at' | 'updated_at'>);
   },
 
   updateTask: async (id: string, updates: Partial<Task>): Promise<void> => {
+    const normalizedUpdates = Object.fromEntries(
+      Object.entries(updates).map(([k, v]) => [k, v === undefined ? deleteField() : v])
+    );
     const toUpdate: Record<string, unknown> = {
-      ...updates,
+      ...normalizedUpdates,
       updated_at: isoToTimestamp(new Date().toISOString()),
     };
     if (updates.completed_at) {

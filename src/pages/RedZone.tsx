@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { storage } from '../lib/firebase';
-import { compressImageForUpload, getNextRecurringDueDate, isHoliday, formatDateDDMMYYYY } from '../lib/utils';
+import { compressImageForUpload, isHoliday, formatDateDDMMYYYY } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -293,12 +293,6 @@ export const RedZone: React.FC = () => {
             status: 'completed',
             completed_at: completedAt,
           });
-          if (task.recurring !== 'none') {
-            const nextDueDate = getNextRecurringDueDate(task.due_date, task.recurring, task.recurring_days);
-            if (nextDueDate) {
-              await api.cloneRecurringTask(task, nextDueDate);
-            }
-          }
         }
 
         setCompleteTask(null);

@@ -4,10 +4,11 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types';
+import { api } from '../services/api';
 import {
   ClipboardList,
   Trash2,
@@ -36,12 +37,14 @@ const NavItem = ({
   to,
   icon: Icon,
   label,
+  badgeCount,
   active,
   onClick,
 }: {
   to: string;
   icon: any;
   label: string;
+  badgeCount?: number;
   active: boolean;
   onClick?: () => void;
 }) => (
@@ -54,7 +57,15 @@ const NavItem = ({
       }`}
   >
     <Icon size={20} className={active ? 'text-white' : 'text-slate-500'} />
-    <span>{label}</span>
+    <span className="flex-1">{label}</span>
+    {typeof badgeCount === 'number' && (
+      <span
+        className={`inline-flex min-w-6 h-6 items-center justify-center rounded-full px-2 text-xs font-semibold ${active ? 'bg-white text-slate-800' : 'bg-teal-100 text-teal-800'
+          }`}
+      >
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
+    )}
   </Link>
 );
 
@@ -62,8 +73,38 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
   if (!user) return <>{children}</>;
+
+  useEffect(() => {
+    if (!user?.id) {
+      setPendingApprovalCount(0);
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadPendingApprovalCount = async () => {
+      try {
+        const count = await api.getTasksCount({
+          status: 'pending_verification',
+          verifierId: user.id,
+        });
+        if (isMounted) setPendingApprovalCount(count);
+      } catch (err) {
+        console.error('Failed to load pending approval count:', err);
+      }
+    };
+
+    loadPendingApprovalCount();
+    const intervalId = window.setInterval(loadPendingApprovalCount, 60000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [user?.id]);
 
   const isDoer = user.role === UserRole.DOER;
   const isAuditor = user.role === UserRole.AUDITOR;
@@ -118,6 +159,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               to={item.to}
               icon={item.icon}
               label={item.label}
+              badgeCount={item.to === '/approve' ? pendingApprovalCount : undefined}
               active={location.pathname === item.to}
             />
           ))}
@@ -172,6 +214,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   to={item.to}
                   icon={item.icon}
                   label={item.label}
+                  badgeCount={item.to === '/approve' ? pendingApprovalCount : undefined}
                   active={location.pathname === item.to}
                   onClick={() => setMobileOpen(false)}
                 />

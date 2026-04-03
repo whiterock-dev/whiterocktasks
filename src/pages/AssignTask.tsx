@@ -42,7 +42,7 @@ export const AssignTask: React.FC = () => {
   const [assignToSearch, setAssignToSearch] = useState('');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const assignDropdownRef = useRef<HTMLDivElement>(null);
-  const [verificationRequired, setVerificationRequired] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(true);
   const [verifierId, setVerifierId] = useState('');
   const [verifierSearch, setVerifierSearch] = useState('');
   const [verifierDropdownOpen, setVerifierDropdownOpen] = useState(false);
@@ -67,6 +67,12 @@ export const AssignTask: React.FC = () => {
     if (attachmentRequired) setShowAttachmentModal(true);
     else { setAttachmentDesc(''); setAttachmentType('media'); }
   }, [attachmentRequired]);
+
+  useEffect(() => {
+    if (verificationRequired && !verifierId && user?.id) {
+      setVerifierId(user.id);
+    }
+  }, [verificationRequired, verifierId, user?.id]);
 
   const DAYS = [
     { value: 0, label: 'Mon' },
@@ -115,6 +121,7 @@ export const AssignTask: React.FC = () => {
         priority,
         status: 'pending',
         recurring,
+        is_recurring_master: recurring !== 'none',
         recurring_days: recurring === 'daily' && recurringDays.length > 0 ? recurringDays : undefined,
         attachment_required: attachmentRequired,
         attachment_type: attachmentRequired ? attachmentType : undefined,
@@ -130,6 +137,17 @@ export const AssignTask: React.FC = () => {
         is_holiday: isHoliday,
       };
       const created = await api.createTask(task);
+
+      // For recurring tasks, master controls schedule and first child is created immediately for doer action.
+      if (recurring !== 'none') {
+        await api.createTask({
+          ...task,
+          recurring: 'none',
+          is_recurring_master: false,
+          recurring_days: undefined,
+          parent_task_id: created.id,
+        });
+      }
       const assigneeUser = users.find((u) => u.id === assignedToId);
       let whatsappStatus = '';
       if (assigneeUser?.phone) {
@@ -165,8 +183,8 @@ export const AssignTask: React.FC = () => {
       setAttachmentDesc('');
       setAssignedToId('');
       setAssignToSearch('');
-      setVerificationRequired(false);
-      setVerifierId('');
+      setVerificationRequired(true);
+      setVerifierId(user.id);
       setVerifierSearch('');
       setVerifierDropdownOpen(false);
     } catch (err: any) {
@@ -392,6 +410,9 @@ export const AssignTask: React.FC = () => {
                   setVerificationRequired(e.target.checked);
                   if (!e.target.checked) {
                     setVerifierId('');
+                    setVerifierSearch('');
+                  } else if (user?.id && !verifierId) {
+                    setVerifierId(user.id);
                   }
                 }}
                 className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
