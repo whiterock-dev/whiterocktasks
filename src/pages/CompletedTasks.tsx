@@ -380,22 +380,23 @@ export const CompletedTasks: React.FC = () => {
                                 <th className="text-left px-4 py-3 font-semibold">Assigned To</th>
                                 <th className="text-left px-4 py-3 font-semibold">Assigned By</th>
                                 <th className="text-left px-4 py-3 font-semibold">Verifier</th>
+                                <th className="text-left px-4 py-3 font-semibold">Doer's Remark</th>
                                 <th className="text-left px-4 py-3 font-semibold">Attachment</th>
                                 <th className="text-left px-4 py-3 font-semibold">Status</th>
-                                <th className="text-left px-4 py-3 font-semibold">Priority</th>
+                                {/* <th className="text-left px-4 py-3 font-semibold">Priority</th> */}
                                 <th className="text-left px-4 py-3 font-semibold">Recurring</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                                    <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
                                         Loading completed tasks...
                                     </td>
                                 </tr>
                             ) : pageTasks.length === 0 ? (
                                 <tr>
-                                    <td colSpan={11} className="py-16">
+                                    <td colSpan={12} className="py-16">
                                         <div className="flex flex-col items-center justify-center text-slate-500">
                                             <CheckCircle2 className="w-12 h-12 text-slate-300 mb-3" />
                                             <p className="text-base font-medium text-slate-600">No completed tasks found.</p>
@@ -416,6 +417,7 @@ export const CompletedTasks: React.FC = () => {
                                         <td className="px-4 py-3 text-slate-600">{task.assigned_to_name || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">{task.assigned_by_name || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">{task.verifier_name || task.verified_by || '-'}</td>
+                                        <td className="px-4 py-3 text-slate-600 whitespace-pre-wrap wrap-anywhere">{task.doer_remark || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">
                                             {task.attachment_url ? (
                                                 <a
@@ -440,12 +442,13 @@ export const CompletedTasks: React.FC = () => {
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium uppercase ${task.status === 'completed' ? "bg-emerald-50 text-emerald-700" :
-                                                    task.status === 'closed_permanently' ? "bg-purple-50 text-purple-700" :
-                                                        "bg-slate-50 text-slate-700"
+                                                task.status === 'closed_permanently' ? "bg-purple-50 text-purple-700" :
+                                                    "bg-slate-50 text-slate-700"
                                                 }`}>
                                                 {task.status.replace('_', ' ')}
                                             </span>
                                         </td>
+                                        {/*
                                         <td className="px-4 py-3">
                                             <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium uppercase ${task.priority === 'high' ? "bg-red-50 text-red-700" :
                                                     task.priority === 'medium' ? "bg-amber-50 text-amber-700" :
@@ -454,6 +457,7 @@ export const CompletedTasks: React.FC = () => {
                                                 {task.priority || '-'}
                                             </span>
                                         </td>
+                                        */}
                                         <td className="px-4 py-3">
                                             <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 uppercase">
                                                 {task.recurring?.replace('_', ' ') || 'None'}

@@ -88,6 +88,8 @@ export interface Task {
   assignee_deleted?: boolean;
   verified_at?: string;
   verified_by?: string;
+  /** Mandatory note entered by doer when marking task complete. */
+  doer_remark?: string;
   /** Set when verifier rejects (status correction_required). Visible to assignee. */
   verification_rejection_comment?: string;
   verification_rejected_at?: string;

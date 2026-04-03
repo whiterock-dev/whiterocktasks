@@ -10,8 +10,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { RECURRING_OPTIONS, PRIORITY_OPTIONS } from '../lib/utils';
-import { User, Task, RecurringType, TaskPriority } from '../types';
+import { RECURRING_OPTIONS } from '../lib/utils';
+import { User, Task, RecurringType } from '../types';
 import { UserRole } from '../types';
 import { Search, ChevronDown } from 'lucide-react';
 
@@ -26,17 +26,17 @@ const ROLE_LABELS: Record<UserRole, string> = {
 export const AssignTask: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const today = new Date().toISOString().split('T')[0];
   const [users, setUsers] = useState<User[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(today);
   const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('medium');
+  // const [priority, setPriority] = useState<TaskPriority>('medium');
   const [recurring, setRecurring] = useState<RecurringType>('none');
-  const [attachmentRequired, setAttachmentRequired] = useState(false);
+  const [attachmentRequired, setAttachmentRequired] = useState(true);
   const [attachmentType, setAttachmentType] = useState<'media' | 'text'>('media');
   const [attachmentDesc, setAttachmentDesc] = useState('');
-  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
   const [assignedToId, setAssignedToId] = useState('');
   const [assignToSearch, setAssignToSearch] = useState('');
@@ -63,10 +63,6 @@ export const AssignTask: React.FC = () => {
     });
   }, [user?.role, navigate]);
 
-  useEffect(() => {
-    if (attachmentRequired) setShowAttachmentModal(true);
-    else { setAttachmentDesc(''); setAttachmentType('media'); }
-  }, [attachmentRequired]);
 
   useEffect(() => {
     if (
@@ -123,7 +119,7 @@ export const AssignTask: React.FC = () => {
         description,
         start_date: startDate || undefined,
         due_date: dueDate,
-        priority,
+        priority: 'medium',
         status: 'pending',
         recurring,
         is_recurring_master: recurring !== 'none',
@@ -179,9 +175,9 @@ export const AssignTask: React.FC = () => {
       setSuccess('Task assigned successfully!' + whatsappStatus);
       setTitle('');
       setDescription('');
-      setStartDate('');
+      setStartDate(today);
       setDueDate('');
-      setPriority('medium');
+      // setPriority('medium');
       setRecurring('none');
       setRecurringDays([]);
       setAttachmentRequired(false);
@@ -199,8 +195,6 @@ export const AssignTask: React.FC = () => {
       setLoading(false);
     }
   };
-
-  const today = new Date().toISOString().split('T')[0];
 
   const selectedUser = users.find((u) => u.id === assignedToId);
   const selectedVerifier = users.find((u) => u.id === verifierId);
@@ -288,6 +282,7 @@ export const AssignTask: React.FC = () => {
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/*
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
                 <select
@@ -302,6 +297,7 @@ export const AssignTask: React.FC = () => {
                   ))}
                 </select>
               </div>
+              */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                 <select
@@ -339,19 +335,64 @@ export const AssignTask: React.FC = () => {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 id="attachment"
                 checked={attachmentRequired}
-                onChange={(e) => setAttachmentRequired(e.target.checked)}
+                onChange={(e) => {
+                  setAttachmentRequired(e.target.checked);
+                  if (!e.target.checked) {
+                    setAttachmentDesc('');
+                    setAttachmentType('media');
+                  }
+                }}
                 className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
               />
               <label htmlFor="attachment" className="text-sm font-medium text-slate-700">
                 Attachment required
               </label>
             </div>
+            {attachmentRequired && (
+              <div className="bg-slate-50 rounded-lg space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-1">Type</p>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="attachmentType"
+                        checked={attachmentType === 'media'}
+                        onChange={() => setAttachmentType('media')}
+                        className="text-teal-600"
+                      />
+                      <span className="text-sm">Media (photo/video upload)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="attachmentType"
+                        checked={attachmentType === 'text'}
+                        onChange={() => setAttachmentType('text')}
+                        className="text-teal-600"
+                      />
+                      <span className="text-sm">Text</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-slate-600 mb-1">Description (optional)</p>
+                  <textarea
+                    value={attachmentDesc}
+                    onChange={(e) => setAttachmentDesc(e.target.value)}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. Photo of completed work..."
+                  />
+                </div>
+              </div>
+            )}
             <div ref={assignDropdownRef} className="relative">
               <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
               <div className="relative">
@@ -497,54 +538,6 @@ export const AssignTask: React.FC = () => {
         </div>
       </form>
 
-      {showAttachmentModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-2">Attachment Required</h3>
-            <div className="space-y-4 mb-4">
-              <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">Type</p>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="attachmentType"
-                      checked={attachmentType === 'media'}
-                      onChange={() => setAttachmentType('media')}
-                      className="text-teal-600"
-                    />
-                    <span>Media (photo/video upload)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="attachmentType"
-                      checked={attachmentType === 'text'}
-                      onChange={() => setAttachmentType('text')}
-                      className="text-teal-600"
-                    />
-                    <span>Text</span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm text-slate-600 mb-1">Description (optional)</p>
-                <textarea
-                  value={attachmentDesc}
-                  onChange={(e) => setAttachmentDesc(e.target.value)}
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="e.g. Photo of completed work..."
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setShowAttachmentModal(false)}>Close</Button>
-              <Button onClick={() => setShowAttachmentModal(false)}>Done</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

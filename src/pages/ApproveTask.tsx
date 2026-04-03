@@ -267,10 +267,11 @@ export const ApproveTask: React.FC = () => {
                         <tr>
                             <th className="whitespace-nowrap">Title</th>
                             <th>Description</th>
+                            <th>Doer's Remark</th>
                             <th className="whitespace-nowrap">Doer</th>
                             {!isDoer && <th className="whitespace-nowrap">Verifier</th>}
                             <th className="whitespace-nowrap text-center">Due Date</th>
-                            <th className="whitespace-nowrap text-center">Priority</th>
+                            {/* <th className="whitespace-nowrap text-center">Priority</th> */}
                             <th className="whitespace-nowrap text-center">Attachment</th>
                             <th className="whitespace-nowrap text-right pr-4">Action</th>
                         </tr>
@@ -278,7 +279,7 @@ export const ApproveTask: React.FC = () => {
                     <tbody>
                         {tasks.length === 0 ? (
                             <tr>
-                                <td colSpan={isDoer ? 7 : 8} className="py-16">
+                                <td colSpan={isDoer ? 8 : 9} className="py-16">
                                     <div className="flex flex-col items-center justify-center text-slate-500">
                                         <ClipboardCheck className="w-12 h-12 text-slate-300 mb-3" />
                                         <p className="text-base font-medium text-slate-600">No approval tasks found.</p>
@@ -296,6 +297,9 @@ export const ApproveTask: React.FC = () => {
                                         <td className="whitespace-pre-wrap break-all text-sm text-slate-700">
                                             {task.description || '-'}
                                         </td>
+                                        <td className="whitespace-pre-wrap break-all text-sm text-slate-700">
+                                            {task.doer_remark?.trim() || '-'}
+                                        </td>
                                         <td>
                                             {task.assigned_to_name}
                                             {task.assignee_deleted && (
@@ -308,6 +312,7 @@ export const ApproveTask: React.FC = () => {
                                             </td>
                                         )}
                                         <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateDDMMYYYY(task.due_date)}</td>
+                                        {/*
                                         <td className="text-center">
                                             <span
                                                 className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${task.priority === 'urgent'
@@ -320,6 +325,7 @@ export const ApproveTask: React.FC = () => {
                                                 {task.priority}
                                             </span>
                                         </td>
+                                        */}
                                         <td className="text-center">
                                             {(task.attachment_url || task.attachment_text) ? (
                                                 <button
