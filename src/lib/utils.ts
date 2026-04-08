@@ -17,6 +17,20 @@ export const RECURRING_OPTIONS = [
   { value: 'yearly', label: 'Yearly' },
 ] as const;
 
+export function getDisplayRecurring(task: Pick<Task, 'recurring' | 'parent_task_id'>, taskById?: Map<string, Task>): string {
+  if (!task) return 'none';
+  if (task.recurring && task.recurring !== 'none') return task.recurring;
+  if (!task.parent_task_id) return task.recurring || 'none';
+  const parentTask = taskById?.get(task.parent_task_id);
+  if (parentTask?.recurring && parentTask.recurring !== 'none') return parentTask.recurring;
+  return task.recurring || 'none';
+}
+
+export function formatRecurringLabel(value?: string, noneLabel = 'None'): string {
+  if (!value || value === 'none') return noneLabel;
+  return value.replace(/_/g, ' ');
+}
+
 export const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },

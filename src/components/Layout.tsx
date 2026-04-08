@@ -11,7 +11,6 @@ import { UserRole } from '../types';
 import { api } from '../services/api';
 import {
   ClipboardList,
-  Trash2,
   AlertTriangle,
   BarChart3,
   Table2,
@@ -74,31 +73,49 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
 
   if (!user) return <>{children}</>;
 
   useEffect(() => {
     if (!user?.id) {
       setPendingApprovalCount(0);
+      setOverdueCount(0);
       return;
     }
 
     let isMounted = true;
 
-    const loadPendingApprovalCount = async () => {
+    const loadSidebarCounts = async () => {
       try {
-        const count = await api.getTasksCount({
-          status: 'pending_verification',
-          verifierId: user.id,
-        });
-        if (isMounted) setPendingApprovalCount(count);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        const dueDateTo = yesterday.toISOString().split('T')[0];
+
+        const [approvalCount, overdueTasksCount] = await Promise.all([
+          api.getTasksCount({
+            status: 'pending_verification',
+            verifierId: user.id,
+          }),
+          api.getTasksCount({
+            assignedTo: user.id,
+            statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
+            dueDateTo,
+          }),
+        ]);
+
+        if (isMounted) {
+          setPendingApprovalCount(approvalCount);
+          setOverdueCount(overdueTasksCount);
+        }
       } catch (err) {
-        console.error('Failed to load pending approval count:', err);
+        console.error('Failed to load sidebar counts:', err);
       }
     };
 
-    loadPendingApprovalCount();
-    const intervalId = window.setInterval(loadPendingApprovalCount, 60000);
+    loadSidebarCounts();
+    const intervalId = window.setInterval(loadSidebarCounts, 60000);
 
     return () => {
       isMounted = false;
@@ -159,7 +176,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               to={item.to}
               icon={item.icon}
               label={item.label}
-              badgeCount={item.to === '/approve' ? pendingApprovalCount : undefined}
+              badgeCount={item.to === '/approve' ? pendingApprovalCount : item.to === '/redzone' ? overdueCount : undefined}
               active={location.pathname === item.to}
             />
           ))}
@@ -214,7 +231,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   to={item.to}
                   icon={item.icon}
                   label={item.label}
-                  badgeCount={item.to === '/approve' ? pendingApprovalCount : undefined}
+                  badgeCount={item.to === '/approve' ? pendingApprovalCount : item.to === '/redzone' ? overdueCount : undefined}
                   active={location.pathname === item.to}
                   onClick={() => setMobileOpen(false)}
                 />

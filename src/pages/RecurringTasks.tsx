@@ -16,7 +16,7 @@ import {
   ExternalLink,
   FileText,
 } from 'lucide-react';
-import { formatDateDDMMYYYY } from '../lib/utils';
+import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -53,6 +53,7 @@ export const RecurringTasks: React.FC = () => {
   const [editVerifierId, setEditVerifierId] = useState('');
   const [editError, setEditError] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const taskById = useMemo(() => new Map(allTasks.map((task) => [task.id, task])), [allTasks]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -200,7 +201,7 @@ export const RecurringTasks: React.FC = () => {
 
       // Client-side filtering: show only recurring masters (legacy-safe fallback).
       let filtered = allActive.filter(
-        (t) => t.recurring !== 'none' && (t.is_recurring_master === true || !t.parent_task_id)
+        (t) => t.recurring !== 'none' && t.is_recurring_master === true
       );
 
       // Apply recurringFilter client-side if API doesn't handle it perfectly
@@ -228,7 +229,12 @@ export const RecurringTasks: React.FC = () => {
         }
       }
 
-      setAllTasks(Array.from(streamMap.values()));
+      const dedupedTasks = Array.from(streamMap.values());
+      console.log(
+        '[RecurringTasks] task_ids:',
+        dedupedTasks.map((task) => ({ task_id: task.id, parent_task_id: task.parent_task_id || null }))
+      );
+      setAllTasks(dedupedTasks);
     } catch (err) {
       console.error(err);
     } finally {
@@ -573,6 +579,8 @@ export const RecurringTasks: React.FC = () => {
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-4 py-3 font-medium text-slate-600 w-56">Task ID</th>
+                <th className="px-4 py-3 font-medium text-slate-600 w-56">Parent Task ID</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-72">Title</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-96">Description</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32">Frequency</th>
@@ -588,13 +596,13 @@ export const RecurringTasks: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-500">
+                  <td colSpan={11} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8">
+                  <td colSpan={11} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -604,6 +612,12 @@ export const RecurringTasks: React.FC = () => {
               ) : (
                 pageTasks.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6 text-xs">
+                      {t.id}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6 text-xs">
+                      {t.parent_task_id || '-'}
+                    </td>
                     <td className="px-4 py-3 whitespace-normal wrap-break-word align-top leading-6">
                       {t.title}
                     </td>
@@ -611,7 +625,7 @@ export const RecurringTasks: React.FC = () => {
                       {t.description || '-'}
                     </td>
                     <td className="px-4 py-3 text-slate-600 capitalize whitespace-normal wrap-break-word align-top leading-6">
-                      {t.recurring.replace('_', ' ')}
+                      {formatRecurringLabel(getDisplayRecurring(t, taskById), 'None')}
                     </td>
                     {/*
                     <td className="px-4 py-3 text-center">
@@ -706,7 +720,7 @@ export const RecurringTasks: React.FC = () => {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Frequency</p>
-                <p className="text-slate-700 mt-1 capitalize">{viewTask.recurring.replace('_', ' ')}</p>
+                <p className="text-slate-700 mt-1 capitalize">{formatRecurringLabel(getDisplayRecurring(viewTask, taskById), 'None')}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Next Due Date</p>
