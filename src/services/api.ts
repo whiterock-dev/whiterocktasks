@@ -76,7 +76,6 @@ const docToTask = (d: any): Task => {
     assignee_deleted: data.assignee_deleted === true,
     verified_at: data.verified_at ? timestampToISO(data.verified_at) : undefined,
     verified_by: data.verified_by,
-    doer_remark: data.doer_remark,
     verification_rejection_comment: data.verification_rejection_comment,
     verification_rejected_at:
       data.verification_rejected_at == null
@@ -89,7 +88,7 @@ const docToTask = (d: any): Task => {
 };
 
 const isRecurringMasterTask = (task: Task): boolean => {
-  return task.is_recurring_master === true || (task.recurring !== 'none' && !task.parent_task_id);
+  return task.is_recurring_master === true;
 };
 
 const filterRecurringMasters = (tasks: Task[], includeRecurringMasters?: boolean): Task[] => {
@@ -440,12 +439,9 @@ export const api = {
     t: Omit<Task, 'id' | 'created_at' | 'updated_at'>
   ): Promise<Task> => {
     const now = new Date().toISOString();
-    const normalizedRecurring = t.recurring && t.recurring.trim() !== '' ? t.recurring : 'none';
     const normalizedTask: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
       ...t,
-      recurring: normalizedRecurring,
-      is_recurring_master: normalizedRecurring !== 'none' ? t.is_recurring_master === true : false,
-      recurring_days: normalizedRecurring === 'daily' ? t.recurring_days : undefined,
+      is_recurring_master: t.recurring !== 'none' && !t.parent_task_id,
     };
     const cleanData = Object.fromEntries(Object.entries(normalizedTask).filter(([_, v]) => v !== undefined));
     const ref = await addDoc(collection(db, COLLECTIONS.TASKS), {

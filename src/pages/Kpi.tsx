@@ -25,7 +25,14 @@ export const Kpi: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
 
   const isOwner = user?.role === UserRole.OWNER;
+  const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
+
+  useEffect(() => {
+    if (isOwnerOrManager && !isDoer && !sortConfig) {
+      setSortConfig({ key: 'overdue_percent', direction: 'desc' });
+    }
+  }, [isDoer, isOwnerOrManager, sortConfig]);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -140,7 +147,7 @@ export const Kpi: React.FC = () => {
       {/* KPI by Member table below */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
         <h2 className="text-lg font-semibold text-slate-800">
-          {isOwner ? 'KPI by Member' : 'My KPI'}
+          {isOwnerOrManager ? 'KPI by Member' : 'My KPI'}
         </h2>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -208,7 +215,7 @@ export const Kpi: React.FC = () => {
                 >
                   <div className={`flex items-center gap-1 ${col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
                     <span>{col.label}</span>
-                    <span className="flex-shrink-0">
+                    <span className="shrink-0">
                       {sortConfig?.key === col.key ? (
                         sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-teal-600" /> : <ArrowDown size={14} className="text-teal-600" />
                       ) : (
@@ -224,8 +231,9 @@ export const Kpi: React.FC = () => {
             {[...memberRows]
               .filter((r) => isOwner || r.userId === user?.id)
               .sort((a, b) => {
-                if (!sortConfig) return 0;
-                const { key, direction } = sortConfig;
+                const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
+                if (!activeSort) return 0;
+                const { key, direction } = activeSort;
                 let valA = (a as any)[key];
                 let valB = (b as any)[key];
 

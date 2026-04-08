@@ -27,6 +27,36 @@ const RECURRING_TYPES = [
 
 type RecurringType = (typeof RECURRING_TYPES)[number];
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseISODateOnly(value: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function toISODateOnly(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+function getStartDateForRecurringDue(
+  baseStartDate: string,
+  baseDueDate: string,
+  targetDueDate: string
+): string | null {
+  const startBase = parseISODateOnly(baseStartDate);
+  const dueBase = parseISODateOnly(baseDueDate);
+  const targetDue = parseISODateOnly(targetDueDate);
+
+  if (!startBase || !dueBase || !targetDue) return null;
+
+  const dueDeltaDays = Math.round((targetDue.getTime() - dueBase.getTime()) / DAY_MS);
+  const nextStart = new Date(startBase);
+  nextStart.setUTCDate(nextStart.getUTCDate() + dueDeltaDays);
+  return toISODateOnly(nextStart);
+}
+
 function toAppWeekday(date: Date): number {
   const jsWeekday = date.getUTCDay(); // 0 = Sun .. 6 = Sat
   return jsWeekday === 0 ? 6 : jsWeekday - 1; // 0 = Mon .. 6 = Sun
@@ -97,9 +127,7 @@ function getRecurringStreamKey(task: FirebaseFirestore.DocumentData): string {
 
 function isRecurringMaster(task: FirebaseFirestore.DocumentData): boolean {
   if (!task) return false;
-  if (task.is_recurring_master === true) return true;
-  // Backward compatibility for legacy recurring masters without explicit flag.
-  return task.recurring !== 'none' && !task.parent_task_id;
+  return task.is_recurring_master === true;
 }
 
 /** Normalize phone to 11za format: country code + number, no + or spaces */
@@ -403,6 +431,8 @@ export const generateRecurringTasksDaily = onSchedule(
         existingInstanceSnap.docs.map((d) => String(d.data().due_date || ''))
       );
 
+      const baseStartDate = String(template.start_date || '');
+      const baseDueDate = String(template.due_date || '');
       let cursor = String(template.due_date || '');
       const originalCursor = cursor;
       let guard = 0;
@@ -411,10 +441,13 @@ export const generateRecurringTasksDaily = onSchedule(
         guard += 1;
 
         if (!existingInstanceDueDates.has(cursor)) {
+          const instanceStartDate =
+            getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || today;
+
           const newTask: FirebaseFirestore.DocumentData = {
             title: template.title || '',
             description: template.description || '',
-            start_date: today,
+            start_date: instanceStartDate,
             due_date: cursor,
             priority: template.priority || 'medium',
             status: 'pending',
@@ -451,7 +484,11 @@ export const generateRecurringTasksDaily = onSchedule(
 
       // Only master due_date moves forward; recurring table stays as master list.
       if (cursor !== originalCursor) {
+        const nextMasterStartDate =
+          getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || String(template.start_date || today);
+
         await masterRef.update({
+          start_date: nextMasterStartDate,
           due_date: cursor,
           updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
         });

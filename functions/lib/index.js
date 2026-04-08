@@ -86,6 +86,11 @@ function getRecurringStreamKey(task) {
         attachment_description: task.attachment_description || '',
     });
 }
+function isRecurringMaster(task) {
+    if (!task)
+        return false;
+    return task.is_recurring_master === true;
+}
 /** Normalize phone to 11za format: country code + number, no + or spaces */
 function normalizePhone(phone) {
     const digits = phone.replace(/\D/g, '');
@@ -308,6 +313,10 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
         const task = taskDoc.data();
         if (!task?.due_date)
             continue;
+        if (!isRecurringMaster(task))
+            continue;
+        if (task.status === 'completed')
+            continue;
         if (task.status === 'closed_permanently')
             continue;
         const streamKey = getRecurringStreamKey(task);
@@ -348,6 +357,7 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
                     priority: template.priority || 'medium',
                     status: 'pending',
                     recurring: 'none',
+                    is_recurring_master: false,
                     recurring_days: null,
                     verification_required: template.verification_required === true,
                     verifier_id: template.verifier_id || null,

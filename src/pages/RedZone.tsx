@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { storage } from '../lib/firebase';
-import { compressImageForUpload, isHoliday, formatDateDDMMYYYY } from '../lib/utils';
+import { compressImageForUpload, isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -73,6 +73,38 @@ export const RedZone: React.FC = () => {
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
+
+  const hydrateRecurringLookup = useCallback(async (rows: Task[]) => {
+    const lookup = new Map<string, Task>();
+    rows.forEach((task) => lookup.set(task.id, task));
+
+    const parentIds = Array.from(
+      new Set(
+        rows
+          .map((task) => task.parent_task_id)
+          .filter((parentId): parentId is string => Boolean(parentId))
+      )
+    );
+
+    const missingParentIds = parentIds.filter((parentId) => !lookup.has(parentId));
+    if (missingParentIds.length > 0) {
+      const parents = await Promise.all(missingParentIds.map((parentId) => api.getTaskById(parentId)));
+      parents.forEach((parent) => {
+        if (parent) lookup.set(parent.id, parent);
+      });
+    }
+
+    setRecurringTaskLookup(lookup);
+    return lookup;
+  }, []);
+
+  const taskById = useMemo(() => {
+    const merged = new Map<string, Task>();
+    recurringTaskLookup.forEach((task, id) => merged.set(id, task));
+    tasks.forEach((task) => merged.set(task.id, task));
+    return merged;
+  }, [recurringTaskLookup, tasks]);
   const assignedToDropdownRef = useRef<HTMLDivElement>(null);
   const assignedByDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -99,9 +131,10 @@ export const RedZone: React.FC = () => {
       assignedToId,
       limitCount: 500,
     });
+    await hydrateRecurringLookup(overdue);
     setTasks(overdue);
     setLoading(false);
-  }, [user?.id, user?.role]);
+  }, [hydrateRecurringLookup, user?.id, user?.role]);
 
   useEffect(() => {
     loadTasks().catch(console.error);
@@ -195,10 +228,10 @@ export const RedZone: React.FC = () => {
 
       if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
       if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
-      if (recurringFilter && task.recurring !== recurringFilter) return false;
+      if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
       return true;
     });
-  }, [debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, tasks, user?.id]);
+  }, [debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, taskById, tasks, user?.id]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -627,7 +660,7 @@ export const RedZone: React.FC = () => {
                         </span>
                         <span>
                           <span className="font-medium text-slate-700">Recurring:</span>{' '}
-                          {t.recurring === 'none' ? 'Non-recurring' : t.recurring}
+                          {formatRecurringLabel(getDisplayRecurring(t, taskById), 'Non-recurring')}
                         </span>
                         <span>
                           <span className="font-medium text-slate-700">Status:</span> {t.status}
@@ -690,11 +723,11 @@ export const RedZone: React.FC = () => {
                     : 'Upload a photo/video or paste a link to your media.')}
               </p>
             )}
-            {completeTask.recurring !== 'none' && (
+            {formatRecurringLabel(getDisplayRecurring(completeTask, taskById), 'Non-recurring') !== 'Non-recurring' && (
               <p className="text-xs text-slate-600 mb-4">
                 {(isDoer && user?.id !== completeTask.assigned_by_id)
-                  ? 'This is a recurring task. Completing it will automatically create the next occurrence.'
-                  : <>This is a recurring task. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
+                  ? 'This task belongs to a recurring stream. Completing it will automatically create the next occurrence.'
+                  : <>This task belongs to a recurring stream. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
               </p>
             )}
             <div className="mb-4">

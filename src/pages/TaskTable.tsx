@@ -4,7 +4,7 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
@@ -14,7 +14,7 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY } from '../lib/utils';
+import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import {
   Paperclip,
   Check,
@@ -106,6 +106,7 @@ export const TaskTable: React.FC = () => {
   const [refreshToken, setRefreshToken] = useState(0);
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -135,8 +136,39 @@ export const TaskTable: React.FC = () => {
   const isSelfTasksView = isDoer || (isManager && isMyTasksRoute);
 
   const isRecurringMasterTask = useCallback((task: Task) => {
-    return task.is_recurring_master === true || (task.recurring !== 'none' && !task.parent_task_id);
+    return task.is_recurring_master === true;
   }, []);
+
+  const hydrateRecurringLookup = useCallback(async (rows: Task[]) => {
+    const lookup = new Map<string, Task>();
+    rows.forEach((task) => lookup.set(task.id, task));
+
+    const parentIds = Array.from(
+      new Set(
+        rows
+          .map((task) => task.parent_task_id)
+          .filter((parentId): parentId is string => Boolean(parentId))
+      )
+    );
+
+    const missingParentIds = parentIds.filter((parentId) => !lookup.has(parentId));
+    if (missingParentIds.length > 0) {
+      const parents = await Promise.all(missingParentIds.map((parentId) => api.getTaskById(parentId)));
+      parents.forEach((parent) => {
+        if (parent) lookup.set(parent.id, parent);
+      });
+    }
+
+    setRecurringTaskLookup(lookup);
+    return lookup;
+  }, []);
+
+  const taskById = useMemo(() => {
+    const merged = new Map<string, Task>();
+    recurringTaskLookup.forEach((task, id) => merged.set(id, task));
+    tasks.forEach((task) => merged.set(task.id, task));
+    return merged;
+  }, [recurringTaskLookup, tasks]);
 
   const getTodayLocal = useCallback(() => {
     const now = new Date();
@@ -224,9 +256,6 @@ export const TaskTable: React.FC = () => {
       } else if (isSelfTasksView && !statusFilter) {
         filters.statusIn = openStatuses;
       }
-      if (recurringFilter) {
-        filters.recurring = recurringFilter;
-      }
     }
 
     const range = resolveDoerDateRange();
@@ -242,7 +271,6 @@ export const TaskTable: React.FC = () => {
       statusIn?: Task['status'][];
       dueDateFrom?: string;
       dueDateTo?: string;
-      recurring?: string;
     } = {};
 
     const openStatuses: Task['status'][] = [
@@ -260,16 +288,12 @@ export const TaskTable: React.FC = () => {
       filters.statusIn = openStatuses;
     }
 
-    if (recurringFilter) {
-      filters.recurring = recurringFilter;
-    }
-
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
     if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
 
     return filters;
-  }, [resolveDoerDateRange, statusFilter, recurringFilter, dateFilter]);
+  }, [resolveDoerDateRange, statusFilter, dateFilter]);
 
   const sortRowsByConfig = useCallback(
     (rows: Task[]) => {
@@ -372,7 +396,9 @@ export const TaskTable: React.FC = () => {
           sortDirection: sortConfig?.direction,
           ...filters,
         });
-        setTasks(filterByStartDate(nextTasks));
+        const startedRows = filterByStartDate(nextTasks);
+        await hydrateRecurringLookup(startedRows);
+        setTasks(startedRows);
         setLastDoc(nextLastDoc);
         setCurrentPage(pageNumber);
         setHasNextPage(nextLastDoc != null);
@@ -386,7 +412,7 @@ export const TaskTable: React.FC = () => {
         setLoading(false);
       }
     },
-    [filterByStartDate, getActiveFilters, rowsPerPage, sortConfig]
+    [filterByStartDate, getActiveFilters, hydrateRecurringLookup, rowsPerPage, sortConfig]
   );
 
   const setClientPageFromRows = useCallback(
@@ -423,7 +449,11 @@ export const TaskTable: React.FC = () => {
           if (!isActive) return;
 
           const startedRows = filterByStartDate(doerRows);
-          const filteredRows = applyNameFilters(startedRows);
+          const lookup = await hydrateRecurringLookup(startedRows);
+          const recurringRows = recurringFilter
+            ? startedRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
+            : startedRows;
+          const filteredRows = applyNameFilters(recurringRows);
           setNameFilteredRows(filteredRows);
           setTotalResults(filteredRows.length);
           setClientPageFromRows(filteredRows, 1);
@@ -440,7 +470,7 @@ export const TaskTable: React.FC = () => {
         return;
       }
 
-      if (hasNameFilter) {
+      if (hasNameFilter || recurringFilter) {
         try {
           const allRows = await api.getAllTasksByFilters({
             sortBy: sortConfig?.key,
@@ -450,7 +480,11 @@ export const TaskTable: React.FC = () => {
           if (!isActive) return;
 
           const startedRows = filterByStartDate(allRows);
-          const filteredRows = applyNameFilters(startedRows);
+          const lookup = await hydrateRecurringLookup(startedRows);
+          const recurringRows = recurringFilter
+            ? startedRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
+            : startedRows;
+          const filteredRows = applyNameFilters(recurringRows);
           setNameFilteredRows(filteredRows);
           setTotalResults(filteredRows.length);
           setClientPageFromRows(filteredRows, 1);
@@ -492,6 +526,7 @@ export const TaskTable: React.FC = () => {
       isActive = false;
     };
   }, [
+    recurringFilter,
     hasNameFilter,
     applyNameFilters,
     filterByStartDate,
@@ -617,6 +652,10 @@ export const TaskTable: React.FC = () => {
         ...filters,
       });
       const exportRowsByName = applyNameFilters(exportRows);
+      const exportLookup = await hydrateRecurringLookup(exportRowsByName);
+      const exportRecurringRows = recurringFilter
+        ? exportRowsByName.filter((task) => getDisplayRecurring(task, exportLookup) === recurringFilter)
+        : exportRowsByName;
 
       const columns: CsvColumn<Task>[] = [
         { header: 'Title', accessor: (t) => t.title },
@@ -627,7 +666,7 @@ export const TaskTable: React.FC = () => {
         { header: 'Start Date', accessor: (t) => formatDateValue(t.start_date, { emptyValue: '###' }) },
         { header: 'Due Date', accessor: (t) => formatDateValue(t.due_date, { emptyValue: '###' }) },
         // { header: 'Priority', accessor: (t) => t.priority || '' },
-        { header: 'Recurring', accessor: (t) => t.recurring || '' },
+        { header: 'Recurring', accessor: (t) => formatRecurringLabel(getDisplayRecurring(t, exportLookup), 'None') },
         { header: 'Status', accessor: (t) => t.status || '' },
         { header: 'Verification Required', accessor: (t) => (t.verification_required ? 'Yes' : 'No') },
         { header: 'Verifier Name', accessor: (t) => t.verifier_name || '' },
@@ -652,7 +691,7 @@ export const TaskTable: React.FC = () => {
         now.getDate()
       ).padStart(2, '0')}`;
       exportRowsToCsv({
-        rows: exportRowsByName,
+        rows: exportRecurringRows,
         columns,
         fileName: `Task-table-${datePart}.csv`,
       });
@@ -1856,7 +1895,7 @@ export const TaskTable: React.FC = () => {
                     */}
                     <td className="text-center">
                       <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 capitalize whitespace-nowrap">
-                        {t.recurring || 'None'}
+                        {formatRecurringLabel(getDisplayRecurring(t, taskById), 'None')}
                       </span>
                     </td>
                     <td className="text-center">
@@ -1994,9 +2033,9 @@ export const TaskTable: React.FC = () => {
                     : 'Upload a photo/video or paste a link to your media.')}
               </p>
             )}
-            {completeTask.recurring !== 'none' && (
+            {getDisplayRecurring(completeTask, taskById) !== 'none' && (
               <p className="text-xs text-slate-600 mb-4">
-                This is a recurring master task. New task instances are created by the scheduler.
+                This task belongs to a recurring stream. New task instances are created by the scheduler.
               </p>
             )}
             <div className="mb-4">

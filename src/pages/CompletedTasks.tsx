@@ -9,7 +9,7 @@ import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Search, Chevron
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole } from '../types';
-import { formatDateDDMMYYYY } from '../lib/utils';
+import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -31,6 +31,13 @@ export const CompletedTasks: React.FC = () => {
     const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
     const [recurringFilter, setRecurringFilter] = useState('');
     const [allUsers, setAllUsers] = useState<{ id: string; name: string }[]>([]);
+    const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
+    const taskById = useMemo(() => {
+        const merged = new Map<string, Task>();
+        recurringTaskLookup.forEach((task, id) => merged.set(id, task));
+        tasks.forEach((task) => merged.set(task.id, task));
+        return merged;
+    }, [recurringTaskLookup, tasks]);
 
     const assignedToDropdownRef = useRef<HTMLDivElement>(null);
     const assignedByDropdownRef = useRef<HTMLDivElement>(null);
@@ -53,6 +60,34 @@ export const CompletedTasks: React.FC = () => {
             .then((users) => setAllUsers(users.map((u) => ({ id: u.id, name: u.name || '' }))))
             .catch(console.error);
     }, []);
+
+    useEffect(() => {
+        let isActive = true;
+
+        const hydrate = async () => {
+            const parentIds = Array.from(
+                new Set(tasks.map((task) => task.parent_task_id).filter((id): id is string => Boolean(id)))
+            );
+
+            const lookup = new Map<string, Task>();
+            tasks.forEach((task) => lookup.set(task.id, task));
+
+            if (parentIds.length > 0) {
+                const parents = await Promise.all(parentIds.map((id) => api.getTaskById(id)));
+                if (!isActive) return;
+                parents.forEach((parent) => {
+                    if (parent) lookup.set(parent.id, parent);
+                });
+            }
+
+            if (isActive) setRecurringTaskLookup(lookup);
+        };
+
+        hydrate().catch(console.error);
+        return () => {
+            isActive = false;
+        };
+    }, [tasks]);
 
     useEffect(() => {
         const onOutside = (e: MouseEvent) => {
@@ -169,10 +204,10 @@ export const CompletedTasks: React.FC = () => {
             const assigner = (task.assigned_by_name || '').toLowerCase();
             if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
             if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
-            if (recurringFilter && task.recurring !== recurringFilter) return false;
+            if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
             return true;
         });
-    }, [tasks, isDoer, debouncedAssignedTo, debouncedAssignedBy, recurringFilter]);
+    }, [tasks, isDoer, debouncedAssignedTo, debouncedAssignedBy, recurringFilter, taskById]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -373,6 +408,8 @@ export const CompletedTasks: React.FC = () => {
                     <table className="min-w-full text-sm">
                         <thead className="bg-slate-50 text-slate-600">
                             <tr>
+                                <th className="text-left px-4 py-3 font-semibold">Task ID</th>
+                                <th className="text-left px-4 py-3 font-semibold">Parent Task ID</th>
                                 <th className="text-left px-4 py-3 font-semibold">Task</th>
                                 <th className="text-left px-4 py-3 font-semibold">Description</th>
                                 <th className="text-left px-4 py-3 font-semibold">Due Date</th>
@@ -390,13 +427,13 @@ export const CompletedTasks: React.FC = () => {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
+                                    <td colSpan={13} className="px-4 py-8 text-center text-slate-500">
                                         Loading completed tasks...
                                     </td>
                                 </tr>
                             ) : pageTasks.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="py-16">
+                                    <td colSpan={13} className="py-16">
                                         <div className="flex flex-col items-center justify-center text-slate-500">
                                             <CheckCircle2 className="w-12 h-12 text-slate-300 mb-3" />
                                             <p className="text-base font-medium text-slate-600">No completed tasks found.</p>
@@ -406,6 +443,8 @@ export const CompletedTasks: React.FC = () => {
                             ) : (
                                 pageTasks.map((task) => (
                                     <tr key={task.id} className="border-t border-slate-100">
+                                        <td className="px-4 py-3 text-slate-600 text-xs wrap-anywhere">{task.id}</td>
+                                        <td className="px-4 py-3 text-slate-600 text-xs wrap-anywhere">{task.parent_task_id || '-'}</td>
                                         <td className="px-4 py-3 text-slate-800">{task.title}</td>
                                         <td className="px-4 py-3 text-slate-600 wrap-anywhere">{task.description || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">
@@ -460,7 +499,7 @@ export const CompletedTasks: React.FC = () => {
                                         */}
                                         <td className="px-4 py-3">
                                             <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 uppercase">
-                                                {task.recurring?.replace('_', ' ') || 'None'}
+                                                {formatRecurringLabel(getDisplayRecurring(task, taskById), 'None')}
                                             </span>
                                         </td>
                                     </tr>
