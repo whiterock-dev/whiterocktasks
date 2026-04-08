@@ -408,8 +408,6 @@ export const CompletedTasks: React.FC = () => {
                     <table className="min-w-full text-sm">
                         <thead className="bg-slate-50 text-slate-600">
                             <tr>
-                                <th className="text-left px-4 py-3 font-semibold">Task ID</th>
-                                <th className="text-left px-4 py-3 font-semibold">Parent Task ID</th>
                                 <th className="text-left px-4 py-3 font-semibold">Task</th>
                                 <th className="text-left px-4 py-3 font-semibold">Description</th>
                                 <th className="text-left px-4 py-3 font-semibold">Due Date</th>
@@ -427,13 +425,13 @@ export const CompletedTasks: React.FC = () => {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={13} className="px-4 py-8 text-center text-slate-500">
+                                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                                         Loading completed tasks...
                                     </td>
                                 </tr>
                             ) : pageTasks.length === 0 ? (
                                 <tr>
-                                    <td colSpan={13} className="py-16">
+                                    <td colSpan={11} className="py-16">
                                         <div className="flex flex-col items-center justify-center text-slate-500">
                                             <CheckCircle2 className="w-12 h-12 text-slate-300 mb-3" />
                                             <p className="text-base font-medium text-slate-600">No completed tasks found.</p>
@@ -443,8 +441,6 @@ export const CompletedTasks: React.FC = () => {
                             ) : (
                                 pageTasks.map((task) => (
                                     <tr key={task.id} className="border-t border-slate-100">
-                                        <td className="px-4 py-3 text-slate-600 text-xs wrap-anywhere">{task.id}</td>
-                                        <td className="px-4 py-3 text-slate-600 text-xs wrap-anywhere">{task.parent_task_id || '-'}</td>
                                         <td className="px-4 py-3 text-slate-800">{task.title}</td>
                                         <td className="px-4 py-3 text-slate-600 wrap-anywhere">{task.description || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">
