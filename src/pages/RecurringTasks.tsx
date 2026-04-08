@@ -579,8 +579,6 @@ export const RecurringTasks: React.FC = () => {
           <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3 font-medium text-slate-600 w-56">Task ID</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-56">Parent Task ID</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-72">Title</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-96">Description</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32">Frequency</th>
@@ -596,13 +594,13 @@ export const RecurringTasks: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="p-8 text-center text-slate-500">
+                  <td colSpan={9} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-8">
+                  <td colSpan={9} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -612,12 +610,6 @@ export const RecurringTasks: React.FC = () => {
               ) : (
                 pageTasks.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6 text-xs">
-                      {t.id}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6 text-xs">
-                      {t.parent_task_id || '-'}
-                    </td>
                     <td className="px-4 py-3 whitespace-normal wrap-break-word align-top leading-6">
                       {t.title}
                     </td>
