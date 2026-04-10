@@ -37,6 +37,10 @@ import {
   Absence,
   RemovalRequest,
   AuditStatus,
+  HelpTicket,
+  HelpTicketStatus,
+  HelpTicketProposedSolution,
+  HelpTicketRating,
 } from '../types';
 
 const docToTask = (d: any): Task => {
@@ -84,6 +88,27 @@ const docToTask = (d: any): Task => {
           ? data.verification_rejected_at
           : timestampToISO(data.verification_rejected_at),
     verification_rejected_by: data.verification_rejected_by,
+  };
+};
+
+const docToHelpTicket = (d: any): HelpTicket => {
+  const data = d.data();
+  return {
+    id: d.id,
+    title: data.title || '',
+    description: data.description || '',
+    doer_id: data.doer_id || '',
+    doer_name: data.doer_name || '',
+    helper_id: data.helper_id || '',
+    helper_name: data.helper_name || '',
+    status: (data.status as HelpTicketStatus) || 'open',
+    proposed_solutions: Array.isArray(data.proposed_solutions) ? data.proposed_solutions : undefined,
+    helper_note: data.helper_note || undefined,
+    created_at: timestampToISO(data.created_at),
+    updated_at: timestampToISO(data.updated_at),
+    resolved_at: data.resolved_at ? timestampToISO(data.resolved_at) : undefined,
+    rated_at: data.rated_at ? timestampToISO(data.rated_at) : undefined,
+    rating: data.rating || undefined,
   };
 };
 
@@ -702,6 +727,251 @@ export const api = {
       payload.rejection_reason = null;
     }
     await updateDoc(doc(db, COLLECTIONS.REMOVAL_REQUESTS, id), payload);
+  },
+
+  // --- Help Tickets ---
+  createHelpTicket: async (t: {
+    title: string;
+    description: string;
+    helper: Pick<User, 'id' | 'name'>;
+    doer: Pick<User, 'id' | 'name'>;
+    proposedSolutions?: HelpTicketProposedSolution[];
+  }): Promise<HelpTicket> => {
+    const now = new Date().toISOString();
+    const proposed_solutions = (t.proposedSolutions || [])
+      .map((s) => ({
+        text: (s?.text || '').trim(),
+        priority: s?.priority,
+      }))
+      .filter((s) => s.text.length > 0)
+      .slice(0, 3);
+
+    const ref = await addDoc(collection(db, COLLECTIONS.HELP_TICKETS), {
+      title: t.title.trim(),
+      description: t.description.trim(),
+      doer_id: t.doer.id,
+      doer_name: t.doer.name,
+      helper_id: t.helper.id,
+      helper_name: t.helper.name,
+      status: 'open',
+      proposed_solutions: proposed_solutions.length > 0 ? proposed_solutions : null,
+      helper_note: null,
+      created_at: isoToTimestamp(now),
+      updated_at: isoToTimestamp(now),
+      resolved_at: null,
+      rated_at: null,
+      rating: null,
+    });
+
+    return {
+      id: ref.id,
+      title: t.title.trim(),
+      description: t.description.trim(),
+      doer_id: t.doer.id,
+      doer_name: t.doer.name,
+      helper_id: t.helper.id,
+      helper_name: t.helper.name,
+      status: 'open',
+      proposed_solutions: proposed_solutions.length > 0 ? proposed_solutions : undefined,
+      created_at: now,
+      updated_at: now,
+    };
+  },
+
+  updateHelpTicket: async (
+    id: string,
+    updates: Partial<{
+      status: HelpTicketStatus;
+      helper_note: string | null;
+      resolved_at: any;
+      rated_at: any;
+      rating: HelpTicketRating | null;
+    }>
+  ): Promise<void> => {
+    const normalizedUpdates = Object.fromEntries(
+      Object.entries(updates).map(([k, v]) => [k, v === undefined ? deleteField() : v])
+    );
+    await updateDoc(doc(db, COLLECTIONS.HELP_TICKETS, id), {
+      ...normalizedUpdates,
+      updated_at: isoToTimestamp(new Date().toISOString()),
+    });
+  },
+
+  addHelpTicketHelperNote: async (id: string, note: string): Promise<void> => {
+    await api.updateHelpTicket(id, { helper_note: note.trim() || null });
+  },
+
+  setHelpTicketStatus: async (id: string, status: HelpTicketStatus): Promise<void> => {
+    const payload: any = { status };
+    if (status === 'resolved') {
+      payload.resolved_at = isoToTimestamp(new Date().toISOString());
+    }
+    await api.updateHelpTicket(id, payload);
+  },
+
+  rateHelpTicket: async (id: string, rating: HelpTicketRating): Promise<void> => {
+    const now = new Date().toISOString();
+    await updateDoc(doc(db, COLLECTIONS.HELP_TICKETS, id), {
+      rating: {
+        stars: rating.stars,
+        comment: (rating.comment || '').trim() || null,
+      },
+      rated_at: isoToTimestamp(now),
+      status: 'rated',
+      updated_at: isoToTimestamp(now),
+    });
+  },
+
+  getHelpTickets: async (filters?: {
+    helperId?: string;
+    doerId?: string;
+    status?: HelpTicketStatus;
+    statusIn?: HelpTicketStatus[];
+    dateFrom?: string; // ISO or yyyy-mm-dd
+    dateTo?: string; // ISO or yyyy-mm-dd
+    sortBy?: 'date' | 'rating' | 'resolution_time';
+    sortDirection?: 'asc' | 'desc';
+  }): Promise<HelpTicket[]> => {
+    // Keep querying simple to avoid requiring new composite indexes.
+    const snap = await getDocs(query(collection(db, COLLECTIONS.HELP_TICKETS), orderBy('updated_at', 'desc')));
+    let tickets = snap.docs.map((d) => docToHelpTicket(d));
+
+    if (filters?.helperId) tickets = tickets.filter((t) => t.helper_id === filters.helperId);
+    if (filters?.doerId) tickets = tickets.filter((t) => t.doer_id === filters.doerId);
+    if (filters?.status) tickets = tickets.filter((t) => t.status === filters.status);
+    if (filters?.statusIn && filters.statusIn.length > 0) tickets = tickets.filter((t) => filters.statusIn!.includes(t.status));
+
+    const parseDay = (s?: string) => {
+      if (!s) return '';
+      // allow ISO or yyyy-mm-dd; keep yyyy-mm-dd for comparisons
+      return s.includes('T') ? s.split('T')[0] : s;
+    };
+    const fromDay = parseDay(filters?.dateFrom);
+    const toDay = parseDay(filters?.dateTo);
+    if (fromDay) tickets = tickets.filter((t) => parseDay(t.created_at) >= fromDay);
+    if (toDay) tickets = tickets.filter((t) => parseDay(t.created_at) <= toDay);
+
+    const sortBy = filters?.sortBy || 'date';
+    const dir = filters?.sortDirection || 'desc';
+    const dirMul = dir === 'asc' ? 1 : -1;
+
+    const getResolutionMinutes = (t: HelpTicket): number | null => {
+      if (!t.resolved_at) return null;
+      const a = new Date(t.created_at).getTime();
+      const b = new Date(t.resolved_at).getTime();
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      return Math.max(0, Math.round((b - a) / 60000));
+    };
+
+    tickets.sort((a, b) => {
+      if (sortBy === 'rating') {
+        const ar = a.rating?.stars ?? -1;
+        const br = b.rating?.stars ?? -1;
+        if (ar !== br) return (ar - br) * dirMul;
+        return (new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()) * dirMul;
+      }
+      if (sortBy === 'resolution_time') {
+        const am = getResolutionMinutes(a);
+        const bm = getResolutionMinutes(b);
+        const av = am == null ? Number.POSITIVE_INFINITY : am;
+        const bv = bm == null ? Number.POSITIVE_INFINITY : bm;
+        if (av !== bv) return (av - bv) * dirMul;
+        return (new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()) * dirMul;
+      }
+      // date
+      return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dirMul;
+    });
+
+    return tickets;
+  },
+
+  getHelpTicketsCount: async (filters?: { helperId?: string; statusIn?: HelpTicketStatus[] }): Promise<number> => {
+    const all = await api.getHelpTickets({
+      helperId: filters?.helperId,
+      statusIn: filters?.statusIn,
+      sortBy: 'date',
+      sortDirection: 'desc',
+    });
+    return all.length;
+  },
+
+  computeHelpKpis: async (opts?: { dateFrom?: string; dateTo?: string }): Promise<{
+    doerWise: { doer_id: string; doer_name: string; unresolved_count: number }[];
+    helperWise: { helper_id: string; helper_name: string; avg_rating: number | null; total_solved: number; avg_resolution_minutes: number | null }[];
+  }> => {
+    const tickets = await api.getHelpTickets({
+      dateFrom: opts?.dateFrom,
+      dateTo: opts?.dateTo,
+      sortBy: 'date',
+      sortDirection: 'desc',
+    });
+
+    const parseMinutes = (t: HelpTicket): number | null => {
+      if (!t.resolved_at) return null;
+      const diff = new Date(t.resolved_at).getTime() - new Date(t.created_at).getTime();
+      if (!Number.isFinite(diff)) return null;
+      return Math.max(0, Math.round(diff / 60000));
+    };
+
+    const doerMap = new Map<string, { doer_id: string; doer_name: string; unresolved_count: number }>();
+    const helperMap = new Map<string, {
+      helper_id: string;
+      helper_name: string;
+      total_solved: number;
+      rating_sum: number;
+      rating_count: number;
+      resolution_sum: number;
+      resolution_count: number;
+    }>();
+
+    for (const t of tickets) {
+      // Doer-wise unresolved: anything not resolved/rated counts as unresolved
+      const unresolved = t.status !== 'resolved' && t.status !== 'rated';
+      if (unresolved) {
+        const cur = doerMap.get(t.doer_id) || { doer_id: t.doer_id, doer_name: t.doer_name, unresolved_count: 0 };
+        cur.unresolved_count += 1;
+        doerMap.set(t.doer_id, cur);
+      }
+
+      // Helper-wise solved: resolved or rated
+      const solved = t.status === 'resolved' || t.status === 'rated';
+      if (solved) {
+        const cur = helperMap.get(t.helper_id) || {
+          helper_id: t.helper_id,
+          helper_name: t.helper_name,
+          total_solved: 0,
+          rating_sum: 0,
+          rating_count: 0,
+          resolution_sum: 0,
+          resolution_count: 0,
+        };
+        cur.total_solved += 1;
+
+        if (t.rating?.stars) {
+          cur.rating_sum += t.rating.stars;
+          cur.rating_count += 1;
+        }
+        const mins = parseMinutes(t);
+        if (mins != null) {
+          cur.resolution_sum += mins;
+          cur.resolution_count += 1;
+        }
+        helperMap.set(t.helper_id, cur);
+      }
+    }
+
+    const doerWise = [...doerMap.values()].sort((a, b) => b.unresolved_count - a.unresolved_count);
+    const helperWise = [...helperMap.values()]
+      .map((h) => ({
+        helper_id: h.helper_id,
+        helper_name: h.helper_name,
+        avg_rating: h.rating_count > 0 ? Math.round((h.rating_sum / h.rating_count) * 10) / 10 : null,
+        total_solved: h.total_solved,
+        avg_resolution_minutes: h.resolution_count > 0 ? Math.round(h.resolution_sum / h.resolution_count) : null,
+      }))
+      .sort((a, b) => (b.avg_rating ?? -1) - (a.avg_rating ?? -1));
+
+    return { doerWise, helperWise };
   },
 
   // --- WhatsApp (11za) ---

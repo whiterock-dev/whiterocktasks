@@ -128,6 +128,39 @@ export interface RemovalRequest {
   rejection_reason?: string;
 }
 
+export type HelpTicketStatus = 'open' | 'in_progress' | 'resolved' | 'rated';
+
+export interface HelpTicketProposedSolution {
+  text: string;
+  /** Optional priority ordering (1 = highest). */
+  priority?: 1 | 2 | 3;
+}
+
+export interface HelpTicketRating {
+  stars: 1 | 2 | 3 | 4 | 5;
+  comment?: string;
+}
+
+export interface HelpTicket {
+  id: string;
+  title: string;
+  description: string;
+  doer_id: string;
+  doer_name: string;
+  helper_id: string;
+  helper_name: string;
+  status: HelpTicketStatus;
+  proposed_solutions?: HelpTicketProposedSolution[];
+  /** Helper note added while resolving (visible to doer + owner). */
+  helper_note?: string;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+  rated_at?: string;
+  /** Rating & comment must NOT be shown to helper in UI. */
+  rating?: HelpTicketRating;
+}
+
 export interface KpiMetrics {
   total_assigned: number;
   on_time_completed: number;

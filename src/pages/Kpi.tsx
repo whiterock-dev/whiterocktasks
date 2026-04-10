@@ -4,17 +4,19 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { api } from '../services/api';
 import { computeKpiByMember } from '../lib/utils';
 import { Task, User, UserRole } from '../types';
+import { Button } from '../components/ui/Button';
 
 export const Kpi: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [memberRows, setMemberRows] = useState<ReturnType<typeof computeKpiByMember>>([]);
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
@@ -27,6 +29,36 @@ export const Kpi: React.FC = () => {
   const isOwner = user?.role === UserRole.OWNER;
   const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
+
+  const initialTab = useMemo(() => {
+    const p = new URLSearchParams(location.search);
+    return p.get('tab') === 'help' ? 'help' : 'tasks';
+  }, [location.search]);
+  const [activeTab, setActiveTab] = useState<'tasks' | 'help'>(initialTab);
+
+  // --- Help KPI state (Owner only) ---
+  const [helpLoading, setHelpLoading] = useState(false);
+  const [helpError, setHelpError] = useState('');
+  const [helpDateFrom, setHelpDateFrom] = useState('');
+  const [helpDateTo, setHelpDateTo] = useState('');
+  const [helpData, setHelpData] = useState<null | Awaited<ReturnType<typeof api.computeHelpKpis>>>(null);
+
+  const loadHelpKpi = async () => {
+    if (!isOwner) return;
+    setHelpLoading(true);
+    setHelpError('');
+    try {
+      const res = await api.computeHelpKpis({
+        dateFrom: helpDateFrom || undefined,
+        dateTo: helpDateTo || undefined,
+      });
+      setHelpData(res);
+    } catch (e: any) {
+      setHelpError(e?.message || 'Failed to load Help KPI');
+    } finally {
+      setHelpLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOwnerOrManager && !isDoer && !sortConfig) {
@@ -100,52 +132,184 @@ export const Kpi: React.FC = () => {
     setLoading(false);
   }, [allData, dateFilter, customStart, customEnd, isOwner, user?.id]);
 
+  useEffect(() => {
+    if (activeTab !== 'help') return;
+    if (!isOwner) return;
+    if (helpData) return;
+    loadHelpKpi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isOwner]);
+
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
   return (
     <div>
-      {/* <p className="text-slate-600 mb-6">
-        {isOwner ? 'Full team KPI.' : 'Your personal KPI.'} Tasks on holidays and during absence are excluded.
-      </p> */}
-
-      {/*
-      One fold: Task distribution + summary metrics (preserved for future restore)
-      <div className="mb-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Overview</h2>
-        <div className="grid grid-cols-1 gap-6 items-start">
-          <div>
-            <h3 className="text-base font-medium text-slate-700 mb-3">Task Distribution (Pie Chart)</h3>
-            <div className="h-56 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-500 text-sm">
-              Pie chart component placeholder
-            </div>
-          </div>
-          <div>
-            <h3 className="text-base font-medium text-slate-700 mb-3">Summary Metrics</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 px-3 font-semibold text-slate-800">Metric</th>
-                    <th className="text-right py-2 px-3 font-semibold text-slate-800">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryRows.map((row) => (
-                    <tr key={row.label} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-2 px-3 text-slate-700">{row.label}</td>
-                      <td className="py-2 px-3 text-right font-medium text-slate-800">{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2 mb-4">
+        <div className="flex gap-2">
+          <button
+            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${activeTab === 'tasks' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+            onClick={() => setActiveTab('tasks')}
+          >
+            Tasks KPI
+          </button>
+          <button
+            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${activeTab === 'help' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+            onClick={() => setActiveTab('help')}
+          >
+            Help KPI
+          </button>
         </div>
       </div>
-      */}
 
-      {/* KPI by Member table below */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+      {activeTab === 'help' ? (
+        !isOwner ? (
+          <div className="text-slate-500">Access denied. Only Owner can view Help KPIs.</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">
+                Doer-wise unresolved count, Helper-wise rating and resolution performance.
+              </div>
+              <Button variant="secondary" onClick={loadHelpKpi} disabled={helpLoading}>Refresh</Button>
+            </div>
+
+            {helpError && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">{helpError}</div>}
+
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
+              <div className="flex flex-col md:flex-row gap-3 items-end">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">From</label>
+                  <input
+                    type="date"
+                    value={helpDateFrom}
+                    onChange={(e) => setHelpDateFrom(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">To</label>
+                  <input
+                    type="date"
+                    value={helpDateTo}
+                    onChange={(e) => setHelpDateTo(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                  />
+                </div>
+                <Button onClick={loadHelpKpi} isLoading={helpLoading}>Apply</Button>
+              </div>
+            </div>
+
+            {helpLoading ? (
+              <div className="text-slate-500">Loading...</div>
+            ) : !helpData ? null : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                  <div className="p-4 border-b border-slate-100">
+                    <h3 className="font-semibold text-slate-800">Doer-wise</h3>
+                    <p className="text-sm text-slate-500">Unresolved tickets count</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="text-left py-3 px-4 font-semibold text-slate-800">Doer</th>
+                          <th className="text-center py-3 px-4 font-semibold text-slate-800">Unresolved</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {helpData.doerWise.length === 0 ? (
+                          <tr><td colSpan={2} className="py-4 px-4 text-slate-500">No data.</td></tr>
+                        ) : helpData.doerWise.map((r) => (
+                          <tr key={r.doer_id} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-3 px-4 text-slate-700">{r.doer_name}</td>
+                            <td className="py-3 px-4 text-center font-semibold text-slate-800">{r.unresolved_count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                  <div className="p-4 border-b border-slate-100">
+                    <h3 className="font-semibold text-slate-800">Helper-wise</h3>
+                    <p className="text-sm text-slate-500">Avg rating, total solved, avg resolution time</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="text-left py-3 px-4 font-semibold text-slate-800">Helper</th>
+                          <th className="text-center py-3 px-4 font-semibold text-slate-800">Avg rating</th>
+                          <th className="text-center py-3 px-4 font-semibold text-slate-800">Solved</th>
+                          <th className="text-center py-3 px-4 font-semibold text-slate-800">Avg mins</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {helpData.helperWise.length === 0 ? (
+                          <tr><td colSpan={4} className="py-4 px-4 text-slate-500">No data.</td></tr>
+                        ) : helpData.helperWise.map((r) => (
+                          <tr key={r.helper_id} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-3 px-4 text-slate-700">{r.helper_name}</td>
+                            <td className="py-3 px-4 text-center font-semibold text-slate-800">{r.avg_rating == null ? '—' : r.avg_rating}</td>
+                            <td className="py-3 px-4 text-center font-semibold text-slate-800">{r.total_solved}</td>
+                            <td className="py-3 px-4 text-center font-semibold text-slate-800">{r.avg_resolution_minutes == null ? '—' : r.avg_resolution_minutes}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      ) : null}
+
+      {activeTab !== 'tasks' ? null : (
+        <>
+          {/* <p className="text-slate-600 mb-6">
+            {isOwner ? 'Full team KPI.' : 'Your personal KPI.'} Tasks on holidays and during absence are excluded.
+          </p> */}
+
+          {/*
+          One fold: Task distribution + summary metrics (preserved for future restore)
+          <div className="mb-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">Overview</h2>
+            <div className="grid grid-cols-1 gap-6 items-start">
+              <div>
+                <h3 className="text-base font-medium text-slate-700 mb-3">Task Distribution (Pie Chart)</h3>
+                <div className="h-56 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-500 text-sm">
+                  Pie chart component placeholder
+                </div>
+              </div>
+              <div>
+                <h3 className="text-base font-medium text-slate-700 mb-3">Summary Metrics</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="text-left py-2 px-3 font-semibold text-slate-800">Metric</th>
+                        <th className="text-right py-2 px-3 font-semibold text-slate-800">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summaryRows.map((row) => (
+                        <tr key={row.label} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-2 px-3 text-slate-700">{row.label}</td>
+                          <td className="py-2 px-3 text-right font-medium text-slate-800">{row.value}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          */}
+
+          {/* KPI by Member table below */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
         <h2 className="text-lg font-semibold text-slate-800">
           {isOwnerOrManager ? 'KPI by Member' : 'My KPI'}
         </h2>
@@ -269,6 +433,8 @@ export const Kpi: React.FC = () => {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </div>
   );
 };

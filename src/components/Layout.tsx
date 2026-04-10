@@ -22,6 +22,7 @@ import {
   X,
   Users,
   Repeat,
+  LifeBuoy,
 } from 'lucide-react';
 
 const roleLabels: Record<UserRole, string> = {
@@ -74,6 +75,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
+  const [helpPendingCount, setHelpPendingCount] = useState(0);
 
   if (!user) return <>{children}</>;
 
@@ -81,6 +83,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     if (!user?.id) {
       setPendingApprovalCount(0);
       setOverdueCount(0);
+      setHelpPendingCount(0);
       return;
     }
 
@@ -93,7 +96,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         yesterday.setDate(today.getDate() - 1);
         const dueDateTo = yesterday.toISOString().split('T')[0];
 
-        const [approvalCount, overdueTasksCount] = await Promise.all([
+        const [approvalCount, overdueTasksCount, helpCount] = await Promise.all([
           api.getTasksCount({
             status: 'pending_verification',
             verifierId: user.id,
@@ -103,11 +106,16 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
             dueDateTo,
           }),
+          api.getHelpTicketsCount({
+            helperId: user.id,
+            statusIn: ['open', 'in_progress'],
+          }),
         ]);
 
         if (isMounted) {
           setPendingApprovalCount(approvalCount);
           setOverdueCount(overdueTasksCount);
+          setHelpPendingCount(helpCount);
         }
       } catch (err) {
         console.error('Failed to load sidebar counts:', err);
@@ -126,12 +134,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const isDoer = user.role === UserRole.DOER;
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
+  const isOwner = user.role === UserRole.OWNER;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const canAssign = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
   const canSeeRedZone = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
 
   const navItems: { to: string; icon: any; label: string }[] = isAuditor
     ? [
+      { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
       { to: '/tasks', icon: Table2, label: 'Audit Tasks' },
       { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
       { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
@@ -139,11 +149,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     ]
     : isVerifier
       ? [
+        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
         { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
         { to: '/settings', icon: Settings, label: 'Settings' },
       ]
       : [
+        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
         ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
         // { to: '/removal', icon: Trash2, label: 'Removal Request' },
@@ -154,6 +166,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me' }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks' },
         { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
+        ...(isOwner ? [{ to: '/help/logs', icon: Table2, label: 'Help Logs' }] : []),
         ...(isManager ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
         { to: '/settings', icon: Settings, label: 'Settings' },
       ];
@@ -169,14 +182,22 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             className="h-full w-auto max-h-24 object-contain"
           />
         </div>
-        <nav className="flex-1 px-4 pt-5 pb-3 space-y-1">
+        <nav className="flex-1 min-h-0 px-4 pt-5 pb-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <NavItem
               key={item.to}
               to={item.to}
               icon={item.icon}
               label={item.label}
-              badgeCount={item.to === '/approve' ? pendingApprovalCount : item.to === '/redzone' ? overdueCount : undefined}
+              badgeCount={
+                item.to === '/approve'
+                  ? pendingApprovalCount
+                  : item.to === '/redzone'
+                    ? overdueCount
+                    : item.to === '/help'
+                      ? helpPendingCount
+                      : undefined
+              }
               active={location.pathname === item.to}
             />
           ))}
@@ -231,7 +252,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   to={item.to}
                   icon={item.icon}
                   label={item.label}
-                  badgeCount={item.to === '/approve' ? pendingApprovalCount : item.to === '/redzone' ? overdueCount : undefined}
+                  badgeCount={
+                    item.to === '/approve'
+                      ? pendingApprovalCount
+                      : item.to === '/redzone'
+                        ? overdueCount
+                        : item.to === '/help'
+                          ? helpPendingCount
+                          : undefined
+                  }
                   active={location.pathname === item.to}
                   onClick={() => setMobileOpen(false)}
                 />
@@ -261,7 +290,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main content */}
       <main className="flex-1 min-h-screen md:min-h-0 md:h-screen md:overflow-y-auto bg-slate-50/50">
-        <div className="w-full max-w-450 mx-auto p-4 md:p-8">
+        <div className={`w-full ${location.pathname.startsWith('/help') ? 'max-w-none' : 'max-w-450 mx-auto'} p-4 md:p-8`}>
           {(() => {
             const pathTitles: Record<string, string> = {
               '/': 'Dashboard',
@@ -276,6 +305,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/members': 'Members',
               '/completed-tasks': 'Completed & Closed Tasks',
               '/approve': 'Approve Task',
+              '/help': 'Helper Dashboard',
+              '/help/new': 'Create Help Ticket',
+              '/help/logs': 'Help Logs',
               '/settings': 'Settings',
             };
             const pageTitle = isAuditor && location.pathname === '/tasks'
