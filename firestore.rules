@@ -19,5 +19,8 @@ service cloud.firestore {
     match /password_reset_otps/{docId} {
       allow read, write: if true;
     }
+    match /help_tickets/{docId} {
+      allow read, write: if true;
+    }
   }
 }
