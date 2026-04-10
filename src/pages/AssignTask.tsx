@@ -34,7 +34,7 @@ export const AssignTask: React.FC = () => {
   const [dueDate, setDueDate] = useState('');
   // const [priority, setPriority] = useState<TaskPriority>('medium');
   const [recurring, setRecurring] = useState<RecurringType>('none');
-  const [attachmentRequired, setAttachmentRequired] = useState(true);
+  const [attachmentRequired, setAttachmentRequired] = useState(false);
   const [attachmentType, setAttachmentType] = useState<'media' | 'text'>('media');
   const [attachmentDesc, setAttachmentDesc] = useState('');
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
