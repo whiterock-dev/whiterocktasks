@@ -8,6 +8,7 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
+import { HelpKpi } from './pages/HelpKpi';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
 const AssignTask = lazy(() => import('./pages/AssignTask').then((m) => ({ default: m.AssignTask })));
@@ -181,7 +182,7 @@ const App: React.FC = () => {
               path="/help/kpi"
               element={
                 <ProtectedRoute>
-                  <Navigate to="/kpi?tab=help" replace />
+                  <HelpKpi />
                 </ProtectedRoute>
               }
             />

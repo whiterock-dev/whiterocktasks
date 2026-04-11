@@ -617,7 +617,7 @@ export const TaskTable: React.FC = () => {
   });
 
   const isClientMode = hasNameFilter || isSelfTasksView;
-  const tableColumnCount = 12;
+  const tableColumnCount = 11;
 
   const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)

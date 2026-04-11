@@ -30,7 +30,7 @@ export const HelpKpi: React.FC = () => {
       });
       setData(res);
     } catch (e: any) {
-      setError(e?.message || 'Failed to load KPIs');
+      setError(e?.message || 'Failed to load MIS');
     } finally {
       setLoading(false);
     }
@@ -43,7 +43,7 @@ export const HelpKpi: React.FC = () => {
   }, [isOwner]);
 
   if (!user) return null;
-  if (!isOwner) return <div className="text-slate-500">Access denied. Only Owner can view Help KPIs.</div>;
+  if (!isOwner) return <div className="text-slate-500">Access denied. Only Owner can view Help MIS.</div>;
 
   return (
     <div className="space-y-4">
