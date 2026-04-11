@@ -51,16 +51,16 @@ const NavItem = ({
   <Link
     to={to}
     onClick={onClick}
-    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${active
+    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${active
       ? 'bg-slate-700 text-white'
       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
       }`}
   >
-    <Icon size={20} className={active ? 'text-white' : 'text-slate-500'} />
+    <Icon size={19} className={active ? 'text-white' : 'text-slate-500'} />
     <span className="flex-1">{label}</span>
     {typeof badgeCount === 'number' && (
       <span
-        className={`inline-flex min-w-6 h-6 items-center justify-center rounded-full px-2 text-xs font-semibold ${active ? 'bg-white text-slate-800' : 'bg-teal-100 text-teal-800'
+        className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${active ? 'bg-white text-slate-800' : 'bg-teal-100 text-teal-800'
           }`}
       >
         {badgeCount > 99 ? '99+' : badgeCount}
@@ -139,71 +139,87 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canAssign = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
   const canSeeRedZone = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
 
-  const navItems: { to: string; icon: any; label: string }[] = isAuditor
+  type SectionType = 'Tasks' | 'Help' | 'Settings';
+  type NavItemType = { to: string; icon: any; label: string; section: SectionType };
+
+  const navItems: NavItemType[] = isAuditor
     ? [
-      { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
-      { to: '/tasks', icon: Table2, label: 'Audit Tasks' },
-      { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
-      { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
-      { to: '/settings', icon: Settings, label: 'Settings' },
+      { to: '/tasks', icon: Table2, label: 'Audit Tasks', section: 'Tasks' },
+      { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks', section: 'Tasks' },
+      { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' },
+      { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard', section: 'Help' },
+      { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' },
     ]
     : isVerifier
       ? [
-        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
-        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
-        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
-        { to: '/settings', icon: Settings, label: 'Settings' },
+        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks', section: 'Tasks' },
+        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' },
+        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard', section: 'Help' },
+        { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' },
       ]
       : [
-        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard' },
-        ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task' }] : []),
-        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task' },
-        // { to: '/removal', icon: Trash2, label: 'Removal Request' },
-        ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue' }] : []),
-        { to: '/kpi', icon: BarChart3, label: 'KPI' },
-        { to: '/tasks', icon: Table2, label: 'Task Table' },
-        ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks' }] : []),
-        ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me' }] : []),
-        { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks' },
-        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks' },
-        ...(isOwner ? [{ to: '/help/logs', icon: Table2, label: 'Help Logs' }] : []),
-        ...(isManager ? [{ to: '/members', icon: Users, label: 'Members' }] : []),
-        { to: '/settings', icon: Settings, label: 'Settings' },
+        ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task', section: 'Tasks' as const }] : []),
+        { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' as const },
+        ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue', section: 'Tasks' as const }] : []),
+        { to: '/kpi', icon: BarChart3, label: 'KPI', section: 'Tasks' as const },
+        { to: '/tasks', icon: Table2, label: 'Task Table', section: 'Tasks' as const },
+        ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks', section: 'Tasks' as const }] : []),
+        ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me', section: 'Tasks' as const }] : []),
+        { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks', section: 'Tasks' as const },
+        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks', section: 'Tasks' as const },
+        { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard', section: 'Help' as const },
+        ...(isOwner ? [
+          { to: '/help/logs', icon: Table2, label: 'Help Logs', section: 'Help' as const },
+          { to: '/help/kpi', icon: BarChart3, label: 'Help MIS', section: 'Help' as const }
+        ] : []),
+        ...(isManager ? [{ to: '/members', icon: Users, label: 'Members', section: 'Settings' as const }] : []),
+        { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' as const },
       ];
 
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden bg-slate-100/80 flex flex-col md:flex-row">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex md:h-screen shrink-0 flex-col w-64 bg-white border-r border-slate-200">
-        <div className="flex h-24 items-center border-b border-slate-100 px-6">
+        <div className="flex h-24 items-center justify-center border-b border-slate-100 px-6 py-4">
           <img
             src="/whiterock-logo.png"
             alt="WhiteRock"
-            className="h-full w-auto max-h-24 object-contain"
+            className="w-auto h-full max-h-24 object-contain"
           />
         </div>
-        <nav className="flex-1 min-h-0 px-4 pt-5 pb-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
-            <NavItem
-              key={item.to}
-              to={item.to}
-              icon={item.icon}
-              label={item.label}
-              badgeCount={
-                item.to === '/approve'
-                  ? pendingApprovalCount
-                  : item.to === '/redzone'
-                    ? overdueCount
-                    : item.to === '/help'
-                      ? helpPendingCount
-                      : undefined
-              }
-              active={location.pathname === item.to}
-            />
-          ))}
+        <nav className="flex-1 min-h-0 px-4 py-3 overflow-y-auto">
+          {(['Tasks', 'Help', 'Settings'] as SectionType[]).map((sectionName) => {
+            const items = navItems.filter((i) => i.section === sectionName);
+            if (items.length === 0) return null;
+            return (
+              <div key={sectionName} className="mb-3">
+                <h2 className="px-3 mb-1.5 text-[12px] font-bold text-slate-400 uppercase tracking-widest">{sectionName}</h2>
+                <div className="space-y-0.5">
+                  {items.map((item) => (
+                    <NavItem
+                      key={item.to}
+                      to={item.to}
+                      icon={item.icon}
+                      label={item.label}
+                      badgeCount={
+                        item.to === '/approve'
+                          ? pendingApprovalCount
+                          : item.to === '/redzone'
+                            ? overdueCount
+                            : item.to === '/help'
+                              ? helpPendingCount
+                              : undefined
+                      }
+                      active={location.pathname === item.to}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </nav>
         <div className="p-3 border-t border-slate-100">
-          <div className="mt-2 flex items-center gap-2 mb-3">
+          <div className="my-2 flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center text-teal-700 font-semibold text-sm">
               {user.name.charAt(0)}
             </div>
@@ -245,26 +261,37 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <X size={20} />
               </button>
             </div>
-            <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-              {navItems.map((item) => (
-                <NavItem
-                  key={item.to}
-                  to={item.to}
-                  icon={item.icon}
-                  label={item.label}
-                  badgeCount={
-                    item.to === '/approve'
-                      ? pendingApprovalCount
-                      : item.to === '/redzone'
-                        ? overdueCount
-                        : item.to === '/help'
-                          ? helpPendingCount
-                          : undefined
-                  }
-                  active={location.pathname === item.to}
-                  onClick={() => setMobileOpen(false)}
-                />
-              ))}
+            <nav className="flex-1 px-4 py-5 overflow-y-auto">
+              {(['Tasks', 'Help', 'Settings'] as SectionType[]).map((sectionName) => {
+                const items = navItems.filter((i) => i.section === sectionName);
+                if (items.length === 0) return null;
+                return (
+                  <div key={sectionName} className="mb-4">
+                    <h2 className="px-3 mb-1.5 text-[15px] font-bold text-slate-400 uppercase tracking-widest">{sectionName}</h2>
+                    <div className="space-y-0.5">
+                      {items.map((item) => (
+                        <NavItem
+                          key={item.to}
+                          to={item.to}
+                          icon={item.icon}
+                          label={item.label}
+                          badgeCount={
+                            item.to === '/approve'
+                              ? pendingApprovalCount
+                              : item.to === '/redzone'
+                                ? overdueCount
+                                : item.to === '/help'
+                                  ? helpPendingCount
+                                  : undefined
+                          }
+                          active={location.pathname === item.to}
+                          onClick={() => setMobileOpen(false)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </nav>
             <div className="p-3 border-t border-slate-100">
               <div className="mt-2 flex items-center gap-2 mb-3">

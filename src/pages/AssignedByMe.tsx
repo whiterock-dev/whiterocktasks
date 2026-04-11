@@ -610,7 +610,7 @@ export const AssignedByMe: React.FC = () => {
   });
 
   const isClientMode = hasNameFilter || isSelfTasksView || recurringFilter.length > 0;
-  const tableColumnCount = 12;
+  const tableColumnCount = 11;
 
   const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)
