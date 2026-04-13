@@ -617,7 +617,7 @@ export const TaskTable: React.FC = () => {
   });
 
   const isClientMode = hasNameFilter || isSelfTasksView;
-  const tableColumnCount = 11;
+  const tableColumnCount = 12;
 
   const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)
@@ -1809,6 +1809,7 @@ export const TaskTable: React.FC = () => {
               {/* <th className="whitespace-nowrap text-center">Priority</th> */}
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
+              <th className="whitespace-nowrap text-center">Doer's Remark</th>
               <th className="whitespace-nowrap text-center">Verifier</th>
               <th className="whitespace-nowrap text-center">Attachment</th>
               <th className="whitespace-nowrap text-center">Action</th>
@@ -1929,6 +1930,9 @@ export const TaskTable: React.FC = () => {
                           </p>
                         )}
                       </div>
+                    </td>
+                    <td className="text-center whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
+                      {t.doer_remark || '-'}
                     </td>
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">

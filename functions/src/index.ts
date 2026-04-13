@@ -280,7 +280,7 @@ export const sendDailyDueDateReminders = onSchedule(
  */
 export const sendDailyReminder = onSchedule(
   {
-    schedule: '0 8 * * *',
+    schedule: '30 10 * * *',
     timeZone: 'Asia/Kolkata',
     timeoutSeconds: 120,
     memory: '256MiB',
