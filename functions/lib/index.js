@@ -24,6 +24,29 @@ const RECURRING_TYPES = [
     'half_yearly',
     'yearly',
 ];
+const DAY_MS = 24 * 60 * 60 * 1000;
+function parseISODateOnly(value) {
+    if (!value)
+        return null;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()))
+        return null;
+    return parsed;
+}
+function toISODateOnly(date) {
+    return date.toISOString().split('T')[0];
+}
+function getStartDateForRecurringDue(baseStartDate, baseDueDate, targetDueDate) {
+    const startBase = parseISODateOnly(baseStartDate);
+    const dueBase = parseISODateOnly(baseDueDate);
+    const targetDue = parseISODateOnly(targetDueDate);
+    if (!startBase || !dueBase || !targetDue)
+        return null;
+    const dueDeltaDays = Math.round((targetDue.getTime() - dueBase.getTime()) / DAY_MS);
+    const nextStart = new Date(startBase);
+    nextStart.setUTCDate(nextStart.getUTCDate() + dueDeltaDays);
+    return toISODateOnly(nextStart);
+}
 function toAppWeekday(date) {
     const jsWeekday = date.getUTCDay(); // 0 = Sun .. 6 = Sat
     return jsWeekday === 0 ? 6 : jsWeekday - 1; // 0 = Mon .. 6 = Sun
@@ -216,7 +239,7 @@ exports.sendDailyDueDateReminders = (0, scheduler_1.onSchedule)({
  * assigned/pending task, prompting them to check the task software.
  */
 exports.sendDailyReminder = (0, scheduler_1.onSchedule)({
-    schedule: '0 8 * * *',
+    schedule: '30 10 * * *',
     timeZone: 'Asia/Kolkata',
     timeoutSeconds: 120,
     memory: '256MiB',
@@ -343,16 +366,19 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
             .where('recurring', '==', 'none')
             .get();
         const existingInstanceDueDates = new Set(existingInstanceSnap.docs.map((d) => String(d.data().due_date || '')));
+        const baseStartDate = String(template.start_date || '');
+        const baseDueDate = String(template.due_date || '');
         let cursor = String(template.due_date || '');
         const originalCursor = cursor;
         let guard = 0;
         while (cursor <= today && guard < 400) {
             guard += 1;
             if (!existingInstanceDueDates.has(cursor)) {
+                const instanceStartDate = getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || today;
                 const newTask = {
                     title: template.title || '',
                     description: template.description || '',
-                    start_date: today,
+                    start_date: instanceStartDate,
                     due_date: cursor,
                     priority: template.priority || 'medium',
                     status: 'pending',
@@ -387,7 +413,9 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
         }
         // Only master due_date moves forward; recurring table stays as master list.
         if (cursor !== originalCursor) {
+            const nextMasterStartDate = getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || String(template.start_date || today);
             await masterRef.update({
+                start_date: nextMasterStartDate,
                 due_date: cursor,
                 updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
             });

@@ -88,6 +88,7 @@ const docToTask = (d: any): Task => {
           ? data.verification_rejected_at
           : timestampToISO(data.verification_rejected_at),
     verification_rejected_by: data.verification_rejected_by,
+    doer_remark: data.doer_remark,
   };
 };
 

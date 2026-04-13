@@ -106,23 +106,19 @@ export const HelpTickets: React.FC = () => {
     setSavingId(id);
     setError('');
     try {
-      await api.setHelpTicketStatus(id, status);
+      // Build a single update payload with status + optional helper note
+      const note = noteDraft[id];
+      const payload: Parameters<typeof api.updateHelpTicket>[1] = { status };
+      if (status === 'resolved') {
+        payload.resolved_at = new Date().toISOString();
+      }
+      if (note !== undefined) {
+        payload.helper_note = note.trim() || null;
+      }
+      await api.updateHelpTicket(id, payload);
       await load();
     } catch (e: any) {
       setError(e?.message || 'Failed to update ticket');
-    } finally {
-      setSavingId(null);
-    }
-  };
-
-  const saveNote = async (id: string) => {
-    setSavingId(id);
-    setError('');
-    try {
-      await api.addHelpTicketHelperNote(id, noteDraft[id] ?? '');
-      await load();
-    } catch (e: any) {
-      setError(e?.message || 'Failed to save note');
     } finally {
       setSavingId(null);
     }
@@ -267,22 +263,6 @@ export const HelpTickets: React.FC = () => {
                           placeholder={canEditHelperNote ? 'Add what you tried / steps / final fix…' : ''}
                           disabled={!canEditHelperNote}
                         />
-                        {canEditHelperNote && (
-                          <div className="flex justify-end mt-2">
-                            <Button
-                              variant="secondary"
-                              onClick={() => saveNote(t.id)}
-                              isLoading={savingId === t.id}
-                            >
-                              Save note
-                            </Button>
-                          </div>
-                        )}
-                        {canHelperAct && !canEditHelperNote && (
-                          <div className="mt-2 text-xs text-slate-500">
-                            Helper note can be edited until the ticket is resolved.
-                          </div>
-                        )}
                       </div>
                     )}
 
