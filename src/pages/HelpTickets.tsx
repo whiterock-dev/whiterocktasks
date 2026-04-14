@@ -53,7 +53,7 @@ export const HelpTickets: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<HelpTicket[]>([]);
-  const [activeTab, setActiveTab] = useState<'assigned' | 'created' | 'rate'>('assigned');
+  const [activeTab, setActiveTab] = useState<'assigned' | 'created'>('assigned');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
@@ -90,8 +90,8 @@ export const HelpTickets: React.FC = () => {
     () => tickets.filter((t) => t.doer_id === user?.id).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
     [tickets, user?.id]
   );
-  const toRate = useMemo(
-    () => created.filter((t) => t.status === 'resolved'),
+  const createdPendingRatingCount = useMemo(
+    () => created.filter((t) => t.status === 'resolved').length,
     [created]
   );
 
@@ -100,7 +100,7 @@ export const HelpTickets: React.FC = () => {
     [assigned]
   );
 
-  const list = activeTab === 'assigned' ? assigned : activeTab === 'created' ? created : toRate;
+  const list = activeTab === 'assigned' ? assigned : created;
 
   const setStatus = async (id: string, status: HelpTicketStatus) => {
     setSavingId(id);
@@ -146,7 +146,7 @@ export const HelpTickets: React.FC = () => {
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className="text-sm text-slate-500">
-          Assigned to you, created by you, and ratings after closure.
+          Assigned to you and created by you. Rate tickets from the details after they are resolved.
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={load} disabled={loading}>
@@ -172,13 +172,7 @@ export const HelpTickets: React.FC = () => {
             className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${activeTab === 'created' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
             onClick={() => setActiveTab('created')}
           >
-            Created by me
-          </button>
-          <button
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${activeTab === 'rate' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-            onClick={() => setActiveTab('rate')}
-          >
-            Rate ({toRate.length})
+            Created by me {createdPendingRatingCount > 0 ? `(${createdPendingRatingCount} to rate)` : ''}
           </button>
         </div>
       </div>
@@ -196,7 +190,7 @@ export const HelpTickets: React.FC = () => {
             const resolutionMins = t.resolved_at ? minutesBetween(t.created_at, t.resolved_at) : null;
             const canHelperAct = activeTab === 'assigned';
             const canEditHelperNote = canHelperAct && (t.status === 'open' || t.status === 'in_progress');
-            const canRate = activeTab === 'rate' && t.status === 'resolved';
+            const canRate = activeTab === 'created' && t.status === 'resolved';
 
             return (
               <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -301,10 +295,9 @@ export const HelpTickets: React.FC = () => {
                                 <button
                                   key={s}
                                   type="button"
-                                  onClick={() => setRateStars((prev) => ({ ...prev, [t.id]: s as any }))}
-                                  className={`h-9 w-9 rounded-lg border text-lg ${
-                                    active ? 'border-amber-200 bg-white' : 'border-slate-200 bg-white'
-                                  } hover:bg-slate-50`}
+                                  onClick={() => setRateStars((prev) => ({ ...prev, [t.id]: s as 1 | 2 | 3 | 4 | 5 }))}
+                                  className={`h-9 w-9 rounded-lg border text-lg ${active ? 'border-amber-200 bg-white' : 'border-slate-200 bg-white'
+                                    } hover:bg-slate-50`}
                                   aria-label={`Rate ${s} stars`}
                                 >
                                   <span className={active ? 'text-amber-500' : 'text-slate-300'}>★</span>
