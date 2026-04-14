@@ -230,7 +230,7 @@ export const Kpi: React.FC = () => {
             </thead>
             <tbody>
               {[...memberRows]
-                .filter((r) => isOwner || r.userId === user?.id)
+                .filter((r) => isOwnerOrManager || r.userId === user?.id)
                 .sort((a, b) => {
                   const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
                   if (!activeSort) return 0;
