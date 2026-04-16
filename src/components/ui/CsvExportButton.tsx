@@ -15,7 +15,7 @@ export const CsvExportButton: React.FC<CsvExportButtonProps> = ({
     loading = false,
     disabled = false,
     label = 'Export CSV',
-    className = '',
+    className = 'flex gap-2',
 }) => {
     return (
         <Button
