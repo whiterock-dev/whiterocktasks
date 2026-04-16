@@ -200,7 +200,9 @@ export const HelpTickets: React.FC = () => {
                       <p className="font-semibold text-slate-800 truncate">{t.title}</p>
                       <StatusPill status={t.status} />
                     </div>
-                    <p className="text-sm text-slate-500 mt-1 line-clamp-2">{t.description}</p>
+                    {!isExpanded && (
+                      <p className="text-sm text-slate-500 mt-1 line-clamp-2">{t.description}</p>
+                    )}
                     <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-3">
                       <span>Doer: <span className="text-slate-700 font-medium">{t.doer_name}</span></span>
                       <span>Helper: <span className="text-slate-700 font-medium">{t.helper_name}</span></span>
@@ -232,6 +234,13 @@ export const HelpTickets: React.FC = () => {
 
                 {isExpanded && (
                   <div className="px-4 md:px-5 pb-4 md:pb-5 space-y-4">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Description</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap wrap-break-word leading-6">
+                        {t.description}
+                      </p>
+                    </div>
+
                     {t.proposed_solutions && t.proposed_solutions.length > 0 && (
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                         <p className="text-sm font-medium text-slate-700 mb-2">Proposed solutions</p>
@@ -239,7 +248,7 @@ export const HelpTickets: React.FC = () => {
                           {t.proposed_solutions.map((s, idx) => (
                             <li key={idx} className="flex gap-2">
                               <span className="text-slate-500">{s.priority ? `P${s.priority}` : '•'}</span>
-                              <span className="flex-1">{s.text}</span>
+                              <span className="flex-1 whitespace-pre-wrap wrap-break-word leading-6">{s.text}</span>
                             </li>
                           ))}
                         </ul>

@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
+import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { Task, UserRole, User } from '../types';
+import { exportRowsToCsv } from '../lib/csv';
 import {
   Repeat,
   Search,
@@ -34,6 +36,7 @@ export const RecurringTasks: React.FC = () => {
   const { user } = useAuth();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [viewTask, setViewTask] = useState<Task | null>(null);
   const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
 
@@ -299,6 +302,39 @@ export const RecurringTasks: React.FC = () => {
       await loadTasks();
     } catch (err) {
       console.error('Failed to delete recurring stream:', err);
+    }
+  };
+
+  const formatRecurringDaysLabel = (dayNumbers: number[]): string => {
+    if (!dayNumbers || dayNumbers.length === 0) return '';
+    return dayNumbers
+      .map((num) => DAYS.find((d) => d.value === num)?.label || String(num))
+      .join(', ');
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      exportRowsToCsv({
+        rows: filteredTasks,
+        columns: [
+          { header: 'Title', accessor: (t) => t.title },
+          { header: 'Description', accessor: (t) => t.description || '' },
+          { header: 'Frequency', accessor: (t) => formatRecurringLabel(getDisplayRecurring(t, taskById), 'None') },
+          { header: 'Assigned To', accessor: (t) => t.assigned_to_name || '' },
+          { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
+          { header: 'Verifier', accessor: (t) => (t.verification_required ? (t.verifier_name || 'Required') : '') },
+          { header: 'Attachment Required', accessor: (t) => t.attachment_required ? 'Yes' : 'No' },
+          { header: 'Attachment Type', accessor: (t) => t.attachment_type || '' },
+          { header: 'Next Due Date', accessor: (t) => formatDateDDMMYYYY(t.due_date) },
+          { header: 'Recurring Days', accessor: (t) => formatRecurringDaysLabel(t.recurring_days || []) },
+        ],
+        fileName: `recurring-tasks-${new Date().toISOString().split('T')[0]}`,
+      });
+    } catch (err) {
+      console.error('Failed to export recurring tasks:', err);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -568,6 +604,16 @@ export const RecurringTasks: React.FC = () => {
             </>
           )}
         </div>
+
+        {isManager && (
+          <div className="flex items-center gap-2">
+            <CsvExportButton
+              onClick={handleExport}
+              loading={exporting}
+              label="Export CSV"
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Pagination ── */}
@@ -583,6 +629,7 @@ export const RecurringTasks: React.FC = () => {
                 <th className="px-4 py-3 font-medium text-slate-600 w-96">Description</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32">Frequency</th>
                 {/* <th className="px-4 py-3 font-medium text-slate-600 w-24 text-center">Priority</th> */}
+                <th className="px-4 py-3 font-medium text-slate-600 w-40">Recurring Days</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned To</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned By</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-52">Verifier</th>
@@ -594,13 +641,13 @@ export const RecurringTasks: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500">
+                  <td colSpan={10} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8">
+                  <td colSpan={10} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -618,6 +665,9 @@ export const RecurringTasks: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-600 capitalize whitespace-normal wrap-break-word align-top leading-6">
                       {formatRecurringLabel(getDisplayRecurring(t, taskById), 'None')}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
+                      {formatRecurringDaysLabel(t.recurring_days || [])}
                     </td>
                     {/*
                     <td className="px-4 py-3 text-center">

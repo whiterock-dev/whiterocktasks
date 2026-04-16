@@ -440,7 +440,14 @@ export const generateRecurringTasksDaily = onSchedule(
       while (cursor <= today && guard < 400) {
         guard += 1;
 
-        if (!existingInstanceDueDates.has(cursor)) {
+        // For daily recurring with specific days: only create instance if cursor matches a selected day
+        let shouldCreateInstance = true;
+        if (recurring === 'daily' && template.recurring_days && Array.isArray(template.recurring_days) && template.recurring_days.length > 0) {
+          const cursorWeekday = toAppWeekday(new Date(`${cursor}T00:00:00Z`));
+          shouldCreateInstance = template.recurring_days.includes(cursorWeekday);
+        }
+
+        if (shouldCreateInstance && !existingInstanceDueDates.has(cursor)) {
           const instanceStartDate =
             getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || today;
 
