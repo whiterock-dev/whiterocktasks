@@ -625,7 +625,7 @@ export const RedZone: React.FC = () => {
           </h2>
           <div className="divide-y divide-red-100">
             {pageItems.map((t) => {
-              const daysOverdue = Math.ceil(
+              const daysOverdue = Math.floor(
                 (new Date().getTime() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24)
               );
               const canEdit = isOwner || isManager || t.assigned_by_id === user?.id;
