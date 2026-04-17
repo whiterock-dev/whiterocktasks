@@ -184,9 +184,9 @@ export const Kpi: React.FC = () => {
             )}
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className={`${isOwnerOrManager ? 'max-h-[70vh] overflow-auto' : 'overflow-x-auto'}`}>
           <table className="w-full border-collapse bg-white rounded-xl border border-slate-200 shadow-sm">
-            <thead>
+            <thead className={isOwnerOrManager ? 'sticky top-0 z-20' : undefined}>
               <tr className="bg-slate-50 border-b border-slate-200 select-none">
                 {[
                   { key: 'userName', label: 'Name', align: 'left' },

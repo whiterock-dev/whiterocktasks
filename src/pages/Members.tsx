@@ -10,7 +10,7 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, UserMinus, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import Papa from 'papaparse';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100] as const;
@@ -99,14 +99,6 @@ export const Members: React.FC = () => {
   };
 
   const handleDeleteMember = async (u: User) => {
-    const tasksAssigned = await api.getTasksAssignedTo(u.id);
-    const incompleteAssigned = tasksAssigned.filter((t) => t.status !== 'completed');
-
-    if (incompleteAssigned.length > 0) {
-      alert('You cannot delete this member because tasks are still assigned and not completed.');
-      return;
-    }
-
     if (!confirm('Remove this member? This cannot be undone.')) return;
     try {
       await api.deleteUser(u.id);
@@ -546,7 +538,7 @@ export const Members: React.FC = () => {
                     disabled={u.id === user?.id}
                     title="Remove member"
                   >
-                    <UserMinus size={14} />
+                    <Trash2 size={14} />
                   </Button>
                 </td>
               </tr>
