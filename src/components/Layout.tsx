@@ -38,6 +38,7 @@ const NavItem = ({
   icon: Icon,
   label,
   badgeCount,
+  secondBadgeCount,
   active,
   onClick,
 }: {
@@ -45,6 +46,7 @@ const NavItem = ({
   icon: any;
   label: string;
   badgeCount?: number;
+  secondBadgeCount?: number;
   active: boolean;
   onClick?: () => void;
 }) => (
@@ -66,6 +68,14 @@ const NavItem = ({
         {badgeCount > 99 ? '99+' : badgeCount}
       </span>
     )}
+    {typeof secondBadgeCount === 'number' && (
+      <span
+        className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${active ? 'bg-red-100 text-red-700' : 'bg-red-100 text-red-700'
+          }`}
+      >
+        {secondBadgeCount > 99 ? '99+' : secondBadgeCount}
+      </span>
+    )}
   </Link>
 );
 
@@ -76,6 +86,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [overdueCount, setOverdueCount] = useState(0);
   const [helpPendingCount, setHelpPendingCount] = useState(0);
+  const [totalOverdueCount, setTotalOverdueCount] = useState(0);
 
   if (!user) return <>{children}</>;
 
@@ -84,6 +95,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       setPendingApprovalCount(0);
       setOverdueCount(0);
       setHelpPendingCount(0);
+      setTotalOverdueCount(0);
       return;
     }
 
@@ -96,7 +108,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         yesterday.setDate(today.getDate() - 1);
         const dueDateTo = yesterday.toISOString().split('T')[0];
 
-        const [approvalCount, overdueTasksCount, helpCount] = await Promise.all([
+        const isManagerOrOwner = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
+
+        const [approvalCount, overdueTasksCount, helpCount, ...rest] = await Promise.all([
           api.getTasksCount({
             status: 'pending_verification',
             verifierId: user.id,
@@ -110,12 +124,23 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             helperId: user.id,
             statusIn: ['open', 'in_progress'],
           }),
+          ...(isManagerOrOwner
+            ? [
+                api.getTasksCount({
+                  statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
+                  dueDateTo,
+                }),
+              ]
+            : []),
         ]);
 
         if (isMounted) {
           setPendingApprovalCount(approvalCount);
           setOverdueCount(overdueTasksCount);
           setHelpPendingCount(helpCount);
+          if (isManagerOrOwner && rest.length > 0) {
+            setTotalOverdueCount(rest[0]);
+          }
         }
       } catch (err) {
         console.error('Failed to load sidebar counts:', err);
@@ -132,6 +157,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   }, [user?.id]);
 
   const isDoer = user.role === UserRole.DOER;
+  const isManagerOrOwnerRole = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
   const isOwner = user.role === UserRole.OWNER;
@@ -210,6 +236,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                               ? helpPendingCount
                               : undefined
                       }
+                      secondBadgeCount={
+                        item.to === '/redzone' && isManagerOrOwnerRole
+                          ? totalOverdueCount
+                          : undefined
+                      }
                       active={location.pathname === item.to}
                     />
                   ))}
@@ -283,6 +314,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                                 : item.to === '/help'
                                   ? helpPendingCount
                                   : undefined
+                          }
+                          secondBadgeCount={
+                            item.to === '/redzone' && isManagerOrOwnerRole
+                              ? totalOverdueCount
+                              : undefined
                           }
                           active={location.pathname === item.to}
                           onClick={() => setMobileOpen(false)}

@@ -10,6 +10,7 @@ import { api } from '../services/api';
 import { storage } from '../lib/firebase';
 import { compressImageForUpload, isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { Button } from '../components/ui/Button';
+import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
@@ -49,7 +50,10 @@ export const RedZone: React.FC = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [searchParams] = useSearchParams();
-  const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || '');
+  const [assignedToFilter, setAssignedToFilter] = useState(() => {
+    // Prefer logged-in user's name if available, else search param, else empty string
+    return (user?.name || searchParams.get('assignedTo') || '').trim();
+  });
   const [assignedByFilter, setAssignedByFilter] = useState('');
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
@@ -877,19 +881,13 @@ export const RedZone: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
-                  <select
+                  <SearchableUserSelect
+                    users={allUsers}
                     value={editAssignedToId}
-                    onChange={(e) => setEditAssignedToId(e.target.value)}
+                    onChange={setEditAssignedToId}
+                    placeholder="Search member..."
                     required
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="">Select a member</option>
-                    {allUsers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>

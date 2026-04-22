@@ -206,7 +206,7 @@ export const AssignTask: React.FC = () => {
     const city = (u.city || '').toLowerCase();
     const role = (ROLE_LABELS[u.role] || '').toLowerCase();
     return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
-  });
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const verifierFiltered = users
     .filter((u) => u.id !== assignedToId)
@@ -218,7 +218,8 @@ export const AssignTask: React.FC = () => {
       const city = (u.city || '').toLowerCase();
       const role = (ROLE_LABELS[u.role] || '').toLowerCase();
       return name.includes(s) || email.includes(s) || city.includes(s) || role.includes(s);
-    });
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   useEffect(() => {
     if (assignedToId && verifierId === assignedToId) {
