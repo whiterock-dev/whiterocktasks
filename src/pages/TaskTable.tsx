@@ -13,6 +13,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
+import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import {
@@ -2270,19 +2271,13 @@ export const TaskTable: React.FC = () => {
                           {editingTask.assigned_to_name}
                         </p>
                       ) : (
-                        <select
+                        <SearchableUserSelect
+                          users={allUsers}
                           value={editAssignedToId}
-                          onChange={(e) => setEditAssignedToId(e.target.value)}
+                          onChange={setEditAssignedToId}
+                          placeholder="Search member..."
                           required
-                          className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                        >
-                          <option value="">Select a member</option>
-                          {allUsers.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       )}
                     </div>
                     <div>
@@ -2404,21 +2399,14 @@ export const TaskTable: React.FC = () => {
                       {editVerificationRequired && (
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Verifier</label>
-                          <select
+                          <SearchableUserSelect
+                            users={allUsers}
                             value={editVerifierId}
-                            onChange={(e) => setEditVerifierId(e.target.value)}
+                            onChange={setEditVerifierId}
+                            placeholder="Search verifier..."
                             required={editVerificationRequired}
-                            className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                          >
-                            <option value="">Select verifier</option>
-                            {allUsers
-                              .filter((u) => u.id !== editAssignedToId)
-                              .map((u) => (
-                                <option key={`verifier-${u.id}`} value={u.id}>
-                                  {u.name}
-                                </option>
-                              ))}
-                          </select>
+                            excludeUserId={editAssignedToId}
+                          />
                         </div>
                       )}
                     </div>
