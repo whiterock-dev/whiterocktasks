@@ -50,10 +50,7 @@ export const RedZone: React.FC = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [searchParams] = useSearchParams();
-  const [assignedToFilter, setAssignedToFilter] = useState(() => {
-    // Prefer logged-in user's name if available, else search param, else empty string
-    return (user?.name || searchParams.get('assignedTo') || '').trim();
-  });
+  const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || '');
   const [assignedByFilter, setAssignedByFilter] = useState('');
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
