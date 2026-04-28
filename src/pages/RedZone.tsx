@@ -57,6 +57,7 @@ export const RedZone: React.FC = () => {
   const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
   const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [doerRemark, setDoerRemark] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -230,14 +231,15 @@ export const RedZone: React.FC = () => {
       if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
       if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
       if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
+      if (cityFilter && (task.assigned_to_city || '').toLowerCase() !== cityFilter.toLowerCase()) return false;
       return true;
     });
-  }, [debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, taskById, tasks, user?.id]);
+  }, [cityFilter, debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, taskById, tasks, user?.id]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedAssignedTo, debouncedAssignedBy, recurringFilter, dateFilter, customStart, customEnd, tasks]);
+  }, [cityFilter, debouncedAssignedTo, debouncedAssignedBy, recurringFilter, dateFilter, customStart, customEnd, tasks]);
 
   // Pagination
   const totalResults = filtered.length;
@@ -608,6 +610,28 @@ export const RedZone: React.FC = () => {
               <option value="half_yearly">Half Yearly</option>
               <option value="yearly">Yearly</option>
             </select>
+
+            {(() => {
+              const cities = Array.from(
+                new Set(
+                  allUsers
+                    .map((u) => (u.city || '').trim())
+                    .filter((c) => c.length > 0)
+                )
+              ).sort((a, b) => a.localeCompare(b));
+              return cities.length > 0 ? (
+                <select
+                  value={cityFilter}
+                  onChange={(e) => setCityFilter(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+                >
+                  <option value="">All Cities</option>
+                  {cities.map((city) => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+              ) : null;
+            })()}
           </div>
         )}
       </div>
