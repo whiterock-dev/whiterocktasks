@@ -23,6 +23,7 @@ export const Kpi: React.FC = () => {
   const [dateFilter, setDateFilter] = useState('all_time');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
 
   const isOwner = user?.role === UserRole.OWNER;
   const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
@@ -152,6 +153,28 @@ export const Kpi: React.FC = () => {
           </h2>
 
           <div className="flex flex-wrap items-center gap-3">
+            {isOwnerOrManager && (() => {
+              const cities = Array.from(
+                new Set(
+                  (allData?.users || [])
+                    .map((u) => (u.city || '').trim())
+                    .filter((c) => c.length > 0)
+                )
+              ).sort((a, b) => a.localeCompare(b));
+              return cities.length > 0 ? (
+                <select
+                  value={cityFilter}
+                  onChange={(e) => setCityFilter(e.target.value)}
+                  className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">All Cities</option>
+                  {cities.map((city) => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+              ) : null;
+            })()}
+
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
@@ -231,6 +254,7 @@ export const Kpi: React.FC = () => {
             <tbody>
               {[...memberRows]
                 .filter((r) => isOwnerOrManager || r.userId === user?.id)
+                .filter((r) => !cityFilter || (r.city || '').toLowerCase() === cityFilter.toLowerCase())
                 .sort((a, b) => {
                   const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
                   if (!activeSort) return 0;
