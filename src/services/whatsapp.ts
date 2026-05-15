@@ -26,6 +26,13 @@ export interface SendOverdueNotificationParams {
   templateName?: string;
 }
 
+export interface SendVerificationRequestParams {
+  phone: string;
+  taskName: string;
+  doerName: string;
+  doerRemark: string;
+}
+
 class WhatsappService {
   /**
    * Helper to format phone numbers properly (ensures country code and strips special characters)
@@ -116,6 +123,39 @@ class WhatsappService {
       });
     } catch (error: any) {
       console.error('[WhatsappService] Error sending overdue notification:', error?.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Notify a verifier that a task is pending their verification.
+   */
+  public async sendVerificationRequest(params: SendVerificationRequestParams): Promise<void> {
+    const { phone, taskName, doerName, doerRemark } = params;
+    const normalizedPhone = this.normalizePhone(phone);
+    const sanitizedOrigin = this.sanitizeOrigin(ORIGIN_WEBSITE);
+
+    if (!AUTH_TOKEN) {
+      console.warn('[WhatsappService] VITE_11ZA_AUTH_TOKEN not set; skipping WhatsApp send');
+      return;
+    }
+
+    const payload = {
+      sendto: normalizedPhone,
+      authToken: AUTH_TOKEN,
+      originWebsite: sanitizedOrigin,
+      language: 'en',
+      templateName: import.meta.env.VITE_11ZA_TEMPLATE_VERIFICATION_REQUEST || 'task_verification_request',
+      name: doerName,
+      data: [taskName, doerName, doerRemark],
+    };
+
+    try {
+      await axios.post(API_URL, payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error: any) {
+      console.error('[WhatsappService] Error sending verification request:', error?.response?.data || error.message);
       throw error;
     }
   }

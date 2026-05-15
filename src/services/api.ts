@@ -779,6 +779,10 @@ export const api = {
     };
   },
 
+  deleteHelpTicket: async (id: string): Promise<void> => {
+    await deleteDoc(doc(db, COLLECTIONS.HELP_TICKETS, id));
+  },
+
   updateHelpTicket: async (
     id: string,
     updates: Partial<{
@@ -787,6 +791,11 @@ export const api = {
       resolved_at: any;
       rated_at: any;
       rating: HelpTicketRating | null;
+      title: string;
+      description: string;
+      proposed_solutions: HelpTicketProposedSolution[];
+      helper_id: string;
+      helper_name: string;
     }>
   ): Promise<void> => {
     const normalizedUpdates = Object.fromEntries(
@@ -992,6 +1001,19 @@ export const api = {
       assignedBy: task.assigned_by_name,
       description: task.description,
       link: task.link,
+    });
+  },
+
+  sendVerificationWhatsApp: async (
+    phone: string,
+    task: { title: string; doerName: string; doerRemark: string }
+  ): Promise<void> => {
+    const { whatsappService } = await import('./whatsapp');
+    await whatsappService.sendVerificationRequest({
+      phone,
+      taskName: task.title,
+      doerName: task.doerName,
+      doerRemark: task.doerRemark,
     });
   },
 

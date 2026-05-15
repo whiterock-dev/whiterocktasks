@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
@@ -66,17 +66,10 @@ export const RecurringTasks: React.FC = () => {
   // Filter state – mirrors TaskTable
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
-  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
-  const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
-  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
-  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('all_time');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-
-  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
-  const assignedByDropdownRef = useRef<HTMLDivElement>(null);
 
   // Users for name dropdowns
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -85,41 +78,7 @@ export const RecurringTasks: React.FC = () => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
 
-  // Debounced name filters
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedToFilter]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedByFilter]);
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    const onOutside = (e: MouseEvent) => {
-      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
-        setAssignedToDropdownOpen(false);
-      }
-      if (assignedByDropdownRef.current && !assignedByDropdownRef.current.contains(e.target as Node)) {
-        setAssignedByDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
-  }, []);
-
-  const nameOptions = Array.from(
-    new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
-  ).sort((a, b) => a.localeCompare(b));
-
-  const assignedToNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
-  );
-  const assignedByNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
-  );
 
   const isDoer = user?.role === UserRole.DOER;
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
@@ -252,8 +211,8 @@ export const RecurringTasks: React.FC = () => {
 
   // Client-side name filtering
   const filteredTasks = useMemo(() => {
-    const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
-    const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
+    const assignedToQuery = assignedToFilter.toLowerCase().trim();
+    const assignedByQuery = assignedByFilter.toLowerCase().trim();
 
     if (!assignedToQuery && !assignedByQuery) return allTasks;
 
@@ -262,12 +221,12 @@ export const RecurringTasks: React.FC = () => {
       if (assignedByQuery && !(t.assigned_by_name || '').toLowerCase().includes(assignedByQuery)) return false;
       return true;
     });
-  }, [allTasks, debouncedAssignedTo, debouncedAssignedBy]);
+  }, [allTasks, assignedToFilter, assignedByFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedAssignedTo, debouncedAssignedBy, recurringFilter, allTasks]);
+  }, [assignedToFilter, assignedByFilter, recurringFilter, allTasks]);
 
   // Pagination calculations
   const totalResults = filteredTasks.length;
@@ -483,77 +442,19 @@ export const RecurringTasks: React.FC = () => {
       {/* ── Filter Bar ── */}
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div ref={assignedToDropdownRef} className="relative z-50">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              value={assignedToFilter}
-              onChange={(e) => {
-                setAssignedToFilter(e.target.value);
-                setAssignedToDropdownOpen(true);
-              }}
-              onFocus={() => setAssignedToDropdownOpen(true)}
-              placeholder="Search Doer Name"
-              className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-            {assignedToDropdownOpen && (
-              <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                {assignedToNameOptions.length === 0 ? (
-                  <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                ) : (
-                  assignedToNameOptions.map((name) => (
-                    <li
-                      key={`to-${name}`}
-                      onClick={() => {
-                        setAssignedToFilter(name);
-                        setAssignedToDropdownOpen(false);
-                      }}
-                      className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                    >
-                      {name}
-                    </li>
-                  ))
-                )}
-              </ul>
-            )}
-          </div>
+          <SearchableUserSelect
+            users={allUsers}
+            nameValue={assignedToFilter}
+            onNameChange={setAssignedToFilter}
+            placeholder="Search Doer Name"
+          />
 
-          <div ref={assignedByDropdownRef} className="relative z-50">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              value={assignedByFilter}
-              onChange={(e) => {
-                setAssignedByFilter(e.target.value);
-                setAssignedByDropdownOpen(true);
-              }}
-              onFocus={() => setAssignedByDropdownOpen(true)}
-              placeholder="Search Assigned By Name"
-              className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-            />
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-            {assignedByDropdownOpen && (
-              <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                {assignedByNameOptions.length === 0 ? (
-                  <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                ) : (
-                  assignedByNameOptions.map((name) => (
-                    <li
-                      key={`by-${name}`}
-                      onClick={() => {
-                        setAssignedByFilter(name);
-                        setAssignedByDropdownOpen(false);
-                      }}
-                      className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                    >
-                      {name}
-                    </li>
-                  ))
-                )}
-              </ul>
-            )}
-          </div>
+          <SearchableUserSelect
+            users={allUsers}
+            nameValue={assignedByFilter}
+            onNameChange={setAssignedByFilter}
+            placeholder="Search Assigned By"
+          />
 
           <select
             value={recurringFilter}

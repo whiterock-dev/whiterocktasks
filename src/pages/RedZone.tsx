@@ -16,6 +16,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import {
   Pencil,
+  Trash2,
   User as UserIcon,
   Search,
   ChevronDown,
@@ -52,11 +53,10 @@ export const RedZone: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || '');
   const [assignedByFilter, setAssignedByFilter] = useState('');
-  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
-  const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
   const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
   const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [doerRemark, setDoerRemark] = useState('');
@@ -107,8 +107,7 @@ export const RedZone: React.FC = () => {
     tasks.forEach((task) => merged.set(task.id, task));
     return merged;
   }, [recurringTaskLookup, tasks]);
-  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
-  const assignedByDropdownRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
@@ -146,30 +145,9 @@ export const RedZone: React.FC = () => {
   const isManager = user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
 
-  const nameOptions = Array.from(
-    new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
-  ).sort((a, b) => a.localeCompare(b));
 
-  const assignedToNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(assignedToFilter.toLowerCase().trim())
-  );
 
-  const assignedByNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(assignedByFilter.toLowerCase().trim())
-  );
 
-  useEffect(() => {
-    const onOutside = (e: MouseEvent) => {
-      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
-        setAssignedToDropdownOpen(false);
-      }
-      if (assignedByDropdownRef.current && !assignedByDropdownRef.current.contains(e.target as Node)) {
-        setAssignedByDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
-  }, []);
 
   const resolveDateRange = useCallback((): { dueDateFrom?: string; dueDateTo?: string } => {
     if (dateFilter === 'all_time') return {};
@@ -219,7 +197,8 @@ export const RedZone: React.FC = () => {
     });
 
     if (isDoer) {
-      return dateFilteredTasks;
+      if (!statusFilter) return dateFilteredTasks;
+      return dateFilteredTasks.filter((task) => task.status === statusFilter);
     }
 
     return dateFilteredTasks.filter((task) => {
@@ -232,14 +211,15 @@ export const RedZone: React.FC = () => {
       if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
       if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
       if (cityFilter && (task.assigned_to_city || '').toLowerCase() !== cityFilter.toLowerCase()) return false;
+      if (statusFilter && task.status !== statusFilter) return false;
       return true;
     });
-  }, [cityFilter, debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, resolveDateRange, taskById, tasks, user?.id]);
+  }, [cityFilter, debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, statusFilter, resolveDateRange, taskById, tasks, user?.id]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [cityFilter, debouncedAssignedTo, debouncedAssignedBy, recurringFilter, dateFilter, customStart, customEnd, tasks]);
+  }, [cityFilter, debouncedAssignedTo, debouncedAssignedBy, recurringFilter, statusFilter, dateFilter, customStart, customEnd, tasks]);
 
   // Pagination
   const totalResults = filtered.length;
@@ -451,6 +431,33 @@ export const RedZone: React.FC = () => {
     }
   };
 
+  const handleDeleteTask = async (task: Task) => {
+    if (!user || (!isOwner && !isManager)) return;
+
+    // For recurring child tasks: only delete this child instance, never the master
+    const isRecurringChild = task.parent_task_id && !task.is_recurring_master;
+    const isRecurringMaster = task.is_recurring_master;
+
+    if (isRecurringMaster) {
+      // Block deletion of recurring masters from RedZone
+      alert('This is a recurring master task. Only child instances can be deleted from here.');
+      return;
+    }
+
+    const message = isRecurringChild
+      ? `Only this task will be removed. The recurring schedule will continue as normal.`
+      : `Delete this task? This action cannot be undone.`;
+
+    if (!window.confirm(message)) return;
+
+    try {
+      await api.deleteTask(task.id);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+    }
+  };
+
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
   return (
@@ -489,6 +496,17 @@ export const RedZone: React.FC = () => {
                 />
               </div>
             )}
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              <option value="">Status</option>
+              <option value="pending">Pending</option>
+              <option value="pending_verification">Pending Verification</option>
+              <option value="correction_required">Correction Required</option>
+            </select>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
@@ -523,77 +541,19 @@ export const RedZone: React.FC = () => {
               </div>
             )}
 
-            <div ref={assignedToDropdownRef} className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedToFilter}
-                onChange={(e) => {
-                  setAssignedToFilter(e.target.value);
-                  setAssignedToDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedToDropdownOpen(true)}
-                placeholder="Search Doer Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedToDropdownOpen && (
-                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedToNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedToNameOptions.map((name) => (
-                      <li
-                        key={`to-${name}`}
-                        onClick={() => {
-                          setAssignedToFilter(name);
-                          setAssignedToDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedToFilter}
+              onNameChange={setAssignedToFilter}
+              placeholder="Search Doer Name"
+            />
 
-            <div ref={assignedByDropdownRef} className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedByFilter}
-                onChange={(e) => {
-                  setAssignedByFilter(e.target.value);
-                  setAssignedByDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedByDropdownOpen(true)}
-                placeholder="Search Assigned By Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedByDropdownOpen && (
-                <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedByNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedByNameOptions.map((name) => (
-                      <li
-                        key={`by-${name}`}
-                        onClick={() => {
-                          setAssignedByFilter(name);
-                          setAssignedByDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedByFilter}
+              onNameChange={setAssignedByFilter}
+              placeholder="Search Assigned By"
+            />
 
             <select
               value={recurringFilter}
@@ -609,6 +569,17 @@ export const RedZone: React.FC = () => {
               <option value="quarterly">Quarterly</option>
               <option value="half_yearly">Half Yearly</option>
               <option value="yearly">Yearly</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              <option value="">Status</option>
+              <option value="pending">Pending</option>
+              <option value="pending_verification">Pending Verification</option>
+              <option value="correction_required">Correction Required</option>
             </select>
 
             {(() => {
@@ -719,6 +690,17 @@ export const RedZone: React.FC = () => {
                         title="Edit Task"
                       >
                         <Pencil size={15} />
+                      </Button>
+                    )}
+                    {(isOwner || isManager) && !t.is_recurring_master && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDeleteTask(t)}
+                        className="px-2"
+                        title={t.parent_task_id ? 'Delete this instance only' : 'Delete Task'}
+                      >
+                        <Trash2 size={15} />
                       </Button>
                     )}
                   </div>
