@@ -6,11 +6,12 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Clock, CheckCircle2, ClipboardList, RefreshCw } from 'lucide-react';
+import { Clock, CheckCircle2, ClipboardList, RefreshCw, Pencil, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
-import { HelpTicket, HelpTicketStatus } from '../types';
+import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { HelpTicket, HelpTicketStatus, User } from '../types';
 
 const StatusPill = ({ status }: { status: HelpTicketStatus }) => {
   const styles: Record<HelpTicketStatus, string> = {
@@ -63,13 +64,23 @@ export const HelpTickets: React.FC = () => {
   const [rateStars, setRateStars] = useState<Record<string, 1 | 2 | 3 | 4 | 5>>({});
   const [rateComment, setRateComment] = useState<Record<string, string>>({});
 
+  const [users, setUsers] = useState<User[]>([]);
+
+  const [editTicket, setEditTicket] = useState<HelpTicket | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editSolutions, setEditSolutions] = useState<string[]>(['']);
+  const [editHelperId, setEditHelperId] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+
   const load = async () => {
     if (!user) return;
     setError('');
     setLoading(true);
     try {
-      const all = await api.getHelpTickets();
+      const [all, allUsers] = await Promise.all([api.getHelpTickets(), api.getUsers()]);
       setTickets(all);
+      setUsers(allUsers);
     } catch (e: any) {
       setError(e?.message || 'Failed to load help tickets');
     } finally {
@@ -140,6 +151,54 @@ export const HelpTickets: React.FC = () => {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this help ticket? This cannot be undone.')) return;
+    try {
+      await api.deleteHelpTicket(id);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete ticket');
+    }
+  };
+
+  const openEdit = (t: HelpTicket) => {
+    setEditTicket(t);
+    setEditTitle(t.title);
+    setEditDescription(t.description);
+    setEditSolutions(t.proposed_solutions?.map((s) => s.text) || ['']);
+    setEditHelperId(t.helper_id);
+    setError('');
+  };
+
+  const handleEditSave = async () => {
+    if (!editTicket) return;
+    if (!editTitle.trim()) { setError('Title is required.'); return; }
+    if (!editDescription.trim()) { setError('Description is required.'); return; }
+    if (!editSolutions[0]?.trim()) { setError('At least one proposed solution is required.'); return; }
+    if (!editHelperId) { setError('Please select a helper.'); return; }
+    const helperUser = users.find((u) => u.id === editHelperId);
+    if (!helperUser) { setError('Selected helper not found.'); return; }
+    setEditSaving(true);
+    setError('');
+    try {
+      await api.updateHelpTicket(editTicket.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        proposed_solutions: editSolutions
+          .filter((s) => s.trim())
+          .map((s, i) => ({ text: s.trim(), priority: (i + 1) as 1 | 2 | 3 })),
+        helper_id: helperUser.id,
+        helper_name: helperUser.name,
+      });
+      setEditTicket(null);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update ticket');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -191,6 +250,9 @@ export const HelpTickets: React.FC = () => {
             const canHelperAct = activeTab === 'assigned';
             const canEditHelperNote = canHelperAct && (t.status === 'open' || t.status === 'in_progress');
             const canRate = activeTab === 'created' && t.status === 'resolved';
+            const canEditDelete =
+              t.doer_id === user.id &&
+              (t.status === 'open' || t.status === 'in_progress');
 
             return (
               <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -221,6 +283,28 @@ export const HelpTickets: React.FC = () => {
                       </span>
                     ) : null}
                     <span className="text-slate-400 text-xs hidden md:inline">{new Date(t.created_at).toLocaleString()}</span>
+                    {canEditDelete && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openEdit(t)}
+                          title="Edit ticket"
+                        >
+                          <Pencil size={14} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDelete(t.id)}
+                          title="Delete ticket"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </>
+                    )}
                     <Button
                       type="button"
                       variant="secondary"
@@ -341,6 +425,91 @@ export const HelpTickets: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+      {editTicket && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-slate-800">Edit Ticket</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                maxLength={80}
+                className="w-full h-10 rounded-xl border border-slate-200 px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={4}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Helper</label>
+              <SearchableUserSelect
+                users={users}
+                value={editHelperId}
+                onChange={setEditHelperId}
+                placeholder="Search helper by name, email, or city…"
+                excludeUserId={user.id}
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-slate-700">Proposed solutions</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setEditSolutions((prev) => prev.length < 3 ? [...prev, ''] : prev)}
+                  disabled={editSolutions.length >= 3}
+                >
+                  + Add
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {editSolutions.map((sol, idx) => (
+                  <div key={idx} className="flex gap-2 items-start">
+                    <span className="mt-2 text-xs font-medium text-slate-500 w-5 shrink-0">P{idx + 1}</span>
+                    <textarea
+                      value={sol}
+                      onChange={(e) => setEditSolutions((prev) => prev.map((x, i) => i === idx ? e.target.value : x))}
+                      rows={2}
+                      className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                      placeholder={idx === 0 ? 'Main proposed solution…' : 'Optional…'}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEditSolutions((prev) => prev.filter((_, i) => i !== idx))}
+                      disabled={idx === 0}
+                      className="mt-1"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">{error}</div>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => { setEditTicket(null); setError(''); }}>Cancel</Button>
+              <Button onClick={handleEditSave} isLoading={editSaving}>Save changes</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

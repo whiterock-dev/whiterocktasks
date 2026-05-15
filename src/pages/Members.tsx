@@ -10,7 +10,7 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Filter } from 'lucide-react';
 import Papa from 'papaparse';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100] as const;
@@ -41,6 +41,7 @@ export const Members: React.FC = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(100);
+  const [cityFilter, setCityFilter] = useState('');
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
@@ -312,6 +313,19 @@ export const Members: React.FC = () => {
   if (loading) return <div className="text-slate-500">Loading...</div>;
   if (!isOwner && !isManager) return <div className="text-slate-500">Access denied. Only Owner and Managers can view Members.</div>;
 
+  // Unique cities for the filter dropdown
+  const uniqueCities = Array.from(
+    new Set(users.map((u) => (u.city || '').trim()).filter((c) => c.length > 0))
+  ).sort((a, b) => a.localeCompare(b));
+
+  // Apply city filter, then sort alphabetically by name
+  const filteredUsers = users
+    .filter((u) => {
+      if (!cityFilter) return true;
+      return (u.city || '').trim().toLowerCase() === cityFilter.toLowerCase();
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
   const paginationControls = (
     <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-slate-200 rounded-xl mb-4">
       <div className="flex items-center gap-3">
@@ -334,8 +348,8 @@ export const Members: React.FC = () => {
 
       <div className="flex items-center gap-3 sm:gap-4">
         <p className="text-sm text-slate-500 whitespace-nowrap">
-          Showing <span className="font-semibold text-slate-800">{users.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, users.length)}</span> of{' '}
-          <span className="font-semibold text-slate-800">{users.length}</span> results
+          Showing <span className="font-semibold text-slate-800">{filteredUsers.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}-{Math.min(currentPage * rowsPerPage, filteredUsers.length)}</span> of{' '}
+          <span className="font-semibold text-slate-800">{filteredUsers.length}</span> results
         </p>
         <div className="flex items-center gap-1.5">
           <button
@@ -359,8 +373,8 @@ export const Members: React.FC = () => {
           <button
             type="button"
             aria-label="Next page"
-            onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(users.length / rowsPerPage)))}
-            disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(filteredUsers.length / rowsPerPage)))}
+            disabled={currentPage >= Math.ceil(filteredUsers.length / rowsPerPage) || filteredUsers.length === 0}
             className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronRight size={16} />
@@ -368,8 +382,8 @@ export const Members: React.FC = () => {
           <button
             type="button"
             aria-label="Last page"
-            onClick={() => setCurrentPage(Math.ceil(users.length / rowsPerPage))}
-            disabled={currentPage >= Math.ceil(users.length / rowsPerPage) || users.length === 0}
+            onClick={() => setCurrentPage(Math.ceil(filteredUsers.length / rowsPerPage))}
+            disabled={currentPage >= Math.ceil(filteredUsers.length / rowsPerPage) || filteredUsers.length === 0}
             className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronsRight size={16} />
@@ -411,6 +425,32 @@ export const Members: React.FC = () => {
               <Download size={18} className="mr-2" />
               Download Template
             </Button>
+          </div>
+        )}
+        {uniqueCities.length > 0 && (
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <select
+              value={cityFilter}
+              onChange={(e) => {
+                setCityFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+            >
+              <option value="">All Cities</option>
+              {uniqueCities.map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+            {cityFilter && (
+              <button
+                type="button"
+                onClick={() => { setCityFilter(''); setCurrentPage(1); }}
+                className="text-xs text-teal-600 hover:text-teal-800 font-medium"
+              >
+                Clear
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -510,7 +550,7 @@ export const Members: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {users.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map((u) => (
+            {filteredUsers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage).map((u) => (
               <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="py-3 px-4 font-medium text-slate-800">{u.name}</td>
                 <td className="py-3 px-4 text-slate-600">{u.email}</td>
@@ -543,7 +583,7 @@ export const Members: React.FC = () => {
                 </td>
               </tr>
             ))}
-            {users.length === 0 && (
+            {filteredUsers.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-6 text-center text-slate-500">
                   No members found.

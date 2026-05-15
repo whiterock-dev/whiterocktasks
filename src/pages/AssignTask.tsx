@@ -13,7 +13,7 @@ import { Button } from '../components/ui/Button';
 import { RECURRING_OPTIONS } from '../lib/utils';
 import { User, Task, RecurringType } from '../types';
 import { UserRole } from '../types';
-import { Search, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown, X } from 'lucide-react';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
@@ -38,7 +38,7 @@ export const AssignTask: React.FC = () => {
   const [attachmentType, setAttachmentType] = useState<'media' | 'text'>('media');
   const [attachmentDesc, setAttachmentDesc] = useState('');
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
-  const [assignedToId, setAssignedToId] = useState('');
+  const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
   const [assignToSearch, setAssignToSearch] = useState('');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const assignDropdownRef = useRef<HTMLDivElement>(null);
@@ -69,11 +69,11 @@ export const AssignTask: React.FC = () => {
       verificationRequired &&
       !verifierId &&
       user?.id &&
-      user.id !== assignedToId
+      !assignedToIds.includes(user.id)
     ) {
       setVerifierId(user.id);
     }
-  }, [verificationRequired, verifierId, user?.id, assignedToId]);
+  }, [verificationRequired, verifierId, user?.id, assignedToIds]);
 
   const DAYS = [
     { value: 0, label: 'Mon' },
@@ -94,9 +94,9 @@ export const AssignTask: React.FC = () => {
     e.preventDefault();
     if (!user) return;
     setFormError('');
-    if (!assignedToId) {
+    if (assignedToIds.length === 0) {
       setAssignDropdownOpen(true);
-      setFormError('Please select a member in Assign To.');
+      setFormError('Please select at least one member in Assign To.');
       return;
     }
     if (verificationRequired && !verifierId) {
@@ -104,85 +104,94 @@ export const AssignTask: React.FC = () => {
       setFormError('Please select a verifier.');
       return;
     }
-    if (verificationRequired && verifierId === assignedToId) {
-      setFormError('Verifier and assignee cannot be the same member.');
+    if (verificationRequired && assignedToIds.includes(verifierId)) {
+      setFormError('Verifier cannot be one of the selected doers.');
       return;
     }
     setLoading(true);
     setSuccess('');
     try {
-      const assignee = users.find((u) => u.id === assignedToId);
-      const verifier = users.find((u) => u.id === verifierId);
       const isHoliday = holidays.some((h) => h.date === dueDate);
-      const task: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
-        title,
-        description,
-        start_date: startDate || undefined,
-        due_date: dueDate,
-        priority: 'medium',
-        status: 'pending',
-        recurring,
-        is_recurring_master: recurring !== 'none',
-        recurring_days: recurring === 'daily' && recurringDays.length > 0 ? recurringDays : undefined,
-        attachment_required: attachmentRequired,
-        attachment_type: attachmentRequired ? attachmentType : undefined,
-        attachment_description: attachmentRequired ? attachmentDesc : undefined,
-        assigned_to_id: assignedToId,
-        assigned_to_name: assignee?.name || '',
-        assigned_to_city: assignee?.city,
-        assigned_by_id: user.id,
-        assigned_by_name: user.name,
-        verification_required: verificationRequired,
-        verifier_id: verificationRequired ? verifierId : undefined,
-        verifier_name: verificationRequired ? verifier?.name : undefined,
-        is_holiday: isHoliday,
-      };
-      const created = await api.createTask(task);
+      const verifier = users.find((u) => u.id === verifierId);
 
-      // For recurring tasks, master controls schedule and first child is created immediately for doer action.
-      if (recurring !== 'none') {
-        await api.createTask({
-          ...task,
-          recurring: 'none',
-          is_recurring_master: false,
-          recurring_days: undefined,
-          parent_task_id: created.id,
-        });
-      }
-      const assigneeUser = users.find((u) => u.id === assignedToId);
-      let whatsappStatus = '';
-      if (assigneeUser?.phone) {
-        try {
-          const link = `https://tasks.whiterock.co.in/#/tasks`;
-          const formattedDate = created.due_date.split('-').reverse().join('-');
-          const desc = created.description || 'N/A';
+      let successCount = 0;
+      let whatsappFailures: string[] = [];
 
-          await api.sendTaskAssignmentWhatsApp(assigneeUser.phone, {
-            title: created.title,
-            description: desc,
-            due_date: formattedDate,
-            assigned_by_name: created.assigned_by_name || user.name,
-            link,
+      for (const assigneeId of assignedToIds) {
+        const assignee = users.find((u) => u.id === assigneeId);
+        if (!assignee) continue;
+
+        const task: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
+          title,
+          description,
+          start_date: startDate || undefined,
+          due_date: dueDate,
+          priority: 'medium',
+          status: 'pending',
+          recurring,
+          is_recurring_master: recurring !== 'none',
+          recurring_days: recurring === 'daily' && recurringDays.length > 0 ? recurringDays : undefined,
+          attachment_required: attachmentRequired,
+          attachment_type: attachmentRequired ? attachmentType : undefined,
+          attachment_description: attachmentRequired ? attachmentDesc : undefined,
+          assigned_to_id: assigneeId,
+          assigned_to_name: assignee.name || '',
+          assigned_to_city: assignee.city,
+          assigned_by_id: user.id,
+          assigned_by_name: user.name,
+          verification_required: verificationRequired,
+          verifier_id: verificationRequired ? verifierId : undefined,
+          verifier_name: verificationRequired ? verifier?.name : undefined,
+          is_holiday: isHoliday,
+        };
+        const created = await api.createTask(task);
+
+        // For recurring tasks, master controls schedule and first child is created immediately for doer action.
+        if (recurring !== 'none') {
+          await api.createTask({
+            ...task,
+            recurring: 'none',
+            is_recurring_master: false,
+            recurring_days: undefined,
+            parent_task_id: created.id,
           });
-          whatsappStatus = ' ';
-        } catch (whatsappErr) {
-          console.error('WhatsApp send failed:', whatsappErr);
-          whatsappStatus = ' WhatsApp notification failed to send.';
         }
-      } else {
-        whatsappStatus = ' (No phone number — WhatsApp not sent)';
+
+        if (assignee.phone) {
+          try {
+            const link = `https://tasks.whiterock.co.in/#/tasks`;
+            const formattedDate = created.due_date.split('-').reverse().join('-');
+            const desc = created.description || 'N/A';
+
+            await api.sendTaskAssignmentWhatsApp(assignee.phone, {
+              title: created.title,
+              description: desc,
+              due_date: formattedDate,
+              assigned_by_name: created.assigned_by_name || user.name,
+              link,
+            });
+          } catch (whatsappErr) {
+            console.error('WhatsApp send failed:', whatsappErr);
+            whatsappFailures.push(assignee.name || 'Unknown');
+          }
+        }
+        successCount++;
       }
-      setSuccess('Task assigned successfully!' + whatsappStatus);
+
+      let msg = `${successCount} task(s) assigned successfully!`;
+      if (whatsappFailures.length > 0) {
+        msg += ` WhatsApp failed for: ${whatsappFailures.join(', ')}.`;
+      }
+      setSuccess(msg);
       setTitle('');
       setDescription('');
       setStartDate(today);
       setDueDate('');
-      // setPriority('medium');
       setRecurring('none');
       setRecurringDays([]);
       setAttachmentRequired(false);
       setAttachmentDesc('');
-      setAssignedToId('');
+      setAssignedToIds([]);
       setAssignToSearch('');
       setVerificationRequired(true);
       setVerifierId(user.id);
@@ -190,13 +199,13 @@ export const AssignTask: React.FC = () => {
       setVerifierDropdownOpen(false);
     } catch (err: any) {
       console.error(err);
-      setFormError(err?.message || 'Failed to assign task. Please try again.');
+      setFormError(err?.message || 'Failed to assign task(s). Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const selectedUser = users.find((u) => u.id === assignedToId);
+  const selectedUsers = users.filter((u) => assignedToIds.includes(u.id));
   const selectedVerifier = users.find((u) => u.id === verifierId);
   const assignFiltered = users.filter((u) => {
     const s = assignToSearch.toLowerCase().trim();
@@ -209,7 +218,7 @@ export const AssignTask: React.FC = () => {
   }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   const verifierFiltered = users
-    .filter((u) => u.id !== assignedToId)
+    .filter((u) => !assignedToIds.includes(u.id))
     .filter((u) => {
       const s = verifierSearch.toLowerCase().trim();
       if (!s) return true;
@@ -222,11 +231,11 @@ export const AssignTask: React.FC = () => {
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   useEffect(() => {
-    if (assignedToId && verifierId === assignedToId) {
+    if (assignedToIds.includes(verifierId)) {
       setVerifierId('');
       setVerifierSearch('');
     }
-  }, [assignedToId, verifierId]);
+  }, [assignedToIds, verifierId]);
 
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
@@ -395,57 +404,93 @@ export const AssignTask: React.FC = () => {
               </div>
             )}
             <div ref={assignDropdownRef} className="relative">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Assign To (select one or more)</label>
+              {selectedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-2 my-2">
+                  {selectedUsers.map((u) => (
+                    <span key={u.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200 text-teal-800 text-xs font-medium">
+                      {u.name} {u.city ? `(${u.city})` : ''}
+                      <button
+                        type="button"
+                        onClick={() => setAssignedToIds(prev => prev.filter(id => id !== u.id))}
+                        className="hover:text-teal-900 focus:outline-none ml-1 opacity-70 hover:opacity-100"
+                        title="Remove"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                   type="text"
-                  value={assignDropdownOpen ? assignToSearch : (selectedUser ? `${selectedUser.name} · ${ROLE_LABELS[selectedUser.role]}${selectedUser.city ? ` · ${selectedUser.city}` : ''}` : '')}
+                  value={assignToSearch}
                   onChange={(e) => {
                     setAssignToSearch(e.target.value);
                     setAssignDropdownOpen(true);
-                    if (!e.target.value) setAssignedToId('');
                     if (formError) setFormError('');
                   }}
                   onFocus={() => setAssignDropdownOpen(true)}
                   placeholder="Search by name, email, role, or city..."
                   className="w-full h-10 pl-10 pr-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 />
-                <ChevronDown
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                  size={18}
-                />
+                {assignToSearch ? (
+                  <button
+                    type="button"
+                    onClick={() => { setAssignToSearch(''); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    tabIndex={-1}
+                  >
+                    <X size={16} />
+                  </button>
+                ) : (
+                  <ChevronDown
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                    size={18}
+                  />
+                )}
               </div>
+
               {assignDropdownOpen && (
                 <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
                   {assignFiltered.length === 0 ? (
                     <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
                   ) : (
-                    assignFiltered.map((u) => (
-                      <li
-                        key={u.id}
-                        role="option"
-                        aria-selected={assignedToId === u.id}
-                        onClick={() => {
-                          setAssignedToId(u.id);
-                          setAssignToSearch('');
-                          setAssignDropdownOpen(false);
-                          setFormError('');
-                        }}
-                        className={`cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 ${assignedToId === u.id ? 'bg-teal-50 text-teal-800' : 'text-slate-700'}`}
-                      >
-                        <span className="font-medium">{u.name}</span>
-                        <span className="text-slate-500">
-                          {' · '}{ROLE_LABELS[u.role]}
-                          {u.city ? ` · ${u.city}` : ''}
-                        </span>
-                      </li>
-                    ))
+                    assignFiltered.map((u) => {
+                      const isSelected = assignedToIds.includes(u.id);
+                      return (
+                        <li
+                          key={u.id}
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            if (isSelected) {
+                              setAssignedToIds(prev => prev.filter(id => id !== u.id));
+                            } else {
+                              setAssignedToIds(prev => [...prev, u.id]);
+                            }
+                            if (formError) setFormError('');
+                          }}
+                          className={`cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 flex items-center justify-between ${isSelected ? 'bg-teal-50/50 text-teal-800' : 'text-slate-700'}`}
+                        >
+                          <div>
+                            <span className="font-medium">{u.name}</span>
+                            <span className="text-slate-500">
+                              {' · '}{ROLE_LABELS[u.role]}
+                              {u.city ? ` · ${u.city}` : ''}
+                            </span>
+                          </div>
+                          {isSelected && <span className="text-teal-600 text-sm font-bold ml-2">✓</span>}
+                        </li>
+                      );
+                    })
                   )}
                 </ul>
               )}
-              {!assignedToId && assignDropdownOpen && (
-                <p className="mt-1 text-xs text-amber-600">Select a member to assign the task to.</p>
+              {assignedToIds.length === 0 && assignDropdownOpen && (
+                <p className="mt-1 text-xs text-amber-600">Select at least one member to assign the task to.</p>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -458,7 +503,7 @@ export const AssignTask: React.FC = () => {
                   if (!e.target.checked) {
                     setVerifierId('');
                     setVerifierSearch('');
-                  } else if (user?.id && !verifierId && user.id !== assignedToId) {
+                  } else if (user?.id && !verifierId && !assignedToIds.includes(user.id)) {
                     setVerifierId(user.id);
                   }
                 }}

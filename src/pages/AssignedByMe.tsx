@@ -69,9 +69,7 @@ export const AssignedByMe: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
-  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
-  const [assignedByDropdownOpen, setAssignedByDropdownOpen] = useState(false);
-
+  
   const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
   const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
@@ -118,8 +116,7 @@ export const AssignedByMe: React.FC = () => {
     return () => clearTimeout(t);
   }, [assignedByFilter]);
 
-  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
-  const assignedByDropdownRef = useRef<HTMLDivElement>(null);
+
   const [statusFilter, setStatusFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
@@ -707,29 +704,7 @@ export const AssignedByMe: React.FC = () => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
 
-  const nameOptions = Array.from(
-    new Set(allUsers.map((u) => (u.name || '').trim()).filter((name) => name.length > 0))
-  ).sort((a, b) => a.localeCompare(b));
 
-  const assignedToNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(debouncedAssignedTo.toLowerCase().trim())
-  );
-  const assignedByNameOptions = nameOptions.filter((name) =>
-    name.toLowerCase().includes(debouncedAssignedBy.toLowerCase().trim())
-  );
-
-  useEffect(() => {
-    const onOutside = (e: MouseEvent) => {
-      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
-        setAssignedToDropdownOpen(false);
-      }
-      if (assignedByDropdownRef.current && !assignedByDropdownRef.current.contains(e.target as Node)) {
-        setAssignedByDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
-  }, []);
 
   const handleCompleteClick = (t: Task) => {
     setCompleteTask(t);
@@ -1477,77 +1452,19 @@ export const AssignedByMe: React.FC = () => {
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
         {isSelfTasksView ? (
           <div className="flex flex-wrap items-center gap-3">
-            <div ref={assignedToDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedToFilter}
-                onChange={(e) => {
-                  setAssignedToFilter(e.target.value);
-                  setAssignedToDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedToDropdownOpen(true)}
-                placeholder="Search Doer Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedToDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedToNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedToNameOptions.map((name) => (
-                      <li
-                        key={`to-${name}`}
-                        onClick={() => {
-                          setAssignedToFilter(name);
-                          setAssignedToDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedToFilter}
+              onNameChange={setAssignedToFilter}
+              placeholder="Search Doer Name"
+            />
 
-            <div ref={assignedByDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedByFilter}
-                onChange={(e) => {
-                  setAssignedByFilter(e.target.value);
-                  setAssignedByDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedByDropdownOpen(true)}
-                placeholder="Search Assigned By Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedByDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedByNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedByNameOptions.map((name) => (
-                      <li
-                        key={`by-${name}`}
-                        onClick={() => {
-                          setAssignedByFilter(name);
-                          setAssignedByDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedByFilter}
+              onNameChange={setAssignedByFilter}
+              placeholder="Search Assigned By"
+            />
 
             <select
               value={statusFilter}
@@ -1614,77 +1531,19 @@ export const AssignedByMe: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <div ref={assignedToDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedToFilter}
-                onChange={(e) => {
-                  setAssignedToFilter(e.target.value);
-                  setAssignedToDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedToDropdownOpen(true)}
-                placeholder="Search Doer Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm z-50"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedToDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedToNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedToNameOptions.map((name) => (
-                      <li
-                        key={`to-${name}`}
-                        onClick={() => {
-                          setAssignedToFilter(name);
-                          setAssignedToDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedToFilter}
+              onNameChange={setAssignedToFilter}
+              placeholder="Search Doer Name"
+            />
 
-            <div ref={assignedByDropdownRef} className="relative z-50">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                value={assignedByFilter}
-                onChange={(e) => {
-                  setAssignedByFilter(e.target.value);
-                  setAssignedByDropdownOpen(true);
-                }}
-                onFocus={() => setAssignedByDropdownOpen(true)}
-                placeholder="Search Assigned By Name"
-                className="h-9 rounded-lg border border-slate-300 pl-9 pr-9 text-sm"
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-              {assignedByDropdownOpen && (
-                <ul className="absolute z-60 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
-                  {assignedByNameOptions.length === 0 ? (
-                    <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
-                  ) : (
-                    assignedByNameOptions.map((name) => (
-                      <li
-                        key={`by-${name}`}
-                        onClick={() => {
-                          setAssignedByFilter(name);
-                          setAssignedByDropdownOpen(false);
-                        }}
-                        className="cursor-pointer py-2.5 px-3 text-sm hover:bg-slate-50 text-slate-700"
-                      >
-                        {name}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
+            <SearchableUserSelect
+              users={allUsers}
+              nameValue={assignedByFilter}
+              onNameChange={setAssignedByFilter}
+              placeholder="Search Assigned By"
+            />
 
             <select
               value={statusFilter}
