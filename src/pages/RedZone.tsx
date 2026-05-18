@@ -730,13 +730,6 @@ export const RedZone: React.FC = () => {
                     : 'Upload a photo/video or paste a link to your media.')}
               </p>
             )}
-            {formatRecurringLabel(getDisplayRecurring(completeTask, taskById), 'Non-recurring') !== 'Non-recurring' && (
-              <p className="text-xs text-slate-600 mb-4">
-                {(isDoer && user?.id !== completeTask.assigned_by_id)
-                  ? 'This task belongs to a recurring stream. Completing it will automatically create the next occurrence.'
-                  : <>This task belongs to a recurring stream. Use <strong>Complete</strong> to mark it done and create the next occurrence, or <strong>Close Permanently</strong> to stop it from recurring.</>}
-              </p>
-            )}
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Doer's Remark <span className="text-red-600">*</span>
@@ -813,22 +806,7 @@ export const RedZone: React.FC = () => {
               </div>
             ) : null}
             <div className="flex gap-2 justify-end">
-              {completeTask.recurring !== 'none' && (!isDoer || user?.id === completeTask.assigned_by_id) && (
-                <Button
-                  variant="danger"
-                  onClick={() =>
-                    handleComplete(
-                      completeTask,
-                      completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                      completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                      undefined,
-                      { closePermanently: true }
-                    )
-                  }
-                >
-                  Close Permanently
-                </Button>
-              )}
+
               <Button variant="secondary" onClick={closeCompleteModal}>
                 Cancel
               </Button>
