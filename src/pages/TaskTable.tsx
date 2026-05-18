@@ -1912,11 +1912,6 @@ export const TaskTable: React.FC = () => {
                     : 'Upload a photo/video or paste a link to your media.')}
               </p>
             )}
-            {getDisplayRecurring(completeTask, taskById) !== 'none' && (
-              <p className="text-xs text-slate-600 mb-4">
-                This task belongs to a recurring stream. New task instances are created by the scheduler.
-              </p>
-            )}
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Doer's Remark <span className="text-red-600">*</span>
