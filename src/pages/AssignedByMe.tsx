@@ -1198,7 +1198,7 @@ export const AssignedByMe: React.FC = () => {
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
                   <td className="sticky-col-1">{t.title}</td>
-                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                  <td className="sticky-col-2 whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
                   <td>
@@ -1313,7 +1313,7 @@ export const AssignedByMe: React.FC = () => {
                   <td className="sticky-col-1">
                     <span className="font-medium text-slate-800">{t.title}</span>
                   </td>
-                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
+                  <td className="sticky-col-2 whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
                   <td>
@@ -1739,7 +1739,7 @@ export const AssignedByMe: React.FC = () => {
                       </span>
                     </td>
                     <td className="text-center">
-                      <div className="flex flex-col items-center gap-1 max-w-[14rem] mx-auto">
+                      <div className="flex flex-col items-center gap-1 max-w-56 mx-auto">
                         <span
                           className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
                             ? 'bg-emerald-100 text-emerald-800'
@@ -1763,7 +1763,7 @@ export const AssignedByMe: React.FC = () => {
                                 : t.status}
                         </span>
                         {t.status === 'correction_required' && t.verification_rejection_comment && (
-                          <p className="text-xs text-amber-900 text-left w-full break-words" title={t.verification_rejection_comment}>
+                          <p className="text-xs text-amber-900 text-left w-full wrap-break-word" title={t.verification_rejection_comment}>
                             <span className="font-medium">Verifier: </span>
                             {t.verification_rejection_comment}
                           </p>
@@ -1831,12 +1831,12 @@ export const AssignedByMe: React.FC = () => {
                                 </Button>
                               )}
                               {canEditTask && (
-                                <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="!px-2" title="Edit Task">
+                                <Button size="sm" variant="secondary" onClick={() => openEditModal(t)} className="px-2!" title="Edit Task">
                                   <Pencil size={15} />
                                 </Button>
                               )}
                               {canDeleteTask && (
-                                <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="!px-2" title="Delete Task">
+                                <Button size="sm" variant="danger" onClick={() => handleDeleteTask(t.id)} className="px-2!" title="Delete Task">
                                   <Trash2 size={15} />
                                 </Button>
                               )}
@@ -1997,7 +1997,7 @@ export const AssignedByMe: React.FC = () => {
               </div>
             )}
             {viewAttachment.text != null && viewAttachment.text !== '' && (
-              <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50 min-h-[100px]">
+              <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50 min-h-25">
                 {viewAttachment.text}
               </pre>
             )}
@@ -2010,7 +2010,7 @@ export const AssignedByMe: React.FC = () => {
       )}
 
       {rejectTask && user && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-60 p-4">
           <div className="card p-6 max-w-md w-full shadow-xl">
             <h3 className="text-lg font-semibold mb-2 text-slate-800">Reject verification</h3>
             <p className="text-sm text-slate-600 mb-3">
