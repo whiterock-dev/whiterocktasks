@@ -447,6 +447,27 @@ export const api = {
     return countSnap.data().count;
   },
 
+  getVerifierPendingCounts: async (): Promise<{ verifier_id: string; verifier_name: string; count: number }[]> => {
+    const q = query(
+      collection(db, COLLECTIONS.TASKS),
+      where('status', '==', 'pending_verification')
+    );
+    const snap = await getDocs(q);
+    const counts: Record<string, { verifier_name: string; count: number }> = {};
+    snap.forEach((docSnap) => {
+      const task = docSnap.data() as Task;
+      if (!task.verifier_id) return;
+      if (!counts[task.verifier_id]) {
+        counts[task.verifier_id] = { verifier_name: task.verifier_name ?? task.verifier_id, count: 0 };
+      }
+      counts[task.verifier_id].count++;
+    });
+    return Object.entries(counts)
+      .map(([verifier_id, { verifier_name, count }]) => ({ verifier_id, verifier_name, count }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count);
+  },
+
   /** Incomplete tasks for current user (e.g. removal request dropdown). Limit 100. */
   getMyIncompleteTasks: async (userId: string, limitCount: number = 100): Promise<Task[]> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);

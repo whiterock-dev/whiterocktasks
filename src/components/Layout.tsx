@@ -23,6 +23,7 @@ import {
   Users,
   Repeat,
   LifeBuoy,
+  ShieldCheck,
 } from 'lucide-react';
 
 const roleLabels: Record<UserRole, string> = {
@@ -126,11 +127,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           }),
           ...(isManagerOrOwner
             ? [
-                api.getTasksCount({
-                  statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
-                  dueDateTo,
-                }),
-              ]
+              api.getTasksCount({
+                statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
+                dueDateTo,
+              }),
+            ]
             : []),
         ]);
 
@@ -198,6 +199,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           { to: '/help/logs', icon: Table2, label: 'Help Logs', section: 'Help' as const },
           { to: '/help/kpi', icon: BarChart3, label: 'Help MIS', section: 'Help' as const }
         ] : []),
+        ...(isManager ? [{ to: '/verifier-pending', icon: ShieldCheck, label: 'Verification Pending', section: 'Tasks' as const }] : []),
         ...(isManager ? [{ to: '/members', icon: Users, label: 'Members', section: 'Settings' as const }] : []),
         { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' as const },
       ];
@@ -372,6 +374,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/help/new': 'Create Help Ticket',
               '/help/logs': 'Help Logs',
               '/settings': 'Settings',
+              '/verifier-pending': 'Verification Pending',
             };
             const pageTitle = isAuditor && location.pathname === '/tasks'
               ? 'Audit Tasks'

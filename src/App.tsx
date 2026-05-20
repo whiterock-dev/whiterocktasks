@@ -26,6 +26,7 @@ const AssignedByMe = lazy(() => import('./pages/AssignedByMe').then((m) => ({ de
 const HelpTickets = lazy(() => import('./pages/HelpTickets').then((m) => ({ default: m.HelpTickets })));
 const HelpNew = lazy(() => import('./pages/HelpNew').then((m) => ({ default: m.HelpNew })));
 const HelpLogs = lazy(() => import('./pages/HelpLogs').then((m) => ({ default: m.HelpLogs })));
+const VerifierPending = lazy(() => import('./pages/VerifierPending').then((m) => ({ default: m.VerifierPending })));
 
 const PageFallback = () => <div className="text-slate-500 py-8">Loading...</div>;
 
@@ -183,6 +184,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <HelpKpi />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/verifier-pending"
+              element={
+                <ProtectedRoute>
+                  <VerifierPending />
                 </ProtectedRoute>
               }
             />

@@ -124,7 +124,7 @@ export const SearchableUserSelect: React.FC<SearchableUserSelectProps> = ({
           )}
         </div>
         {isOpen && (
-          <ul className="absolute z-[70] mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+          <ul className="absolute z-70 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
             {filteredUsers.length === 0 ? (
               <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
             ) : (
@@ -202,7 +202,7 @@ export const SearchableUserSelect: React.FC<SearchableUserSelectProps> = ({
         </div>
       )}
       {isOpen && (
-        <ul className="absolute z-[70] mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+        <ul className="absolute z-70 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1">
           {filteredUsers.length === 0 ? (
             <li className="py-2 px-3 text-sm text-slate-500">No member found</li>
           ) : (
