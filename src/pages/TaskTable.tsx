@@ -63,6 +63,7 @@ export const TaskTable: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [totalResults, setTotalResults] = useState(0);
+  const [midnightRefreshKey, setMidnightRefreshKey] = useState(0);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState('all_time');
@@ -86,6 +87,7 @@ export const TaskTable: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
+  const [completing, setCompleting] = useState(false);
   const [doerRemark, setDoerRemark] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [attachmentText, setAttachmentText] = useState('');
@@ -360,26 +362,25 @@ export const TaskTable: React.FC = () => {
     [debouncedAssignedBy, debouncedAssignedTo]
   );
 
+  const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
+  const isStartDateSort = sortConfig?.key === 'start_date';
+
+  const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
+    const { includeTime = false, emptyValue = '' } = opts || {};
+    return formatDateDDMMYYYY(value, { includeTime, emptyValue });
+  }, []);
+
   const filterByStartDate = useCallback(
     (list: Task[]) => {
       const today = getTodayLocal();
       return list.filter((task) => {
         const rawStartDate = (task.start_date || '').trim();
         if (!rawStartDate) return true;
-
-        const normalizedStartDate = rawStartDate.slice(0, 10);
-        return normalizedStartDate <= today;
+        return rawStartDate.slice(0, 10) <= today;
       });
     },
     [getTodayLocal]
   );
-
-  const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
-
-  const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
-    const { includeTime = false, emptyValue = '' } = opts || {};
-    return formatDateDDMMYYYY(value, { includeTime, emptyValue });
-  }, []);
 
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -466,7 +467,7 @@ export const TaskTable: React.FC = () => {
         return;
       }
 
-      if (hasNameFilter || recurringFilter) {
+      if (hasNameFilter || recurringFilter || isStartDateSort) {
         try {
           const allRows = await api.getAllTasksByFilters({
             sortBy: sortConfig?.key,
@@ -530,6 +531,7 @@ export const TaskTable: React.FC = () => {
     getDoerVisibleRows,
     isSelfTasksView,
     loadPage,
+    midnightRefreshKey,
     refreshToken,
     setClientPageFromRows,
     sortConfig,
@@ -540,6 +542,17 @@ export const TaskTable: React.FC = () => {
       setSortConfig({ key: 'due_date', direction: 'asc' });
     }
   }, [isSelfTasksView, sortConfig]);
+
+  useEffect(() => {
+    const now = new Date();
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const istTomorrow = new Date(istNow);
+    istTomorrow.setDate(istTomorrow.getDate() + 1);
+    istTomorrow.setHours(0, 0, 5, 0);
+    const msUntilMidnight = istTomorrow.getTime() - istNow.getTime();
+    const timer = setTimeout(() => setMidnightRefreshKey((k) => k + 1), msUntilMidnight);
+    return () => clearTimeout(timer);
+  }, [midnightRefreshKey]);
 
   useEffect(() => {
     if (isAuditor || isVerifier) return;
@@ -612,7 +625,7 @@ export const TaskTable: React.FC = () => {
     return aValue > bValue ? -1 : 1;
   });
 
-  const isClientMode = hasNameFilter || isSelfTasksView;
+  const isClientMode = hasNameFilter || isSelfTasksView || isStartDateSort;
   const tableColumnCount = 12;
 
   const effectiveTotalResults = isClientMode
@@ -771,6 +784,7 @@ export const TaskTable: React.FC = () => {
   ) => {
     if (!user) return;
     if (isRecurringMasterTask(t)) return;
+    if (completing) return;
     const closePermanently = opts?.closePermanently === true;
     if (!closePermanently && !remark?.trim()) return;
     if (t.attachment_required && !closePermanently) {
@@ -792,6 +806,7 @@ export const TaskTable: React.FC = () => {
         }
       }
     }
+    setCompleting(true);
     try {
       const baseUpdates: Partial<Task> = {
         ...(url && { attachment_url: url }),
@@ -847,6 +862,8 @@ export const TaskTable: React.FC = () => {
       setUploadError(null);
     } catch (err) {
       console.error(err);
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -2003,6 +2020,7 @@ export const TaskTable: React.FC = () => {
                   )
                 }
                 disabled={
+                  completing ||
                   !doerRemark.trim() ||
                   (completeTask.attachment_required
                     ? (completeTask.attachment_type === 'text'
