@@ -1025,19 +1025,6 @@ export const api = {
     });
   },
 
-  sendVerificationWhatsApp: async (
-    phone: string,
-    task: { title: string; doerName: string; doerRemark: string }
-  ): Promise<void> => {
-    const { whatsappService } = await import('./whatsapp');
-    await whatsappService.sendVerificationRequest({
-      phone,
-      taskName: task.title,
-      doerName: task.doerName,
-      doerRemark: task.doerRemark,
-    });
-  },
-
   // --- Forgot Password (OTP) ---
 
   /** Find a user by phone number (normalized). Returns user doc id + data if found. */

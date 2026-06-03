@@ -13,6 +13,8 @@ interface SpeechToTextOptions {
   continuous?: boolean;
   /** Show partial results while speaking. Default: true */
   interimResults?: boolean;
+  /** Callback fired when a final speech chunk is recognized */
+  onResult?: (text: string) => void;
 }
 
 interface SpeechToTextReturn {
@@ -40,13 +42,19 @@ const SpeechRecognitionAPI =
     : null;
 
 export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToTextReturn {
-  const { lang = 'en-IN', continuous = true, interimResults = true } = options;
+  const { lang = 'en-IN', continuous = true, interimResults = true, onResult } = options;
+
+  const onResultRef = useRef(onResult);
+  useEffect(() => {
+    onResultRef.current = onResult;
+  }, [onResult]);
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const isManuallyStoppedRef = useRef(false);
   const isSupported = !!SpeechRecognitionAPI;
 
   // Cleanup on unmount
@@ -70,6 +78,7 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
       recognitionRef.current.abort();
     }
 
+    isManuallyStoppedRef.current = false;
     setError(null);
     setTranscript('');
     setInterimTranscript('');
@@ -97,7 +106,11 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
       }
 
       if (finalText) {
-        setTranscript((prev) => (prev ? prev + ' ' + finalText : finalText));
+        if (onResultRef.current) {
+          onResultRef.current(finalText);
+        } else {
+          setTranscript((prev) => (prev ? prev + ' ' + finalText : finalText));
+        }
         setInterimTranscript('');
       } else {
         setInterimTranscript(interimText);
@@ -106,14 +119,27 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
 
     recognition.onerror = (event: any) => {
       if (event.error === 'aborted') return; // intentional abort
+      if (event.error === 'no-speech') return; // ignore silence timeout, let onend restart it
+      
+      isManuallyStoppedRef.current = true; // prevent auto-restart on real errors
       setError(`Speech error: ${event.error}`);
       setIsListening(false);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      setInterimTranscript('');
-      recognitionRef.current = null;
+      if (!isManuallyStoppedRef.current && continuous) {
+        // Auto-restart if we didn't explicitly stop it (handles Chrome's silence timeout)
+        try {
+          recognition.start();
+        } catch (e) {
+          setIsListening(false);
+          recognitionRef.current = null;
+        }
+      } else {
+        setIsListening(false);
+        setInterimTranscript('');
+        recognitionRef.current = null;
+      }
     };
 
     recognitionRef.current = recognition;
@@ -121,6 +147,7 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
   }, [lang, continuous, interimResults]);
 
   const stopListening = useCallback(() => {
+    isManuallyStoppedRef.current = true;
     if (recognitionRef.current) {
       recognitionRef.current.abort(); // abort() is more reliable than stop() in continuous mode
       recognitionRef.current = null;

@@ -824,20 +824,6 @@ export const TaskTable: React.FC = () => {
           ...baseUpdates,
           status: 'pending_verification',
         });
-        if (t.verifier_id) {
-          const verifier = allUsers.find((u) => u.id === t.verifier_id);
-          if (verifier?.phone) {
-            try {
-              await api.sendVerificationWhatsApp(verifier.phone, {
-                title: t.title,
-                doerName: user.name,
-                doerRemark: remark?.trim() || '',
-              });
-            } catch (waErr) {
-              console.error('Verification WhatsApp failed:', waErr);
-            }
-          }
-        }
       } else {
         const completedAt = new Date().toISOString();
         await api.updateTask(t.id, {
