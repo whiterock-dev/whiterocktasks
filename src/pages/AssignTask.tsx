@@ -58,8 +58,15 @@ export const AssignTask: React.FC = () => {
   const [holidays, setHolidays] = useState<{ date: string }[]>([]);
 
   // Speech-to-text for Title and Description
-  const titleSpeech = useSpeechToText({ lang: 'en-IN' });
-  const descSpeech = useSpeechToText({ lang: 'en-IN' });
+  const titleSpeech = useSpeechToText({
+    lang: 'en-IN',
+    onResult: (text) => setTitle((prev) => (prev ? prev + ' ' + text : text))
+  });
+
+  const descSpeech = useSpeechToText({
+    lang: 'en-IN',
+    onResult: (text) => setDescription((prev) => (prev ? prev + ' ' + text : text))
+  });
 
   useEffect(() => {
     if (user?.role === UserRole.AUDITOR) {
@@ -71,21 +78,6 @@ export const AssignTask: React.FC = () => {
       setHolidays(h);
     });
   }, [user?.role, navigate]);
-
-  // Append finalized speech transcript to Title
-  useEffect(() => {
-    if (titleSpeech.transcript) {
-      setTitle((prev) => (prev ? prev + ' ' + titleSpeech.transcript : titleSpeech.transcript));
-    }
-  }, [titleSpeech.transcript]);
-
-  // Append finalized speech transcript to Description
-  useEffect(() => {
-    if (descSpeech.transcript) {
-      setDescription((prev) => (prev ? prev + ' ' + descSpeech.transcript : descSpeech.transcript));
-    }
-  }, [descSpeech.transcript]);
-
 
   const isOwnerUser = user?.id === OWNER_USER_ID;
 
@@ -301,11 +293,10 @@ export const AssignTask: React.FC = () => {
                     type="button"
                     onClick={titleSpeech.toggleListening}
                     title={titleSpeech.isListening ? 'Stop dictating' : 'Dictate title'}
-                    className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border transition-all duration-200 ${
-                      titleSpeech.isListening
+                    className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border transition-all duration-200 ${titleSpeech.isListening
                         ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
                         : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
-                    }`}
+                      }`}
                   >
                     <Mic size={16} />
                   </button>
@@ -330,11 +321,10 @@ export const AssignTask: React.FC = () => {
                     type="button"
                     onClick={descSpeech.toggleListening}
                     title={descSpeech.isListening ? 'Stop dictating' : 'Dictate description'}
-                    className={`absolute right-2 top-2 flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 ${
-                      descSpeech.isListening
+                    className={`absolute right-2 top-2 flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 ${descSpeech.isListening
                         ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
                         : 'bg-white border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
-                    }`}
+                      }`}
                   >
                     <Mic size={16} />
                   </button>
