@@ -62,6 +62,7 @@ export const AssignedByMe: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [totalResults, setTotalResults] = useState(0);
+  const [midnightRefreshKey, setMidnightRefreshKey] = useState(0);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState('all_time');
@@ -525,6 +526,7 @@ export const AssignedByMe: React.FC = () => {
     hydrateRecurringLookup,
     isSelfTasksView,
     loadPage,
+    midnightRefreshKey,
     refreshToken,
     setClientPageFromRows,
     sortConfig,
@@ -535,6 +537,17 @@ export const AssignedByMe: React.FC = () => {
       setSortConfig({ key: 'due_date', direction: 'asc' });
     }
   }, [isSelfTasksView, sortConfig]);
+
+  useEffect(() => {
+    const now = new Date();
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const istTomorrow = new Date(istNow);
+    istTomorrow.setDate(istTomorrow.getDate() + 1);
+    istTomorrow.setHours(0, 0, 5, 0);
+    const msUntilMidnight = istTomorrow.getTime() - istNow.getTime();
+    const timer = setTimeout(() => setMidnightRefreshKey((k) => k + 1), msUntilMidnight);
+    return () => clearTimeout(timer);
+  }, [midnightRefreshKey]);
 
   useEffect(() => {
     if (isAuditor || isVerifier) return;

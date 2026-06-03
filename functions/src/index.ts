@@ -365,6 +365,97 @@ export const sendDailyReminder = onSchedule(
 );
 
 /**
+ * Scheduled function: runs daily at 4:00 PM IST.
+ * Sends a WhatsApp reminder to every member who has at least one
+ * task pending their verification.
+ */
+export const sendVerifierPendingReminders = onSchedule(
+  {
+    schedule: '0 16 * * *',
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async () => {
+    const authToken = process.env.ELEVENZA_AUTH_TOKEN;
+    const apiUrl =
+      process.env.ELEVENZA_API_URL ||
+      'https://app.11za.in/apis/template/sendTemplate';
+    const originWebsite =
+      process.env.ELEVENZA_ORIGIN_WEBSITE ||
+      'https://whiterock.co.in/';
+    const templateVerifierPending =
+      process.env.ELEVENZA_TEMPLATE_VERIFIER_PENDING ||
+      'verifier_pending_reminder';
+
+    if (!templateVerifierPending.trim()) {
+      logger.warn('ELEVENZA_TEMPLATE_VERIFIER_PENDING is empty; skipping verifier reminders');
+      return;
+    }
+
+    if (!authToken) {
+      logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping verifier reminders');
+      return;
+    }
+
+    const db = admin.firestore();
+
+    // Find all tasks that are pending verification
+    const pendingVerificationTasksSnap = await db
+      .collection(COLLECTIONS.TASKS)
+      .where('status', '==', 'pending_verification')
+      .get();
+
+    // Collect unique verifier IDs who have at least one pending verification task
+    const verifierIdsWithTasks = new Set<string>();
+    for (const doc of pendingVerificationTasksSnap.docs) {
+      const uid = doc.data().verifier_id;
+      if (uid) verifierIdsWithTasks.add(uid);
+    }
+
+    if (verifierIdsWithTasks.size === 0) {
+      logger.info('No users with pending verification tasks; skipping verifier reminders');
+      return;
+    }
+
+    // Fetch all users to get phone numbers
+    const usersSnap = await db.collection(COLLECTIONS.USERS).get();
+    const usersById = new Map<string, { phone?: string; name: string }>();
+    for (const doc of usersSnap.docs) {
+      const d = doc.data();
+      usersById.set(doc.id, { phone: d.phone, name: d.name || '' });
+    }
+
+    const elevenzaConfig = {
+      apiUrl,
+      originWebsite,
+      authToken,
+    };
+
+    let sentCount = 0;
+    for (const verifierId of verifierIdsWithTasks) {
+      const user = usersById.get(verifierId);
+      const phone = user?.phone;
+      if (!phone) {
+        logger.info(`No phone for user ${verifierId}; skipping verifier reminder`);
+        continue;
+      }
+
+      try {
+        await send11zaTemplate(phone, templateVerifierPending, [user.name], elevenzaConfig);
+        logger.info(`Verifier reminder sent to ${user.name} (${phone})`);
+        sentCount++;
+      } catch (err) {
+        logger.error(`Failed to send verifier reminder to ${phone}:`, err);
+      }
+    }
+
+    logger.info(`Verifier reminders complete: sent to ${sentCount} users`);
+    return;
+  }
+);
+
+/**
  * Scheduled function: runs daily at 7:00 AM IST.
  * Uses recurring tasks as masters, creates normal task instances, and advances only master due dates.
  */
