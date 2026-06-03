@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateRecurringTasksDaily = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
+exports.generateRecurringTasksDaily = exports.sendVerifierPendingReminders = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
 /*
  * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
  * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
@@ -306,6 +306,81 @@ exports.sendDailyReminder = (0, scheduler_1.onSchedule)({
         }
     }
     firebase_functions_1.logger.info(`Daily reminders complete: sent to ${sentCount} users`);
+    return;
+});
+/**
+ * Scheduled function: runs daily at 4:00 PM IST.
+ * Sends a WhatsApp reminder to every member who has at least one
+ * task pending their verification.
+ */
+exports.sendVerifierPendingReminders = (0, scheduler_1.onSchedule)({
+    schedule: '0 16 * * *',
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 120,
+    memory: '256MiB',
+}, async () => {
+    const authToken = process.env.ELEVENZA_AUTH_TOKEN;
+    const apiUrl = process.env.ELEVENZA_API_URL ||
+        'https://app.11za.in/apis/template/sendTemplate';
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE ||
+        'https://whiterock.co.in/';
+    const templateVerifierPending = process.env.ELEVENZA_TEMPLATE_VERIFIER_PENDING ||
+        'verifier_pending_reminder';
+    if (!templateVerifierPending.trim()) {
+        firebase_functions_1.logger.warn('ELEVENZA_TEMPLATE_VERIFIER_PENDING is empty; skipping verifier reminders');
+        return;
+    }
+    if (!authToken) {
+        firebase_functions_1.logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping verifier reminders');
+        return;
+    }
+    const db = admin.firestore();
+    // Find all tasks that are pending verification
+    const pendingVerificationTasksSnap = await db
+        .collection(COLLECTIONS.TASKS)
+        .where('status', '==', 'pending_verification')
+        .get();
+    // Collect unique verifier IDs who have at least one pending verification task
+    const verifierIdsWithTasks = new Set();
+    for (const doc of pendingVerificationTasksSnap.docs) {
+        const uid = doc.data().verifier_id;
+        if (uid)
+            verifierIdsWithTasks.add(uid);
+    }
+    if (verifierIdsWithTasks.size === 0) {
+        firebase_functions_1.logger.info('No users with pending verification tasks; skipping verifier reminders');
+        return;
+    }
+    // Fetch all users to get phone numbers
+    const usersSnap = await db.collection(COLLECTIONS.USERS).get();
+    const usersById = new Map();
+    for (const doc of usersSnap.docs) {
+        const d = doc.data();
+        usersById.set(doc.id, { phone: d.phone, name: d.name || '' });
+    }
+    const elevenzaConfig = {
+        apiUrl,
+        originWebsite,
+        authToken,
+    };
+    let sentCount = 0;
+    for (const verifierId of verifierIdsWithTasks) {
+        const user = usersById.get(verifierId);
+        const phone = user?.phone;
+        if (!phone) {
+            firebase_functions_1.logger.info(`No phone for user ${verifierId}; skipping verifier reminder`);
+            continue;
+        }
+        try {
+            await send11zaTemplate(phone, templateVerifierPending, [user.name], elevenzaConfig);
+            firebase_functions_1.logger.info(`Verifier reminder sent to ${user.name} (${phone})`);
+            sentCount++;
+        }
+        catch (err) {
+            firebase_functions_1.logger.error(`Failed to send verifier reminder to ${phone}:`, err);
+        }
+    }
+    firebase_functions_1.logger.info(`Verifier reminders complete: sent to ${sentCount} users`);
     return;
 });
 /**
