@@ -13,7 +13,8 @@ import { Button } from '../components/ui/Button';
 import { RECURRING_OPTIONS } from '../lib/utils';
 import { User, Task, RecurringType } from '../types';
 import { UserRole } from '../types';
-import { Search, ChevronDown, X } from 'lucide-react';
+import { Search, ChevronDown, X, Mic } from 'lucide-react';
+import { useSpeechToText } from '../hooks/useSpeechToText';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
@@ -22,6 +23,10 @@ const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.AUDITOR]: 'Auditor',
   [UserRole.VERIFIER]: 'Verifier',
 };
+
+// PRD: Default Verifier Assignment for Owner-Created Tasks
+const OWNER_USER_ID = 'Jr2jqzHecJrs7t0sIZJl';           // Shravan Suthar
+const DEFAULT_VERIFIER_ID = 'kRSJkrdZJiTGPdQoFqfh';     // Triloki Rana (EA)
 
 export const AssignTask: React.FC = () => {
   const { user } = useAuth();
@@ -52,6 +57,10 @@ export const AssignTask: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [holidays, setHolidays] = useState<{ date: string }[]>([]);
 
+  // Speech-to-text for Title and Description
+  const titleSpeech = useSpeechToText({ lang: 'en-IN' });
+  const descSpeech = useSpeechToText({ lang: 'en-IN' });
+
   useEffect(() => {
     if (user?.role === UserRole.AUDITOR) {
       navigate('/tasks');
@@ -63,17 +72,37 @@ export const AssignTask: React.FC = () => {
     });
   }, [user?.role, navigate]);
 
+  // Append finalized speech transcript to Title
+  useEffect(() => {
+    if (titleSpeech.transcript) {
+      setTitle((prev) => (prev ? prev + ' ' + titleSpeech.transcript : titleSpeech.transcript));
+    }
+  }, [titleSpeech.transcript]);
+
+  // Append finalized speech transcript to Description
+  useEffect(() => {
+    if (descSpeech.transcript) {
+      setDescription((prev) => (prev ? prev + ' ' + descSpeech.transcript : descSpeech.transcript));
+    }
+  }, [descSpeech.transcript]);
+
+
+  const isOwnerUser = user?.id === OWNER_USER_ID;
 
   useEffect(() => {
-    if (
-      verificationRequired &&
-      !verifierId &&
-      user?.id &&
-      !assignedToIds.includes(user.id)
-    ) {
+    if (!verificationRequired || verifierId) return;
+
+    if (isOwnerUser && !assignedToIds.includes(DEFAULT_VERIFIER_ID)) {
+      // FR-2: Auto-assign EA as default verifier for owner-created tasks
+      setVerifierId(DEFAULT_VERIFIER_ID);
+      return;
+    }
+
+    // FR-4: Non-owner fallback — default to self (existing behavior)
+    if (user?.id && !assignedToIds.includes(user.id)) {
       setVerifierId(user.id);
     }
-  }, [verificationRequired, verifierId, user?.id, assignedToIds]);
+  }, [verificationRequired, verifierId, user?.id, assignedToIds, isOwnerUser]);
 
   const DAYS = [
     { value: 0, label: 'Mon' },
@@ -194,7 +223,7 @@ export const AssignTask: React.FC = () => {
       setAssignedToIds([]);
       setAssignToSearch('');
       setVerificationRequired(true);
-      setVerifierId(user.id);
+      setVerifierId(''); // Cleared so useEffect re-populates correctly (EA for owner, self for others)
       setVerifierSearch('');
       setVerifierDropdownOpen(false);
     } catch (err: any) {
@@ -257,22 +286,63 @@ export const AssignTask: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
-            <Input
-              label="Task Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              placeholder="Enter task title"
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Task Title</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  placeholder={titleSpeech.interimTranscript || 'Enter task title'}
+                  className="flex h-10 w-full rounded-xl border bg-white px-3.5 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 disabled:opacity-50 transition-colors border-slate-200 hover:border-slate-300"
+                />
+                {titleSpeech.isSupported && (
+                  <button
+                    type="button"
+                    onClick={titleSpeech.toggleListening}
+                    title={titleSpeech.isListening ? 'Stop dictating' : 'Dictate title'}
+                    className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border transition-all duration-200 ${
+                      titleSpeech.isListening
+                        ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
+                        : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
+                    }`}
+                  >
+                    <Mic size={16} />
+                  </button>
+                )}
+              </div>
+              {titleSpeech.error && (
+                <p className="mt-1 text-xs text-red-500">{titleSpeech.error}</p>
+              )}
+            </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                placeholder="Task description..."
-              />
+              <div className="relative">
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-12 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  placeholder={descSpeech.interimTranscript || 'Task description...'}
+                />
+                {descSpeech.isSupported && (
+                  <button
+                    type="button"
+                    onClick={descSpeech.toggleListening}
+                    title={descSpeech.isListening ? 'Stop dictating' : 'Dictate description'}
+                    className={`absolute right-2 top-2 flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 ${
+                      descSpeech.isListening
+                        ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
+                        : 'bg-white border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
+                    }`}
+                  >
+                    <Mic size={16} />
+                  </button>
+                )}
+              </div>
+              {descSpeech.error && (
+                <p className="mt-1 text-xs text-red-500">{descSpeech.error}</p>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
