@@ -314,17 +314,42 @@ export const api = {
     if (dueDateTo) {
       constraints.unshift(where('due_date', '<=', dueDateTo));
     }
-    if (startAfterDoc) {
-      constraints.push(startAfter(startAfterDoc));
-    }
-    constraints.push(limit(pageSize));
     try {
-      const q = query(tasksRef, ...constraints);
-      const snap = await getDocs(q);
-      const tasks = filterRecurringMasters(snap.docs.map((d) => docToTask(d)), includeRecurringMasters);
-      const lastDoc =
-        snap.docs.length === pageSize ? snap.docs[snap.docs.length - 1] : null;
-      return { tasks, lastDoc };
+      const fetchedTasks: Task[] = [];
+      let currentCursor = startAfterDoc;
+      let finalLastDoc: QueryDocumentSnapshot | null = null;
+
+      while (fetchedTasks.length < pageSize) {
+        const fetchConstraints = [...constraints];
+        if (currentCursor) {
+          fetchConstraints.push(startAfter(currentCursor));
+        }
+        fetchConstraints.push(limit(pageSize));
+
+        const q = query(tasksRef, ...fetchConstraints);
+        const snap = await getDocs(q);
+
+        if (snap.empty) break;
+
+        for (const docSnap of snap.docs) {
+          const task = docToTask(docSnap);
+          if (includeRecurringMasters || task.is_recurring_master !== true) {
+            fetchedTasks.push(task);
+            finalLastDoc = docSnap;
+            if (fetchedTasks.length === pageSize) {
+              break;
+            }
+          }
+          currentCursor = docSnap;
+        }
+
+        if (snap.docs.length < pageSize) {
+          break;
+        }
+      }
+
+      const lastDoc = fetchedTasks.length === pageSize ? finalLastDoc : null;
+      return { tasks: fetchedTasks, lastDoc };
     } catch (error) {
       const firestoreError = error as FirestoreError;
       const isFallbackError = firestoreError?.code === 'failed-precondition' || firestoreError?.code === 'invalid-argument';
@@ -486,8 +511,17 @@ export const api = {
     t: Omit<Task, 'id' | 'created_at' | 'updated_at'>
   ): Promise<Task> => {
     const now = new Date().toISOString();
+    
+    // Auto-set 'scheduled' status if start_date is in the future
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
+    let status = t.status;
+    if (status === 'pending' && t.start_date && t.start_date > today) {
+      status = 'scheduled';
+    }
+
     const normalizedTask: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
       ...t,
+      status,
       is_recurring_master: t.recurring !== 'none' && !t.parent_task_id,
     };
     const cleanData = Object.fromEntries(Object.entries(normalizedTask).filter(([_, v]) => v !== undefined));

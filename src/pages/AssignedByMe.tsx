@@ -352,19 +352,7 @@ export const AssignedByMe: React.FC = () => {
     [debouncedAssignedBy, debouncedAssignedTo]
   );
 
-  const filterByStartDate = useCallback(
-    (list: Task[]) => {
-      const today = getTodayLocal();
-      return list.filter((task) => {
-        const rawStartDate = (task.start_date || '').trim();
-        if (!rawStartDate) return true;
-
-        const normalizedStartDate = rawStartDate.slice(0, 10);
-        return normalizedStartDate <= today;
-      });
-    },
-    [getTodayLocal]
-  );
+  // filterByStartDate removed — future tasks are now hidden via the 'scheduled' status at the DB level
 
   const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
 
@@ -384,11 +372,10 @@ export const AssignedByMe: React.FC = () => {
           sortDirection: sortConfig?.direction,
           ...filters,
         });
-        const startedRows = filterByStartDate(nextTasks);
-        const lookup = await hydrateRecurringLookup(startedRows);
+        await hydrateRecurringLookup(nextTasks);
         const recurringRows = recurringFilter
-          ? startedRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
-          : startedRows;
+          ? nextTasks.filter((task) => getDisplayRecurring(task, recurringTaskLookup) === recurringFilter)
+          : nextTasks;
         setTasks(recurringRows);
         setLastDoc(nextLastDoc);
         setCurrentPage(pageNumber);
@@ -403,7 +390,7 @@ export const AssignedByMe: React.FC = () => {
         setLoading(false);
       }
     },
-    [filterByStartDate, getActiveFilters, hydrateRecurringLookup, recurringFilter, rowsPerPage, sortConfig]
+    [getActiveFilters, hydrateRecurringLookup, recurringFilter, recurringTaskLookup, rowsPerPage, sortConfig]
   );
 
   const setClientPageFromRows = useCallback(
@@ -439,11 +426,10 @@ export const AssignedByMe: React.FC = () => {
           const doerRows = await getDoerVisibleRows();
           if (!isActive) return;
 
-          const startedRows = filterByStartDate(doerRows);
-          const lookup = await hydrateRecurringLookup(startedRows);
+          const lookup = await hydrateRecurringLookup(doerRows);
           const recurringRows = recurringFilter
-            ? startedRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
-            : startedRows;
+            ? doerRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
+            : doerRows;
           const filteredRows = applyNameFilters(recurringRows);
           setNameFilteredRows(filteredRows);
           setTotalResults(filteredRows.length);
@@ -470,11 +456,10 @@ export const AssignedByMe: React.FC = () => {
           });
           if (!isActive) return;
 
-          const startedRows = filterByStartDate(allRows);
-          const lookup = await hydrateRecurringLookup(startedRows);
+          const lookup = await hydrateRecurringLookup(allRows);
           const recurringRows = recurringFilter
-            ? startedRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
-            : startedRows;
+            ? allRows.filter((task) => getDisplayRecurring(task, lookup) === recurringFilter)
+            : allRows;
           const filteredRows = applyNameFilters(recurringRows);
           setNameFilteredRows(filteredRows);
           setTotalResults(filteredRows.length);
@@ -520,7 +505,6 @@ export const AssignedByMe: React.FC = () => {
     recurringFilter,
     hasNameFilter,
     applyNameFilters,
-    filterByStartDate,
     getActiveFilters,
     getDoerVisibleRows,
     hydrateRecurringLookup,
@@ -566,10 +550,10 @@ export const AssignedByMe: React.FC = () => {
             pageSize: 5000,
             ...filters,
           });
-          summaryTasks = filterByStartDate(summaryResult.tasks);
+          summaryTasks = summaryResult.tasks;
         }
 
-        const summaryRows = applyNameFilters(filterByStartDate(summaryTasks));
+        const summaryRows = applyNameFilters(summaryTasks);
 
         const today = getTodayLocal();
         const dueToday = summaryRows.filter(
@@ -601,9 +585,9 @@ export const AssignedByMe: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, filterByStartDate, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isSelfTasksView, isVerifier]);
+  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isSelfTasksView, isVerifier]);
 
-  const filteredTasks = applyNameFilters(filterByStartDate(tasks));
+  const filteredTasks = applyNameFilters(tasks);
 
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (!sortConfig) return 0;
@@ -988,6 +972,14 @@ export const AssignedByMe: React.FC = () => {
 
     setEditSubmitting(true);
     try {
+      let finalStatus = editingTask.status;
+      const today = getTodayLocal();
+      if (editStartDate && editStartDate > today && ['pending', 'scheduled'].includes(editingTask.status)) {
+        finalStatus = 'scheduled';
+      } else if (editStartDate && editStartDate <= today && editingTask.status === 'scheduled') {
+        finalStatus = 'pending';
+      }
+
       const immutableRecurring = editingTask.recurring;
       if (isAssigneeLimitedEdit) {
         const updates: Partial<Task> = {
@@ -995,6 +987,7 @@ export const AssignedByMe: React.FC = () => {
           description: editDesc,
           start_date: editStartDate || (null as any),
           due_date: editDueDate,
+          status: finalStatus,
           recurring: immutableRecurring,
           recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
           attachment_required: editAttachmentRequired,
@@ -1026,6 +1019,7 @@ export const AssignedByMe: React.FC = () => {
           title: editTitle,
           description: editDesc,
           start_date: editStartDate || (null as any),
+          status: finalStatus,
           assigned_to_id: editAssignedToId,
           assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
           assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
@@ -1362,7 +1356,9 @@ export const AssignedByMe: React.FC = () => {
                               ? 'bg-sky-100 text-sky-800'
                               : t.status === 'closed_permanently'
                                 ? 'bg-purple-100 text-purple-800'
-                                : 'bg-slate-100 text-slate-600'
+                                : t.status === 'scheduled'
+                                  ? 'bg-violet-100 text-violet-700'
+                                  : 'bg-slate-100 text-slate-600'
                         }`}
                     >
                       {t.status === 'pending_verification'
@@ -1371,7 +1367,9 @@ export const AssignedByMe: React.FC = () => {
                           ? 'Correction Required'
                           : t.status === 'closed_permanently'
                             ? 'Closed Permanently'
-                            : t.status}
+                            : t.status === 'scheduled'
+                              ? 'Scheduled'
+                              : t.status}
                     </span>
                   </td>
                   <td className="text-center">

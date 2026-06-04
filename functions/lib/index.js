@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateRecurringTasksDaily = exports.sendVerifierPendingReminders = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
+exports.transitionScheduledTasks = exports.generateRecurringTasksDaily = exports.sendVerifierPendingReminders = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
 /*
  * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
  * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
@@ -503,5 +503,61 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
         }
     }
     firebase_functions_1.logger.info(`Recurring generation complete: processed ${streamCount} streams, created ${createdCount} tasks`);
+    return;
+});
+/**
+ * Scheduled function: runs daily at 00:05 AM IST (18:05 UTC).
+ * Finds all tasks with status 'scheduled' whose start_date has arrived (start_date <= today).
+ * Updates them to 'pending' so they become visible to assignees in the task tables.
+ */
+exports.transitionScheduledTasks = (0, scheduler_1.onSchedule)({
+    schedule: '05 00 * * *', // 00:05 IST
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 540,
+    memory: '512MiB',
+}, async () => {
+    const db = admin.firestore();
+    const today = new Date()
+        .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+        .replace(/\//g, '-'); // YYYY-MM-DD in IST
+    firebase_functions_1.logger.info(`transitionScheduledTasks: running for date ${today}`);
+    // Fetch all tasks with 'scheduled' status
+    const scheduledSnap = await db
+        .collection(COLLECTIONS.TASKS)
+        .where('status', '==', 'scheduled')
+        .get();
+    if (scheduledSnap.empty) {
+        firebase_functions_1.logger.info('No scheduled tasks found; nothing to transition.');
+        return;
+    }
+    // Filter to only those whose start_date has arrived (start_date <= today)
+    const tasksToActivate = scheduledSnap.docs.filter((docSnap) => {
+        const startDate = docSnap.data().start_date;
+        // If no start_date set, activate it (edge case safety)
+        if (!startDate)
+            return true;
+        return startDate <= today;
+    });
+    if (tasksToActivate.length === 0) {
+        firebase_functions_1.logger.info('No scheduled tasks are ready to activate yet.');
+        return;
+    }
+    firebase_functions_1.logger.info(`Activating ${tasksToActivate.length} scheduled task(s)...`);
+    // Firestore batch writes are limited to 500 ops per batch — use chunks of 450 to be safe
+    const BATCH_SIZE = 450;
+    const nowTimestamp = admin.firestore.Timestamp.now();
+    for (let i = 0; i < tasksToActivate.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        const chunk = tasksToActivate.slice(i, i + BATCH_SIZE);
+        for (const docSnap of chunk) {
+            batch.update(docSnap.ref, {
+                status: 'pending',
+                updated_at: nowTimestamp,
+            });
+        }
+        await batch.commit();
+        firebase_functions_1.logger.info(`Batch committed: ${chunk.length} tasks activated.`);
+    }
+    firebase_functions_1.logger.info(`transitionScheduledTasks complete: ${tasksToActivate.length} task(s) transitioned to pending.`);
     return;
 });
