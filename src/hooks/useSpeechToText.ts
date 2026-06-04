@@ -7,89 +7,92 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface SpeechToTextOptions {
-  /** BCP-47 language code, e.g. 'en-IN', 'hi-IN'. Default: 'en-IN' */
   lang?: string;
-  /** Keep listening until manually stopped. Default: true */
   continuous?: boolean;
-  /** Show partial results while speaking. Default: true */
   interimResults?: boolean;
-  /** Callback fired when a final speech chunk is recognized */
+  clearTranscriptOnStart?: boolean;
   onResult?: (text: string) => void;
 }
 
 interface SpeechToTextReturn {
-  /** Whether the microphone is currently listening */
   isListening: boolean;
-  /** The latest final transcript chunk (append this to your field) */
   transcript: string;
-  /** Interim (partial) transcript shown while user is still speaking */
   interimTranscript: string;
-  /** Start listening */
   startListening: () => void;
-  /** Stop listening */
   stopListening: () => void;
-  /** Toggle listening on/off */
   toggleListening: () => void;
-  /** Whether the browser supports Speech Recognition */
   isSupported: boolean;
-  /** Error message, if any */
   error: string | null;
 }
 
-const SpeechRecognitionAPI =
-  typeof window !== 'undefined'
-    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    : null;
-
-export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToTextReturn {
-  const { lang = 'en-IN', continuous = true, interimResults = true, onResult } = options;
-
-  const onResultRef = useRef(onResult);
-  useEffect(() => {
-    onResultRef.current = onResult;
-  }, [onResult]);
+export function useSpeechToText(
+  options: SpeechToTextOptions = {}
+): SpeechToTextReturn {
+  const {
+    lang = 'en-IN',
+    continuous = true,
+    interimResults = true,
+    clearTranscriptOnStart = false,
+    onResult,
+  } = options;
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const isManuallyStoppedRef = useRef(false);
-  const isSupported = !!SpeechRecognitionAPI;
 
-  // Cleanup on unmount
+  const recognitionRef = useRef<any>(null);
+  const manuallyStoppedRef = useRef(false);
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const onResultRef = useRef(onResult);
+
   useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
+    onResultRef.current = onResult;
+  }, [onResult]);
+
+  const getSpeechRecognition = () => {
+    if (typeof window === 'undefined') return null;
+
+    return (
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition
+    );
+  };
+
+  const isSupported = !!getSpeechRecognition();
+
+  const cleanupRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
         recognitionRef.current.abort();
-        recognitionRef.current = null;
-      }
-    };
+      } catch { }
+    }
+
+    recognitionRef.current = null;
   }, []);
 
-  const startListening = useCallback(() => {
-    if (!SpeechRecognitionAPI) {
+  const createRecognition = useCallback(() => {
+    const SpeechRecognition = getSpeechRecognition();
+
+    if (!SpeechRecognition) {
       setError('Speech recognition is not supported in this browser.');
-      return;
+      return null;
     }
 
-    // Stop any existing session
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
-    }
+    const recognition = new SpeechRecognition();
 
-    isManuallyStoppedRef.current = false;
-    setError(null);
-    setTranscript('');
-    setInterimTranscript('');
-
-    const recognition = new SpeechRecognitionAPI();
     recognition.lang = lang;
     recognition.continuous = continuous;
     recognition.interimResults = interimResults;
 
     recognition.onstart = () => {
       setIsListening(true);
+      setError(null);
     };
 
     recognition.onresult = (event: any) => {
@@ -98,6 +101,7 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
+
         if (result.isFinal) {
           finalText += result[0].transcript;
         } else {
@@ -105,56 +109,125 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
         }
       }
 
+      setInterimTranscript(interimText);
+
       if (finalText) {
+        const cleaned = finalText.trim();
+
         if (onResultRef.current) {
-          onResultRef.current(finalText);
+          onResultRef.current(cleaned);
         } else {
-          setTranscript((prev) => (prev ? prev + ' ' + finalText : finalText));
+          setTranscript(prev =>
+            prev ? `${prev} ${cleaned}` : cleaned
+          );
         }
-        setInterimTranscript('');
-      } else {
-        setInterimTranscript(interimText);
       }
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error === 'aborted') return; // intentional abort
-      if (event.error === 'no-speech') return; // ignore silence timeout, let onend restart it
-      
-      isManuallyStoppedRef.current = true; // prevent auto-restart on real errors
-      setError(`Speech error: ${event.error}`);
-      setIsListening(false);
-    };
+      switch (event.error) {
+        case 'aborted':
+          return;
 
-    recognition.onend = () => {
-      if (!isManuallyStoppedRef.current && continuous) {
-        // Auto-restart if we didn't explicitly stop it (handles Chrome's silence timeout)
-        try {
-          recognition.start();
-        } catch (e) {
-          setIsListening(false);
-          recognitionRef.current = null;
-        }
-      } else {
-        setIsListening(false);
-        setInterimTranscript('');
-        recognitionRef.current = null;
+        case 'no-speech':
+          // Chrome commonly fires this during pauses.
+          return;
+
+        case 'not-allowed':
+        case 'service-not-allowed':
+          setError('Microphone permission denied.');
+          manuallyStoppedRef.current = true;
+          break;
+
+        case 'audio-capture':
+          setError('No microphone detected.');
+          manuallyStoppedRef.current = true;
+          break;
+
+        default:
+          setError(`Speech recognition error: ${event.error}`);
+          manuallyStoppedRef.current = true;
       }
     };
 
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [lang, continuous, interimResults]);
-
-  const stopListening = useCallback(() => {
-    isManuallyStoppedRef.current = true;
-    if (recognitionRef.current) {
-      recognitionRef.current.abort(); // abort() is more reliable than stop() in continuous mode
-      recognitionRef.current = null;
+    recognition.onend = () => {
       setIsListening(false);
       setInterimTranscript('');
+
+      if (
+        continuous &&
+        !manuallyStoppedRef.current
+      ) {
+        restartTimeoutRef.current = setTimeout(() => {
+          if (manuallyStoppedRef.current) return;
+
+          try {
+            const freshRecognition = createRecognition();
+
+            if (!freshRecognition) return;
+
+            recognitionRef.current = freshRecognition;
+            freshRecognition.start();
+          } catch {
+            setError('Failed to restart speech recognition.');
+          }
+        }, 250);
+      } else {
+        cleanupRecognition();
+      }
+    };
+
+    return recognition;
+  }, [lang, continuous, interimResults, cleanupRecognition]);
+
+  const startListening = useCallback(() => {
+    if (!isSupported) {
+      setError('Speech recognition is not supported in this browser.');
+      return;
     }
-  }, []);
+
+    manuallyStoppedRef.current = false;
+
+    if (clearTranscriptOnStart) {
+      setTranscript('');
+    }
+
+    setInterimTranscript('');
+    setError(null);
+
+    cleanupRecognition();
+
+    const recognition = createRecognition();
+
+    if (!recognition) return;
+
+    recognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch {
+      setError('Failed to start speech recognition.');
+    }
+  }, [
+    isSupported,
+    clearTranscriptOnStart,
+    cleanupRecognition,
+    createRecognition,
+  ]);
+
+  const stopListening = useCallback(() => {
+    manuallyStoppedRef.current = true;
+
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
+    cleanupRecognition();
+
+    setIsListening(false);
+    setInterimTranscript('');
+  }, [cleanupRecognition]);
 
   const toggleListening = useCallback(() => {
     if (isListening) {
@@ -163,6 +236,18 @@ export function useSpeechToText(options: SpeechToTextOptions = {}): SpeechToText
       startListening();
     }
   }, [isListening, startListening, stopListening]);
+
+  useEffect(() => {
+    return () => {
+      manuallyStoppedRef.current = true;
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      cleanupRecognition();
+    };
+  }, [cleanupRecognition]);
 
   return {
     isListening,
