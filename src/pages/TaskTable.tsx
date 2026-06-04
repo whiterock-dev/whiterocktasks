@@ -138,8 +138,18 @@ export const TaskTable: React.FC = () => {
   }, []);
 
   const hydrateRecurringLookup = useCallback(async (rows: Task[]) => {
-    const lookup = new Map<string, Task>();
-    rows.forEach((task) => lookup.set(task.id, task));
+    let currentMap: Map<string, Task> = new Map();
+    setRecurringTaskLookup((prev) => { currentMap = prev; return prev; });
+
+    const lookup = new Map(currentMap);
+    let changed = false;
+
+    rows.forEach((task) => {
+      if (!lookup.has(task.id)) {
+        lookup.set(task.id, task);
+        changed = true;
+      }
+    });
 
     const parentIds = Array.from(
       new Set(
@@ -149,15 +159,23 @@ export const TaskTable: React.FC = () => {
       )
     );
 
-    const missingParentIds = parentIds.filter((parentId) => !lookup.has(parentId));
+    const missingParentIds = parentIds.filter((parentId) => !lookup.has(parentId) && lookup.get(parentId) !== null);
+
     if (missingParentIds.length > 0) {
       const parents = await Promise.all(missingParentIds.map((parentId) => api.getTaskById(parentId)));
-      parents.forEach((parent) => {
-        if (parent) lookup.set(parent.id, parent);
+      parents.forEach((parent, idx) => {
+        if (parent) {
+          lookup.set(parent.id, parent);
+        } else {
+          lookup.set(missingParentIds[idx], null as unknown as Task);
+        }
       });
+      changed = true;
     }
 
-    setRecurringTaskLookup(lookup);
+    if (changed) {
+      setRecurringTaskLookup(lookup);
+    }
     return lookup;
   }, []);
 
