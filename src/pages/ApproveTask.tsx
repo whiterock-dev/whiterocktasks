@@ -8,9 +8,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
-import { Task, UserRole } from '../types';
+import { Task, UserRole, User } from '../types';
+import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { useSearchParams } from 'react-router-dom';
-import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import {
     ChevronLeft,
     ChevronRight,
@@ -30,8 +30,6 @@ export const ApproveTask: React.FC = () => {
     const [searchParams] = useSearchParams();
     const highlightId = searchParams.get('highlight');
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
-    const [pageCursors, setPageCursors] = useState<(QueryDocumentSnapshot | null)[]>([null]);
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
     const [hasNextPage, setHasNextPage] = useState(false);
@@ -42,58 +40,85 @@ export const ApproveTask: React.FC = () => {
     const [rejectComment, setRejectComment] = useState('');
     const [editTask, setEditTask] = useState<Task | null>(null);
     const [editDueDate, setEditDueDate] = useState('');
+    const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+    const [assignedToFilter, setAssignedToFilter] = useState('');
+    const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
+    const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
 
-    const isDoer = user?.role === UserRole.DOER;
+    const setClientPageFromRows = useCallback(
+        (rows: Task[], pageNumber: number) => {
+            const clientTotalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+            const safePage = Math.min(Math.max(pageNumber, 1), clientTotalPages);
+            const startIndex = (safePage - 1) * rowsPerPage;
+            const pagedRows = rows.slice(startIndex, startIndex + rowsPerPage);
 
-    const getActiveFilters = useCallback(() => {
-        return {
-            status: 'pending_verification' as Task['status'],
-            verifierId: user?.id ?? '',
-        };
-    }, [user?.id]);
-
-    const loadPage = useCallback(
-        async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
-            try {
-                const filters = getActiveFilters();
-                const { tasks: nextTasks, lastDoc: nextLastDoc } = await api.getTasksPaginated({
-                    pageSize: rowsPerPage,
-                    startAfterDoc: startAfterDoc ?? undefined,
-                    ...filters,
-                });
-                setTasks(nextTasks);
-                setLastDoc(nextLastDoc);
-                setCurrentPage(pageNumber);
-                setHasNextPage(nextLastDoc != null);
-            } catch (err) {
-                console.error('Failed to load approval tasks:', err);
-                setTasks([]);
-                setLastDoc(null);
-                setCurrentPage(pageNumber);
-                setHasNextPage(false);
-            } finally {
-                setLoading(false);
-            }
+            setTasks(pagedRows);
+            setCurrentPage(safePage);
+            setHasNextPage(safePage < clientTotalPages);
         },
-        [getActiveFilters, rowsPerPage]
+        [rowsPerPage]
     );
 
     useEffect(() => {
-        const load = async () => {
+        const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
+        return () => clearTimeout(t);
+    }, [assignedToFilter]);
+
+    useEffect(() => {
+        api.getUsers().then(setAllUsers).catch(console.error);
+    }, []);
+
+    const [allPendingTasks, setAllPendingTasks] = useState<Task[] | null>(null);
+
+    const loadAllPendingTasks = useCallback(async () => {
+        if (!user) return;
+        try {
             setLoading(true);
-            setCurrentPage(1);
-            setPageCursors([null]);
-            try {
-                const count = await api.getTasksCount(getActiveFilters());
-                setTotalResults(count);
-            } catch (err) {
-                console.error('Failed to load approval task count:', err);
-                setTotalResults(0);
-            }
-            await loadPage(undefined, 1);
-        };
-        load();
-    }, [getActiveFilters, loadPage]);
+            const pendingTasks = await api.getAllTasksByFilters({
+                status: 'pending_verification',
+                verifierId: user.id
+            });
+            setAllPendingTasks(pendingTasks);
+        } catch (err) {
+            console.error('Failed to load pending tasks:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        loadAllPendingTasks();
+    }, [loadAllPendingTasks]);
+
+    useEffect(() => {
+        if (!allPendingTasks || allUsers.length === 0) return;
+
+        // Update available doers
+        const uniqueDoerIds = new Set(allPendingTasks.map(t => t.assigned_to_id).filter(Boolean));
+        setAvailableUsers(allUsers.filter(u => uniqueDoerIds.has(u.id)));
+
+        // Apply name filter
+        const query = debouncedAssignedTo.toLowerCase().trim();
+        const filtered = query
+            ? allPendingTasks.filter(t => (t.assigned_to_name || '').toLowerCase().includes(query))
+            : allPendingTasks;
+
+        setTotalResults(filtered.length);
+        setNameFilteredRows(filtered);
+    }, [allPendingTasks, allUsers, debouncedAssignedTo]);
+
+    useEffect(() => {
+        if (!nameFilteredRows) return;
+        // Reset to page 1 if current page is out of bounds after filtering
+        const maxPage = Math.max(1, Math.ceil(nameFilteredRows.length / rowsPerPage));
+        const safePage = Math.min(currentPage, maxPage);
+        if (safePage !== currentPage) {
+            setCurrentPage(safePage);
+        } else {
+            setClientPageFromRows(nameFilteredRows, safePage);
+        }
+    }, [nameFilteredRows, currentPage, rowsPerPage, setClientPageFromRows]);
 
     const handleApprove = async (task: Task) => {
         if (!user) return;
@@ -103,8 +128,7 @@ export const ApproveTask: React.FC = () => {
                 verified_by: user.name,
                 verified_at: new Date().toISOString(),
             });
-            setLoading(true);
-            await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+            await loadAllPendingTasks();
         } catch (err) {
             console.error('Failed to approve task:', err);
         }
@@ -121,8 +145,7 @@ export const ApproveTask: React.FC = () => {
             } as Partial<Task>);
             setRejectTask(null);
             setRejectComment('');
-            setLoading(true);
-            await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+            await loadAllPendingTasks();
         } catch (err) {
             console.error('Failed to reject task:', err);
         }
@@ -134,73 +157,34 @@ export const ApproveTask: React.FC = () => {
             await api.updateTask(editTask.id, { due_date: editDueDate });
             setEditTask(null);
             setEditDueDate('');
-            setLoading(true);
-            await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
+            await loadAllPendingTasks();
         } catch (err) {
             console.error('Failed to update due date:', err);
         }
     };
 
     const handleNextPage = () => {
-        if (!lastDoc || !hasNextPage || loading) return;
-        setPageCursors((prev) => {
-            const next = [...prev];
-            next[currentPage] = lastDoc;
-            return next;
-        });
-        setLoading(true);
-        loadPage(lastDoc, currentPage + 1);
+        if (!hasNextPage) return;
+        setCurrentPage(prev => prev + 1);
     };
 
     const handlePreviousPage = () => {
-        if (currentPage <= 1 || loading) return;
-        const previousCursor = pageCursors[currentPage - 2] ?? null;
-        setLoading(true);
-        loadPage(previousCursor, currentPage - 1);
+        if (currentPage <= 1) return;
+        setCurrentPage(prev => prev - 1);
     };
 
     const handleFirstPage = () => {
-        if (currentPage <= 1 || loading) return;
-        setLoading(true);
-        loadPage(null, 1);
+        if (currentPage <= 1) return;
+        setCurrentPage(1);
     };
 
-    const handleLastPage = async () => {
+    const handleLastPage = () => {
         const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
-        if (loading || currentPage >= totalPages) return;
-
-        let cursor = lastDoc;
-        let targetPage = currentPage;
-        setLoading(true);
-
-        try {
-            while (targetPage < totalPages && cursor != null) {
-                const filters = getActiveFilters();
-                const { tasks: nextTasks, lastDoc: nextLastDoc } = await api.getTasksPaginated({
-                    pageSize: rowsPerPage,
-                    startAfterDoc: cursor,
-                    ...filters,
-                });
-                targetPage += 1;
-                setPageCursors((prev) => {
-                    const next = [...prev];
-                    next[targetPage - 1] = cursor;
-                    return next;
-                });
-                setTasks(nextTasks);
-                setLastDoc(nextLastDoc);
-                setCurrentPage(targetPage);
-                setHasNextPage(nextLastDoc != null);
-                cursor = nextLastDoc;
-            }
-        } catch (err) {
-            console.error('Failed to load last approval page:', err);
-        } finally {
-            setLoading(false);
-        }
+        if (currentPage >= totalPages) return;
+        setCurrentPage(totalPages);
     };
 
-    if (loading) return <div className="text-slate-500">Loading...</div>;
+    const isDoer = user?.role === UserRole.DOER;
 
     const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
     const startRow = totalResults === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
@@ -276,6 +260,16 @@ export const ApproveTask: React.FC = () => {
             <p className="text-slate-500 text-sm mb-4">
                 Tasks awaiting your verification. Approve or reject after review.
             </p>
+            <div className="relative z-40 flex flex-col sm:flex-row sm:items-center gap-4 mb-3">
+                <div className="w-full sm:w-[250px]">
+                    <SearchableUserSelect
+                        users={availableUsers}
+                        nameValue={assignedToFilter}
+                        onNameChange={setAssignedToFilter}
+                        placeholder="Search Doer Name"
+                    />
+                </div>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">{paginationControls}</div>
             <div className="table-container">
                 <table>
@@ -293,7 +287,16 @@ export const ApproveTask: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {tasks.length === 0 ? (
+                        {loading ? (
+                            <tr>
+                                <td colSpan={isDoer ? 8 : 9} className="py-12 text-center text-slate-500">
+                                    <div className="flex justify-center mb-4">
+                                        <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin"></div>
+                                    </div>
+                                    Loading tasks...
+                                </td>
+                            </tr>
+                        ) : tasks.length === 0 ? (
                             <tr>
                                 <td colSpan={isDoer ? 8 : 9} className="py-16">
                                     <div className="flex flex-col items-center justify-center text-slate-500">
