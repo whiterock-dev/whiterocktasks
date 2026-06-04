@@ -37,6 +37,7 @@ export type RecurringType =
   | 'yearly';
 
 export type TaskStatus =
+  | 'scheduled'
   | 'pending'
   | 'in_progress'
   | 'completed'
