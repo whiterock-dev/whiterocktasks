@@ -5,6 +5,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 import { Task, Holiday, Absence, KpiMetrics } from '../types';
+import { getTodayIST } from './dates';
 
 export const RECURRING_OPTIONS = [
   { value: 'none', label: 'None' },
@@ -55,7 +56,7 @@ export function computeKpi(
   absences: Absence[],
   userId?: string
 ): KpiMetrics {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayIST();
   let filtered = tasks;
   if (userId) {
     filtered = tasks.filter((t) => t.assigned_to_id === userId);
@@ -111,7 +112,7 @@ export function computeKpiByMember(
   absences: Absence[],
   users: { id: string; name: string; city?: string }[]
 ): MemberKpiRow[] {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayIST();
   const rows: MemberKpiRow[] = users.map((u) => {
     const userTasks = tasks.filter((t) => t.assigned_to_id === u.id);
     const countable = userTasks.filter((t) => {

@@ -16,6 +16,7 @@ import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { getTodayIST } from '../lib/dates';
 import {
   Paperclip,
   Check,
@@ -190,14 +191,6 @@ export const AssignedByMe: React.FC = () => {
 
   const isRecurringMasterTask = useCallback((task: Task) => {
     return task.is_recurring_master === true;
-  }, []);
-
-  const getTodayLocal = useCallback(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
   }, []);
 
   const resolveDoerDateRange = useCallback((): { dueDateFrom?: string; dueDateTo?: string } => {
@@ -573,7 +566,7 @@ export const AssignedByMe: React.FC = () => {
 
         const summaryRows = applyNameFilters(summaryTasks);
 
-        const today = getTodayLocal();
+        const today = getTodayIST();
         const dueToday = summaryRows.filter(
           (t) =>
             t.due_date === today &&
@@ -603,7 +596,7 @@ export const AssignedByMe: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, getTodayLocal, isAuditor, isSelfTasksView, isVerifier]);
+  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, isAuditor, isSelfTasksView, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -991,7 +984,7 @@ export const AssignedByMe: React.FC = () => {
     setEditSubmitting(true);
     try {
       let finalStatus = editingTask.status;
-      const today = getTodayLocal();
+      const today = getTodayIST();
       if (editStartDate && editStartDate > today && ['pending', 'scheduled'].includes(editingTask.status)) {
         finalStatus = 'scheduled';
       } else if (editStartDate && editStartDate <= today && editingTask.status === 'scheduled') {
@@ -1215,7 +1208,7 @@ export const AssignedByMe: React.FC = () => {
               {filteredTasks.map((t) => (
                 <tr
                   key={t.id}
-                  className={`${(t.status === 'overdue' || t.due_date < getTodayLocal()) &&
+                  className={`${(t.status === 'overdue' || t.due_date < getTodayIST()) &&
                     t.status !== 'completed' &&
                     t.status !== 'cancelled' &&
                     t.status !== 'closed_permanently'
@@ -1328,7 +1321,7 @@ export const AssignedByMe: React.FC = () => {
               {filteredTasks.map((t) => (
                 <tr
                   key={t.id}
-                  className={`${(t.status === 'overdue' || t.due_date < getTodayLocal()) &&
+                  className={`${(t.status === 'overdue' || t.due_date < getTodayIST()) &&
                     t.status !== 'completed' &&
                     t.status !== 'cancelled' &&
                     t.status !== 'closed_permanently'
@@ -1705,7 +1698,7 @@ export const AssignedByMe: React.FC = () => {
             ) : (
               sortedTasks.map((t) => {
                 const onHoliday = isHoliday(t.due_date, holidays);
-                const today = getTodayLocal();
+                const today = getTodayIST();
                 const isOverdue =
                   (t.status === 'overdue' || t.due_date < today) &&
                   t.status !== 'completed' &&
