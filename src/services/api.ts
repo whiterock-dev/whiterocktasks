@@ -42,10 +42,34 @@ import {
   HelpTicketProposedSolution,
   HelpTicketRating,
 } from '../types';
+import { getTodayIST, resolveInitialTaskStatus } from '../lib/dates';
+
+/** Debounce in-flight scheduled→pending promotions per task id. */
+const activatingScheduledTaskIds = new Set<string>();
+
+const promoteScheduledTaskIfDue = (task: Task): Task => {
+  if (task.status !== 'scheduled' || !task.start_date) return task;
+  const today = getTodayIST();
+  if (task.start_date > today) return task;
+
+  if (!activatingScheduledTaskIds.has(task.id)) {
+    activatingScheduledTaskIds.add(task.id);
+    const now = new Date().toISOString();
+    updateDoc(doc(db, COLLECTIONS.TASKS, task.id), {
+      status: 'pending',
+      updated_at: isoToTimestamp(now),
+    }).catch((err) => {
+      console.error(`Failed to activate scheduled task ${task.id}:`, err);
+      activatingScheduledTaskIds.delete(task.id);
+    });
+  }
+
+  return { ...task, status: 'pending' };
+};
 
 const docToTask = (d: any): Task => {
   const data = d.data();
-  return {
+  const task: Task = {
     id: d.id,
     title: data.title || '',
     description: data.description || '',
@@ -90,6 +114,7 @@ const docToTask = (d: any): Task => {
     verification_rejected_by: data.verification_rejected_by,
     doer_remark: data.doer_remark,
   };
+  return promoteScheduledTaskIfDue(task);
 };
 
 const docToHelpTicket = (d: any): HelpTicket => {
@@ -216,7 +241,7 @@ export const api = {
   ): Promise<Task[]> => {
     const { assignedToId, limitCount = 50, includeRecurringMasters = false } = opts;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayIST();
     let q = query(
       tasksRef,
       where('status', 'in', ['pending', 'overdue', 'pending_verification', 'correction_required']),
@@ -511,13 +536,8 @@ export const api = {
     t: Omit<Task, 'id' | 'created_at' | 'updated_at'>
   ): Promise<Task> => {
     const now = new Date().toISOString();
-    
-    // Auto-set 'scheduled' status if start_date is in the future
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).replace(/\//g, '-');
-    let status = t.status;
-    if (status === 'pending' && t.start_date && t.start_date > today) {
-      status = 'scheduled';
-    }
+    const today = getTodayIST();
+    const status = resolveInitialTaskStatus(t.status, t.start_date, today);
 
     const normalizedTask: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
       ...t,

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.transitionScheduledTasks = exports.generateRecurringTasksDaily = exports.sendVerifierPendingReminders = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
+exports.transitionScheduledTasks = exports.backfillRecurringTaskInstances = exports.generateRecurringTasksDaily = exports.sendVerifierPendingReminders = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
 /*
  * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
  * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
@@ -9,6 +9,7 @@ exports.transitionScheduledTasks = exports.generateRecurringTasksDaily = exports
  */
 const admin = require("firebase-admin");
 const firebase_functions_1 = require("firebase-functions");
+const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 admin.initializeApp();
 const COLLECTIONS = {
@@ -180,9 +181,7 @@ exports.sendDailyDueDateReminders = (0, scheduler_1.onSchedule)({
         return;
     }
     const db = admin.firestore();
-    const today = new Date()
-        .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-        .replace(/\//g, '-'); // YYYY-MM-DD
+    const today = getTodayIST();
     // Query tasks that are still active AND have a due_date before today
     const overdueTasksSnap = await db
         .collection(COLLECTIONS.TASKS)
@@ -383,28 +382,35 @@ exports.sendVerifierPendingReminders = (0, scheduler_1.onSchedule)({
     firebase_functions_1.logger.info(`Verifier reminders complete: sent to ${sentCount} users`);
     return;
 });
-/**
- * Scheduled function: runs daily at 7:00 AM IST.
- * Uses recurring tasks as masters, creates normal task instances, and advances only master due dates.
- */
-exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
-    schedule: '0 7 * * *',
-    timeZone: 'Asia/Kolkata',
-    timeoutSeconds: 540,
-    memory: '512MiB',
-}, async () => {
-    const db = admin.firestore();
-    const nowIso = new Date().toISOString();
-    const today = new Date()
+function getTodayIST() {
+    return new Date()
         .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
         .replace(/\//g, '-');
+}
+function resolveInstanceStartDate(baseStartDate, baseDueDate, dueCursor) {
+    return getStartDateForRecurringDue(baseStartDate, baseDueDate, dueCursor) || dueCursor;
+}
+function resolveInitialTaskStatus(requestedStatus, startDate, today) {
+    if (requestedStatus === 'pending' && startDate && startDate > today) {
+        return 'scheduled';
+    }
+    return requestedStatus;
+}
+/**
+ * Creates recurring child instances when their start_date has arrived (not due_date).
+ * Also advances master pointers to the next future period.
+ */
+async function runGenerateRecurringTasks(db, opts = {}) {
+    const dryRun = opts.dryRun === true;
+    const nowIso = new Date().toISOString();
+    const today = getTodayIST();
     const recurringSnap = await db
         .collection(COLLECTIONS.TASKS)
         .where('recurring', 'in', RECURRING_TYPES)
         .get();
     if (recurringSnap.empty) {
-        firebase_functions_1.logger.info('No recurring tasks found; skipping daily recurring generation');
-        return;
+        firebase_functions_1.logger.info('No recurring tasks found; skipping recurring generation');
+        return { streamCount: 0, createdCount: 0, dryRun, created: [] };
     }
     const streamMap = new Map();
     for (const taskDoc of recurringSnap.docs) {
@@ -424,6 +430,7 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
     }
     let createdCount = 0;
     let streamCount = 0;
+    const created = [];
     for (const streamTasks of streamMap.values()) {
         if (streamTasks.length === 0)
             continue;
@@ -446,23 +453,29 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
         let cursor = String(template.due_date || '');
         const originalCursor = cursor;
         let guard = 0;
-        while (cursor <= today && guard < 400) {
+        while (guard < 400) {
             guard += 1;
-            // For daily recurring with specific days: only create instance if cursor matches a selected day
+            const instanceStartDate = resolveInstanceStartDate(baseStartDate, baseDueDate, cursor);
+            // Stop at the first period whose work window has not opened yet
+            if (instanceStartDate > today)
+                break;
             let shouldCreateInstance = true;
-            if (recurring === 'daily' && template.recurring_days && Array.isArray(template.recurring_days) && template.recurring_days.length > 0) {
+            if (recurring === 'daily' &&
+                template.recurring_days &&
+                Array.isArray(template.recurring_days) &&
+                template.recurring_days.length > 0) {
                 const cursorWeekday = toAppWeekday(new Date(`${cursor}T00:00:00Z`));
                 shouldCreateInstance = template.recurring_days.includes(cursorWeekday);
             }
             if (shouldCreateInstance && !existingInstanceDueDates.has(cursor)) {
-                const instanceStartDate = getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || today;
+                const status = resolveInitialTaskStatus('pending', instanceStartDate, today);
                 const newTask = {
                     title: template.title || '',
                     description: template.description || '',
                     start_date: instanceStartDate,
                     due_date: cursor,
                     priority: template.priority || 'medium',
-                    status: 'pending',
+                    status,
                     recurring: 'none',
                     is_recurring_master: false,
                     recurring_days: null,
@@ -483,7 +496,15 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
                     created_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
                     updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
                 };
-                await db.collection(COLLECTIONS.TASKS).add(newTask);
+                created.push({
+                    masterId: masterTaskId,
+                    dueDate: cursor,
+                    startDate: instanceStartDate,
+                    title: String(template.title || ''),
+                });
+                if (!dryRun) {
+                    await db.collection(COLLECTIONS.TASKS).add(newTask);
+                }
                 existingInstanceDueDates.add(cursor);
                 createdCount += 1;
             }
@@ -492,18 +513,59 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
                 break;
             cursor = nextDueDate;
         }
-        // Only master due_date moves forward; recurring table stays as master list.
         if (cursor !== originalCursor) {
-            const nextMasterStartDate = getStartDateForRecurringDue(baseStartDate, baseDueDate, cursor) || String(template.start_date || today);
-            await masterRef.update({
-                start_date: nextMasterStartDate,
-                due_date: cursor,
-                updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
-            });
+            const nextMasterStartDate = resolveInstanceStartDate(baseStartDate, baseDueDate, cursor) ||
+                String(template.start_date || today);
+            if (!dryRun) {
+                await masterRef.update({
+                    start_date: nextMasterStartDate,
+                    due_date: cursor,
+                    updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
+                });
+            }
         }
     }
-    firebase_functions_1.logger.info(`Recurring generation complete: processed ${streamCount} streams, created ${createdCount} tasks`);
+    firebase_functions_1.logger.info(`Recurring generation complete (dryRun=${dryRun}): processed ${streamCount} streams, created ${createdCount} tasks`);
+    return { streamCount, createdCount, dryRun, created };
+}
+/**
+ * Scheduled function: runs daily at 00:10 AM IST (after transitionScheduledTasks at 00:05).
+ * Creates recurring child instances when start_date has arrived and advances master due dates.
+ */
+exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
+    schedule: '10 0 * * *',
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 540,
+    memory: '512MiB',
+}, async () => {
+    await runGenerateRecurringTasks(admin.firestore());
     return;
+});
+/**
+ * One-time or manual backfill for missed recurring periods.
+ * POST with header x-backfill-secret matching BACKFILL_SECRET env var.
+ * Query/body dryRun=true logs what would be created without writing.
+ */
+exports.backfillRecurringTaskInstances = (0, https_1.onRequest)({
+    timeoutSeconds: 540,
+    memory: '512MiB',
+}, async (req, res) => {
+    const secret = process.env.BACKFILL_SECRET;
+    if (!secret || req.headers['x-backfill-secret'] !== secret) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+    }
+    const dryRun = req.query.dryRun === 'true' ||
+        req.body?.dryRun === true ||
+        req.body?.dryRun === 'true';
+    try {
+        const result = await runGenerateRecurringTasks(admin.firestore(), { dryRun });
+        res.json(result);
+    }
+    catch (err) {
+        firebase_functions_1.logger.error('backfillRecurringTaskInstances failed:', err);
+        res.status(500).json({ error: String(err) });
+    }
 });
 /**
  * Scheduled function: runs daily at 00:05 AM IST (18:05 UTC).
@@ -517,9 +579,7 @@ exports.transitionScheduledTasks = (0, scheduler_1.onSchedule)({
     memory: '512MiB',
 }, async () => {
     const db = admin.firestore();
-    const today = new Date()
-        .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
-        .replace(/\//g, '-'); // YYYY-MM-DD in IST
+    const today = getTodayIST(); // YYYY-MM-DD in IST
     firebase_functions_1.logger.info(`transitionScheduledTasks: running for date ${today}`);
     // Fetch all tasks with 'scheduled' status
     const scheduledSnap = await db
