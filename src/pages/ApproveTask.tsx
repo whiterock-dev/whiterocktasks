@@ -22,6 +22,7 @@ import {
     Pencil,
 } from 'lucide-react';
 import { formatDateDDMMYYYY } from '../lib/utils';
+import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -35,7 +36,7 @@ export const ApproveTask: React.FC = () => {
     const [hasNextPage, setHasNextPage] = useState(false);
     const [totalResults, setTotalResults] = useState(0);
     const [loading, setLoading] = useState(true);
-    const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+    const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
     const [rejectTask, setRejectTask] = useState<Task | null>(null);
     const [rejectComment, setRejectComment] = useState('');
     const [editTask, setEditTask] = useState<Task | null>(null);
@@ -347,13 +348,16 @@ export const ApproveTask: React.FC = () => {
                                         </td>
                                         */}
                                         <td className="text-center">
-                                            {(task.attachment_url || task.attachment_text) ? (
+                                            {((task.attachment_urls && task.attachment_urls.length > 0) || task.attachment_url || task.attachment_text) ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setViewAttachment({ url: task.attachment_url, text: task.attachment_text })}
+                                                    onClick={() => setViewAttachment({ 
+                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []), 
+                                                        text: task.attachment_text 
+                                                    })}
                                                     className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                                                 >
-                                                    {task.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                                                    <ExternalLink size={14} />
                                                     View
                                                 </button>
                                             ) : task.attachment_required ? (
@@ -484,33 +488,11 @@ export const ApproveTask: React.FC = () => {
             )}
 
             {viewAttachment && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewAttachment(null)}>
-                    <div className="card p-6 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-                        <h3 className="text-lg font-semibold mb-3">Attachment</h3>
-                        {viewAttachment.url && (
-                            <div className="mb-4">
-                                <a
-                                    href={viewAttachment.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 text-teal-600 hover:underline font-medium"
-                                >
-                                    <ExternalLink size={18} />
-                                    Open media / link
-                                </a>
-                            </div>
-                        )}
-                        {viewAttachment.text != null && viewAttachment.text !== '' && (
-                            <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50">
-                                {viewAttachment.text}
-                            </pre>
-                        )}
-                        {viewAttachment.url && !viewAttachment.text && <p className="text-sm text-slate-500">Media or link attached. Use the link above to view.</p>}
-                        <div className="mt-4 flex justify-end">
-                            <Button variant="secondary" onClick={() => setViewAttachment(null)}>Close</Button>
-                        </div>
-                    </div>
-                </div>
+                <AttachmentViewerModal
+                    urls={viewAttachment.urls}
+                    text={viewAttachment.text}
+                    onClose={() => setViewAttachment(null)}
+                />
             )}
         </div>
     );

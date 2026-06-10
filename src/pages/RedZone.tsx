@@ -11,6 +11,7 @@ import { storage } from '../lib/firebase';
 import { compressImageForUpload, isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
@@ -59,13 +60,7 @@ export const RedZone: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
-  const [doerRemark, setDoerRemark] = useState('');
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachmentText, setAttachmentText] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
@@ -265,32 +260,18 @@ export const RedZone: React.FC = () => {
   );
 
   const handleComplete = useCallback(
-    async (task: Task, url?: string, text?: string, remark?: string, opts?: { closePermanently?: boolean }) => {
+    async (task: Task, url?: string, text?: string, remark?: string, opts?: { closePermanently?: boolean; attachment_urls?: string[] }) => {
       if (!user) return;
+      if (completing) return;
       const closePermanently = opts?.closePermanently === true;
       if (!closePermanently && !remark?.trim()) return;
-      if (task.attachment_required && !closePermanently) {
-        const isText = task.attachment_type === 'text';
-        if (isText && !text?.trim()) return;
-        if (!isText && !url?.trim()) return;
-        if (!isText) {
-          try {
-            const parsed = new URL((url || '').trim());
-            const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-            if (!isHttp) {
-              setUploadError('Please enter a valid media link starting with http:// or https://');
-              return;
-            }
-          } catch {
-            setUploadError('Please enter a valid media link starting with http:// or https://');
-            return;
-          }
-        }
-      }
+      
+      setCompleting(true);
 
       try {
         const baseUpdates: Partial<Task> = {
           ...(url && { attachment_url: url }),
+          ...(opts?.attachment_urls && { attachment_urls: opts.attachment_urls }),
           ...(text && { attachment_text: text }),
           ...(!closePermanently && { doer_remark: remark?.trim() }),
         };
@@ -315,75 +296,22 @@ export const RedZone: React.FC = () => {
         }
 
         setCompleteTask(null);
-        setDoerRemark('');
-        setAttachmentUrl('');
-        setAttachmentText('');
-        setAttachmentFile(null);
-        setUploading(false);
-        setUploadProgress(0);
-        setUploadError(null);
         await loadTasks();
       } catch (err) {
         console.error('Failed to complete overdue task:', err);
+      } finally {
+        setCompleting(false);
       }
     },
-    [loadTasks, user]
+    [loadTasks, user, completing]
   );
 
   const handleCompleteClick = (task: Task) => {
     setCompleteTask(task);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
-  };
-
-  const handleMediaFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !completeTask) return;
-
-    setAttachmentUrl('');
-    setUploadError(null);
-    setAttachmentFile(file);
-    setUploading(true);
-    setUploadProgress(0);
-
-    const path = `task-attachments/${completeTask.id}/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, path);
-
-    try {
-      const toUpload = await compressImageForUpload(file);
-      const uploadTask = uploadBytesResumable(storageRef, toUpload);
-
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      });
-
-      await uploadTask;
-      const url = await getDownloadURL(storageRef);
-      setAttachmentUrl(url);
-    } catch (err: any) {
-      setUploadError(err?.message || 'Upload failed');
-      setAttachmentFile(null);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
   };
 
   const closeCompleteModal = () => {
     setCompleteTask(null);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
   };
 
   const openEditModal = (task: Task) => {
@@ -713,126 +641,12 @@ export const RedZone: React.FC = () => {
       <div className="mt-4">{paginationControls}</div>
 
       {completeTask && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-semibold mb-2">
-              {completeTask.attachment_required
-                ? completeTask.attachment_type === 'text'
-                  ? 'Text required to mark complete'
-                  : 'Upload media required to mark complete'
-                : 'Mark task complete'}
-            </h3>
-            {completeTask.attachment_required && (
-              <p className="text-sm text-slate-600 mb-4">
-                {completeTask.attachment_description ||
-                  (completeTask.attachment_type === 'text'
-                    ? 'You must enter text below to complete this task.'
-                    : 'Upload a photo/video or paste a link to your media.')}
-              </p>
-            )}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Doer's Remark <span className="text-red-600">*</span>
-              </label>
-              <textarea
-                value={doerRemark}
-                onChange={(e) => setDoerRemark(e.target.value)}
-                placeholder="Add a completion remark (required)..."
-                rows={3}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                required
-              />
-            </div>
-            {completeTask.attachment_required && completeTask.attachment_type === 'text' ? (
-              <textarea
-                value={attachmentText}
-                onChange={(e) => setAttachmentText(e.target.value)}
-                placeholder="Enter your text here (required)..."
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
-                required
-              />
-            ) : completeTask.attachment_required ? (
-              <div className="space-y-3 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Upload photo or video
-                  </label>
-                  <input
-                    key={completeTask.id}
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={handleMediaFileSelect}
-                    className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
-                  />
-                  {attachmentFile && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      {uploading && `Uploading... ${Math.round(uploadProgress)}% — `}
-                      {!uploading && attachmentUrl && 'Done — '}
-                      {attachmentFile.name}
-                    </p>
-                  )}
-                  {uploadError && <p className="text-xs text-red-600 mt-1">{uploadError}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Or paste media link
-                  </label>
-                  <input
-                    type="url"
-                    value={attachmentUrl}
-                    onChange={(e) => {
-                      setAttachmentUrl(e.target.value);
-                      setAttachmentFile(null);
-                      setUploadError(null);
-                    }}
-                    placeholder="e.g. Google Drive, cloud link for photo/video"
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                  />
-                </div>
-                <p className="text-xs text-slate-500">
-                  You must either upload a file or provide a link to mark this task complete.
-                </p>
-                {attachmentUrl.trim().length > 0 && (() => {
-                  try {
-                    const parsed = new URL(attachmentUrl.trim());
-                    return !(parsed.protocol === 'http:' || parsed.protocol === 'https:');
-                  } catch {
-                    return true;
-                  }
-                })() && (
-                    <p className="text-xs text-red-600 mt-1">Enter a valid URL (for example: https://...)</p>
-                  )}
-              </div>
-            ) : null}
-            <div className="flex gap-2 justify-end">
-
-              <Button variant="secondary" onClick={closeCompleteModal}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  handleComplete(
-                    completeTask,
-                    completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                    completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                    doerRemark
-                  )
-                }
-                disabled={
-                  !doerRemark.trim() ||
-                  (completeTask.attachment_required
-                    ? (completeTask.attachment_type === 'text'
-                      ? !attachmentText.trim()
-                      : !attachmentUrl.trim())
-                    : false)
-                }
-              >
-                Complete
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CompleteTaskModal
+          task={completeTask}
+          onClose={closeCompleteModal}
+          onComplete={handleComplete}
+          completing={completing}
+        />
       )}
 
       {editingTask && (

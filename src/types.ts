@@ -85,6 +85,7 @@ export interface Task {
   audited_at?: string;
   audited_by?: string;
   attachment_url?: string;
+  attachment_urls?: string[];
   attachment_text?: string;
   assignee_deleted?: boolean;
   verified_at?: string;
