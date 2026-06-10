@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { Task, User, UserRole } from '../types';
 import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -19,6 +20,7 @@ export const CompletedTasks: React.FC = () => {
     const isDoer = user?.role === UserRole.DOER;
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
+    const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
     const [dateFilter, setDateFilter] = useState('all_time');
@@ -364,21 +366,18 @@ export const CompletedTasks: React.FC = () => {
                                         <td className="px-4 py-3 text-slate-600">{task.verifier_name || task.verified_by || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600 whitespace-pre-wrap wrap-anywhere">{task.doer_remark || '-'}</td>
                                         <td className="px-4 py-3 text-slate-600">
-                                            {task.attachment_url ? (
-                                                <a
-                                                    href={task.attachment_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                            {((task.attachment_urls && task.attachment_urls.length > 0) || task.attachment_url || task.attachment_text) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setViewAttachment({ 
+                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []), 
+                                                        text: task.attachment_text 
+                                                    })}
                                                     className="inline-flex items-center gap-1 text-teal-600 hover:underline"
                                                 >
                                                     <ExternalLink size={14} />
                                                     View
-                                                </a>
-                                            ) : task.attachment_text ? (
-                                                <span className="inline-flex items-center gap-1 text-slate-700">
-                                                    <FileText size={14} />
-                                                    Text
-                                                </span>
+                                                </button>
                                             ) : task.attachment_required ? (
                                                 <span className="text-amber-600 text-xs font-medium">Required</span>
                                             ) : (
@@ -418,6 +417,14 @@ export const CompletedTasks: React.FC = () => {
 
             {/* ── Bottom Pagination ── */}
             <div>{paginationControls}</div>
+
+            {viewAttachment && (
+                <AttachmentViewerModal
+                    urls={viewAttachment.urls}
+                    text={viewAttachment.text}
+                    onClose={() => setViewAttachment(null)}
+                />
+            )}
         </div>
     );
 };

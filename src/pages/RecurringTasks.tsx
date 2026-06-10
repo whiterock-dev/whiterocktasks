@@ -66,6 +66,7 @@ export const RecurringTasks: React.FC = () => {
   // Filter state – mirrors TaskTable
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
+  const [verifierFilter, setVerifierFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('all_time');
   const [customStart, setCustomStart] = useState('');
@@ -213,20 +214,22 @@ export const RecurringTasks: React.FC = () => {
   const filteredTasks = useMemo(() => {
     const assignedToQuery = assignedToFilter.toLowerCase().trim();
     const assignedByQuery = assignedByFilter.toLowerCase().trim();
+    const verifierQuery = verifierFilter.toLowerCase().trim();
 
-    if (!assignedToQuery && !assignedByQuery) return allTasks;
+    if (!assignedToQuery && !assignedByQuery && !verifierQuery) return allTasks;
 
     return allTasks.filter((t) => {
       if (assignedToQuery && !(t.assigned_to_name || '').toLowerCase().includes(assignedToQuery)) return false;
       if (assignedByQuery && !(t.assigned_by_name || '').toLowerCase().includes(assignedByQuery)) return false;
+      if (verifierQuery && !(t.verifier_name || '').toLowerCase().includes(verifierQuery)) return false;
       return true;
     });
-  }, [allTasks, assignedToFilter, assignedByFilter]);
+  }, [allTasks, assignedToFilter, assignedByFilter, verifierFilter]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [assignedToFilter, assignedByFilter, recurringFilter, allTasks]);
+  }, [assignedToFilter, assignedByFilter, verifierFilter, recurringFilter, allTasks]);
 
   // Pagination calculations
   const totalResults = filteredTasks.length;
@@ -454,6 +457,13 @@ export const RecurringTasks: React.FC = () => {
             nameValue={assignedByFilter}
             onNameChange={setAssignedByFilter}
             placeholder="Search Assigned By"
+          />
+
+          <SearchableUserSelect
+            users={allUsers}
+            nameValue={verifierFilter}
+            onNameChange={setVerifierFilter}
+            placeholder="Search Verifier Name"
           />
 
           <select

@@ -10,12 +10,13 @@ import { api } from '../services/api';
 import { Task } from '../types';
 import { Button } from '../components/ui/Button';
 import { Check, X, HelpCircle, ExternalLink, FileText } from 'lucide-react';
+import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
 export const BogusAttachment: React.FC = () => {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewText, setViewText] = useState<string | null>(null);
+  const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
 
   useEffect(() => {
     api.getBogusAttachmentTasks(50).then((t) => {
@@ -65,25 +66,18 @@ export const BogusAttachment: React.FC = () => {
                   <td className="py-3 px-4 text-slate-600">{t.assigned_to_name}</td>
                   <td className="py-3 px-4 text-slate-600">{t.attachment_description || '-'}</td>
                   <td className="py-3 px-4">
-                    {t.attachment_url ? (
-                      <a
-                        href={t.attachment_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-teal-600 hover:underline text-sm inline-flex items-center gap-1"
-                      >
-                        <ExternalLink size={14} />
-                        View
-                      </a>
-                    ) : t.attachment_text ? (
-                      <button
-                        type="button"
-                        onClick={() => setViewText(t.attachment_text ?? '')}
-                        className="text-teal-600 hover:underline text-sm inline-flex items-center gap-1"
-                      >
-                        <FileText size={14} />
-                        View
-                      </button>
+                    {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewAttachment({ 
+                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
+                            text: t.attachment_text 
+                          })}
+                          className="text-teal-600 hover:underline text-sm inline-flex items-center gap-1"
+                        >
+                          <ExternalLink size={14} />
+                          View
+                        </button>
                     ) : (
                       '-'
                     )}
@@ -126,18 +120,12 @@ export const BogusAttachment: React.FC = () => {
         </table>
       </div>
 
-      {viewText !== null && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewText(null)}>
-          <div className="card p-6 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-3">Attachment</h3>
-            <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50">
-              {viewText}
-            </pre>
-            <div className="mt-4 flex justify-end">
-              <Button variant="secondary" onClick={() => setViewText(null)}>Close</Button>
-            </div>
-          </div>
-        </div>
+      {viewAttachment && (
+        <AttachmentViewerModal
+          urls={viewAttachment.urls}
+          text={viewAttachment.text}
+          onClose={() => setViewAttachment(null)}
+        />
       )}
     </div>
   );

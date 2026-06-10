@@ -14,6 +14,8 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
+import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
@@ -140,14 +142,8 @@ export const AssignedByMe: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
-  const [doerRemark, setDoerRemark] = useState('');
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachmentText, setAttachmentText] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
   const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -674,10 +670,12 @@ export const AssignedByMe: React.FC = () => {
         {
           header: 'Attachment Content',
           accessor: (t) => {
-            if (t.attachment_text && t.attachment_url) {
-              return `Text: ${t.attachment_text} | URL: ${t.attachment_url}`;
+            const urls = t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []);
+            const urlString = urls.length > 0 ? `URLs: ${urls.join(', ')}` : '';
+            if (t.attachment_text && urlString) {
+              return `Text: ${t.attachment_text} | ${urlString}`;
             }
-            return t.attachment_text || t.attachment_url || '';
+            return t.attachment_text || urlString || '';
           },
         },
         { header: 'Completed At', accessor: (t) => formatDateValue(t.completed_at, { includeTime: false }) },
@@ -716,44 +714,6 @@ export const AssignedByMe: React.FC = () => {
 
   const handleCompleteClick = (t: Task) => {
     setCompleteTask(t);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
-  };
-
-  const handleMediaFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !completeTask) return;
-    setAttachmentUrl('');
-    setUploadError(null);
-    setAttachmentFile(file);
-    setUploading(true);
-    setUploadProgress(0);
-    const path = `task-attachments/${completeTask.id}/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, path);
-    try {
-      const toUpload = await compressImageForUpload(file);
-      const uploadTask = uploadBytesResumable(storageRef, toUpload);
-
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      });
-
-      await uploadTask;
-      const url = await getDownloadURL(storageRef);
-      setAttachmentUrl(url);
-    } catch (err: any) {
-      setUploadError(err?.message || 'Upload failed');
-      setAttachmentFile(null);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
   };
 
   const handleComplete = async (
@@ -761,34 +721,19 @@ export const AssignedByMe: React.FC = () => {
     url?: string,
     text?: string,
     remark?: string,
-    opts?: { closePermanently?: boolean }
+    opts?: { closePermanently?: boolean; attachment_urls?: string[] }
   ) => {
     if (!user) return;
     if (isRecurringMasterTask(t)) return;
+    if (completing) return;
     const closePermanently = opts?.closePermanently === true;
     if (!closePermanently && !remark?.trim()) return;
-    if (t.attachment_required && !closePermanently) {
-      const isText = t.attachment_type === 'text';
-      if (isText && !text?.trim()) return;
-      if (!isText && !url?.trim()) return;
-      if (!isText) {
-        const candidateUrl = (url || '').trim();
-        try {
-          const parsed = new URL(candidateUrl);
-          const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-          if (!isHttp) {
-            setUploadError('Please enter a valid media link starting with http:// or https://');
-            return;
-          }
-        } catch {
-          setUploadError('Please enter a valid media link starting with http:// or https://');
-          return;
-        }
-      }
-    }
+    
+    setCompleting(true);
     try {
       const baseUpdates: Partial<Task> = {
         ...(url && { attachment_url: url }),
+        ...(opts?.attachment_urls && { attachment_urls: opts.attachment_urls }),
         ...(text && { attachment_text: text }),
         ...(!closePermanently && { doer_remark: remark?.trim() }),
       };
@@ -818,27 +763,15 @@ export const AssignedByMe: React.FC = () => {
         await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
       }
       setCompleteTask(null);
-      setDoerRemark('');
-      setAttachmentUrl('');
-      setAttachmentText('');
-      setAttachmentFile(null);
-      setUploading(false);
-      setUploadProgress(0);
-      setUploadError(null);
     } catch (err) {
       console.error(err);
+    } finally {
+      setCompleting(false);
     }
   };
 
   const closeCompleteModal = () => {
     setCompleteTask(null);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
   };
 
   const handleAudit = async (taskId: string, status: 'audited' | 'bogus' | 'unclear') => {
@@ -1798,13 +1731,16 @@ export const AssignedByMe: React.FC = () => {
                       </span>
                     </td>
                     <td className="text-center">
-                      {(t.attachment_url || t.attachment_text) ? (
+                      {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                         <button
                           type="button"
-                          onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                          onClick={() => setViewAttachment({ 
+                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
+                            text: t.attachment_text 
+                          })}
                           className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                         >
-                          {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                          <ExternalLink size={14} />
                           View
                         </button>
                       ) : t.attachment_required ? (
@@ -1878,157 +1814,20 @@ export const AssignedByMe: React.FC = () => {
       <div className="mt-3 flex justify-end">{paginationControls}</div>
 
       {completeTask && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-semibold mb-2">
-              {completeTask.attachment_required
-                ? completeTask.attachment_type === 'text'
-                  ? 'Text required to mark complete'
-                  : 'Upload media required to mark complete'
-                : 'Mark task complete'}
-            </h3>
-            {completeTask.attachment_required && (
-              <p className="text-sm text-slate-600 mb-4">
-                {completeTask.attachment_description ||
-                  (completeTask.attachment_type === 'text'
-                    ? 'You must enter text below to complete this task.'
-                    : 'Upload a photo/video or paste a link to your media.')}
-              </p>
-            )}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Doer's Remark <span className="text-red-600">*</span>
-              </label>
-              <textarea
-                value={doerRemark}
-                onChange={(e) => setDoerRemark(e.target.value)}
-                placeholder="Add a completion remark (required)..."
-                rows={3}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                required
-              />
-            </div>
-            {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
-              <textarea
-                value={attachmentText}
-                onChange={(e) => setAttachmentText(e.target.value)}
-                placeholder="Enter your text here (required)..."
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
-                required
-              />
-            ) : (
-              <div className="space-y-3 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Upload photo or video
-                  </label>
-                  <input
-                    key={completeTask.id}
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={handleMediaFileSelect}
-                    className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
-                  />
-                  {attachmentFile && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      {uploading && `Uploading(${Math.round(uploadProgress)}%) — `}
-                      {!uploading && attachmentUrl && 'Done — '}
-                      {attachmentFile.name}
-                    </p>
-                  )}
-                  {uploadError && (
-                    <p className="text-xs text-red-600 mt-1">{uploadError}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Or paste media link
-                  </label>
-                  <input
-                    type="url"
-                    value={attachmentUrl}
-                    onChange={(e) => {
-                      setAttachmentUrl(e.target.value);
-                      setAttachmentFile(null);
-                      setUploadError(null);
-                    }}
-                    placeholder="e.g. Google Drive, cloud link for photo/video"
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                  />
-                </div>
-                <p className="text-xs text-slate-500">
-                  You must either upload a file or provide a link to mark this task complete.
-                </p>
-                {attachmentUrl.trim().length > 0 && (() => {
-                  try {
-                    const parsed = new URL(attachmentUrl.trim());
-                    return !(parsed.protocol === 'http:' || parsed.protocol === 'https:');
-                  } catch {
-                    return true;
-                  }
-                })() && (
-                    <p className="text-xs text-red-600 mt-1">Enter a valid URL (for example: https://...)</p>
-                  )}
-              </div>
-            ))}
-            <div className="flex flex-wrap gap-2 justify-end">
-              <Button variant="secondary" onClick={closeCompleteModal}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  handleComplete(
-                    completeTask,
-                    completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                    completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                    doerRemark
-                  )
-                }
-                disabled={
-                  !doerRemark.trim() ||
-                  (completeTask.attachment_required
-                    ? (completeTask.attachment_type === 'text'
-                      ? !attachmentText.trim()
-                      : !attachmentUrl.trim())
-                    : false)
-                }
-              >
-                Complete
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CompleteTaskModal
+          task={completeTask}
+          onClose={closeCompleteModal}
+          onComplete={handleComplete}
+          completing={completing}
+        />
       )}
 
       {viewAttachment && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewAttachment(null)}>
-          <div className="card p-6 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-3">Attachment</h3>
-            {viewAttachment.url && (
-              <div className="mb-4">
-                <a
-                  href={viewAttachment.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-teal-600 hover:underline font-medium"
-                >
-                  <ExternalLink size={18} />
-                  Open media / link
-                </a>
-              </div>
-            )}
-            {viewAttachment.text != null && viewAttachment.text !== '' && (
-              <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50 min-h-25">
-                {viewAttachment.text}
-              </pre>
-            )}
-            {viewAttachment.url && !viewAttachment.text && <p className="text-sm text-slate-500">Media or link attached. Use the link above to view.</p>}
-            <div className="mt-4 flex justify-end">
-              <Button variant="secondary" onClick={() => setViewAttachment(null)}>Close</Button>
-            </div>
-          </div>
-        </div>
+        <AttachmentViewerModal
+          urls={viewAttachment.urls}
+          text={viewAttachment.text}
+          onClose={() => setViewAttachment(null)}
+        />
       )}
 
       {rejectTask && user && (

@@ -14,6 +14,8 @@ import { storage } from '../lib/firebase';
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
+import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
@@ -85,18 +87,13 @@ export const TaskTable: React.FC = () => {
     const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
     return () => clearTimeout(t);
   }, [assignedByFilter]);
+
   const [statusFilter, setStatusFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [completing, setCompleting] = useState(false);
-  const [doerRemark, setDoerRemark] = useState('');
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachmentText, setAttachmentText] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+  const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
   const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -114,7 +111,6 @@ export const TaskTable: React.FC = () => {
   const [editStartDate, setEditStartDate] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
-  // const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
   const [editRecurringDays, setEditRecurringDays] = useState<number[]>([]);
   const [editAttachmentRequired, setEditAttachmentRequired] = useState(false);
@@ -380,8 +376,6 @@ export const TaskTable: React.FC = () => {
     const { includeTime = false, emptyValue = '' } = opts || {};
     return formatDateDDMMYYYY(value, { includeTime, emptyValue });
   }, []);
-
-  // filterByStartDate removed — future tasks are now hidden via the 'scheduled' status at the DB level
 
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
@@ -671,7 +665,6 @@ export const TaskTable: React.FC = () => {
         { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
         { header: 'Start Date', accessor: (t) => formatDateValue(t.start_date, { emptyValue: '###' }) },
         { header: 'Due Date', accessor: (t) => formatDateValue(t.due_date, { emptyValue: '###' }) },
-        // { header: 'Priority', accessor: (t) => t.priority || '' },
         { header: 'Recurring', accessor: (t) => formatRecurringLabel(getDisplayRecurring(t, exportLookup), 'None') },
         { header: 'Status', accessor: (t) => t.status || '' },
         { header: 'Verification Required', accessor: (t) => (t.verification_required ? 'Yes' : 'No') },
@@ -681,10 +674,12 @@ export const TaskTable: React.FC = () => {
         {
           header: 'Attachment Content',
           accessor: (t) => {
-            if (t.attachment_text && t.attachment_url) {
-              return `Text: ${t.attachment_text} | URL: ${t.attachment_url}`;
+            const urls = t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []);
+            const urlString = urls.length > 0 ? `URLs: ${urls.join(', ')}` : '';
+            if (t.attachment_text && urlString) {
+              return `Text: ${t.attachment_text} | ${urlString}`;
             }
-            return t.attachment_text || t.attachment_url || '';
+            return t.attachment_text || urlString || '';
           },
         },
         { header: 'Completed At', accessor: (t) => formatDateValue(t.completed_at, { includeTime: false }) },
@@ -708,68 +703,20 @@ export const TaskTable: React.FC = () => {
     }
   };
 
-  // Get unique lists of users and recurring types from the currently loaded tasks
-  // (Note: For a fully complete list across all pages, we would need to query the users collection,
-  // but for a simple client-side filter on paginated data, we extract from loaded tasks, or we can fetch users.
-  // We will assume basic extraction from loaded tasks for now to avoid additional reads if not necessary,
-  // OR we can fetch users. Let's fetch all users to populate the dropdowns properly.)
   const [allUsers, setAllUsers] = useState<User[]>([]);
 
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
   }, []);
 
-  // Initialize Assigned To filter with logged-in doer's name when in self view
   useEffect(() => {
     if (isSelfTasksView && isDoer && user?.name && !assignedToFilter) {
       setAssignedToFilter(user.name);
     }
   }, [isSelfTasksView, isDoer, user?.name]);
 
-
-
-
-
   const handleCompleteClick = (t: Task) => {
     setCompleteTask(t);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
-  };
-
-  const handleMediaFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !completeTask) return;
-    setAttachmentUrl('');
-    setUploadError(null);
-    setAttachmentFile(file);
-    setUploading(true);
-    setUploadProgress(0);
-    const path = `task-attachments/${completeTask.id}/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, path);
-    try {
-      const toUpload = await compressImageForUpload(file);
-      const uploadTask = uploadBytesResumable(storageRef, toUpload);
-
-      uploadTask.on('state_changed', (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      });
-
-      await uploadTask;
-      const url = await getDownloadURL(storageRef);
-      setAttachmentUrl(url);
-    } catch (err: any) {
-      setUploadError(err?.message || 'Upload failed');
-      setAttachmentFile(null);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
   };
 
   const handleComplete = async (
@@ -777,36 +724,19 @@ export const TaskTable: React.FC = () => {
     url?: string,
     text?: string,
     remark?: string,
-    opts?: { closePermanently?: boolean }
+    opts?: { closePermanently?: boolean; attachment_urls?: string[] }
   ) => {
     if (!user) return;
     if (isRecurringMasterTask(t)) return;
     if (completing) return;
     const closePermanently = opts?.closePermanently === true;
     if (!closePermanently && !remark?.trim()) return;
-    if (t.attachment_required && !closePermanently) {
-      const isText = t.attachment_type === 'text';
-      if (isText && !text?.trim()) return;
-      if (!isText && !url?.trim()) return;
-      if (!isText) {
-        const candidateUrl = (url || '').trim();
-        try {
-          const parsed = new URL(candidateUrl);
-          const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-          if (!isHttp) {
-            setUploadError('Please enter a valid media link starting with http:// or https://');
-            return;
-          }
-        } catch {
-          setUploadError('Please enter a valid media link starting with http:// or https://');
-          return;
-        }
-      }
-    }
+    
     setCompleting(true);
     try {
       const baseUpdates: Partial<Task> = {
         ...(url && { attachment_url: url }),
+        ...(opts?.attachment_urls && { attachment_urls: opts.attachment_urls }),
         ...(text && { attachment_text: text }),
         ...(!closePermanently && { doer_remark: remark?.trim() }),
       };
@@ -836,13 +766,6 @@ export const TaskTable: React.FC = () => {
         await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
       }
       setCompleteTask(null);
-      setDoerRemark('');
-      setAttachmentUrl('');
-      setAttachmentText('');
-      setAttachmentFile(null);
-      setUploading(false);
-      setUploadProgress(0);
-      setUploadError(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -852,13 +775,6 @@ export const TaskTable: React.FC = () => {
 
   const closeCompleteModal = () => {
     setCompleteTask(null);
-    setDoerRemark('');
-    setAttachmentUrl('');
-    setAttachmentText('');
-    setAttachmentFile(null);
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadError(null);
   };
 
   const handleAudit = async (taskId: string, status: 'audited' | 'bogus' | 'unclear') => {
@@ -925,7 +841,6 @@ export const TaskTable: React.FC = () => {
     }
     if (loading || currentPage >= totalPages) return;
 
-    // Firestore cursor pagination cannot jump directly to unknown pages, so we walk forward.
     let cursor = lastDoc;
     let targetPage = currentPage;
     setLoading(true);
@@ -967,7 +882,6 @@ export const TaskTable: React.FC = () => {
     setEditStartDate(t.start_date || '');
     setEditAssignedToId(t.assigned_to_id);
     setEditDueDate(t.due_date);
-    // setEditPriority(t.priority);
     setEditRecurring(t.recurring);
     setEditRecurringDays(t.recurring_days || []);
     setEditAttachmentRequired(Boolean(t.attachment_required));
@@ -1018,7 +932,6 @@ export const TaskTable: React.FC = () => {
           description: editDesc,
           start_date: editStartDate || (null as any),
           due_date: editDueDate,
-          // priority: editPriority,
           status: finalStatus,
           recurring: immutableRecurring,
           recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
@@ -1056,7 +969,6 @@ export const TaskTable: React.FC = () => {
           assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
           assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
           due_date: editDueDate,
-          // priority: editPriority,
           recurring: immutableRecurring,
           recurring_days: immutableRecurring === 'daily' && editRecurringDays.length > 0 ? editRecurringDays : (null as any),
           attachment_required: editAttachmentRequired,
@@ -1249,13 +1161,16 @@ export const TaskTable: React.FC = () => {
                   </td>
                   <td>{t.assigned_to_city || (t.assignee_deleted ? '—' : '-')}</td>
                   <td className="text-center">
-                    {(t.attachment_url || t.attachment_text) ? (
+                    {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                        onClick={() => setViewAttachment({ 
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
+                          text: t.attachment_text 
+                        })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium"
                       >
-                        {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                        <ExternalLink size={14} />
                         View
                       </button>
                     ) : t.attachment_required ? (
@@ -1333,7 +1248,6 @@ export const TaskTable: React.FC = () => {
                 <th className="sticky-col-2 text-center">Description</th>
                 <th className="whitespace-nowrap text-center">Doer</th>
                 <th className="whitespace-nowrap text-center">Due Date</th>
-                {/* <th className="whitespace-nowrap text-center">Priority</th> */}
                 <th className="whitespace-nowrap text-center">Status</th>
                 <th className="whitespace-nowrap text-center">Attachment</th>
                 <th className="whitespace-nowrap text-center pr-4">Action</th>
@@ -1363,20 +1277,6 @@ export const TaskTable: React.FC = () => {
                     )}
                   </td>
                   <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateValue(t.due_date)}</td>
-                  {/*
-                  <td className="text-center">
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
-                        ? 'bg-red-100 text-red-800'
-                        : t.priority === 'high'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-100 text-slate-600'
-                        }`}
-                    >
-                      {t.priority}
-                    </span>
-                  </td>
-                  */}
                   <td className="text-center">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.status === 'completed'
@@ -1406,13 +1306,16 @@ export const TaskTable: React.FC = () => {
                     </span>
                   </td>
                   <td className="text-center">
-                    {(t.attachment_url || t.attachment_text) ? (
+                    {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                        onClick={() => setViewAttachment({ 
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
+                          text: t.attachment_text 
+                        })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                       >
-                        {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                        <ExternalLink size={14} />
                         View
                       </button>
                     ) : t.attachment_required ? (
@@ -1498,8 +1401,7 @@ export const TaskTable: React.FC = () => {
       </div>
 
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
-        {isSelfTasksView ? (
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
             <SearchableUserSelect
               users={allUsers}
               nameValue={assignedToFilter}
@@ -1576,87 +1478,7 @@ export const TaskTable: React.FC = () => {
                 />
               </div>
             )}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <SearchableUserSelect
-              users={allUsers}
-              nameValue={assignedToFilter}
-              onNameChange={setAssignedToFilter}
-              placeholder="Search Doer Name"
-            />
-
-            <SearchableUserSelect
-              users={allUsers}
-              nameValue={assignedByFilter}
-              onNameChange={setAssignedByFilter}
-              placeholder="Search Assigned By"
-            />
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">Status</option>
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="overdue">Overdue</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="closed_permanently">Closed Permanently</option>
-              <option value="pending_verification">Pending Verification</option>
-              <option value="correction_required">Correction Required</option>
-            </select>
-
-            <select
-              value={recurringFilter}
-              onChange={(e) => setRecurringFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">All Recurring Types</option>
-              <option value="none">None</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="fortnightly">Fortnightly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="half_yearly">Half Yearly</option>
-              <option value="yearly">Yearly</option>
-            </select>
-
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-            >
-              <option value="all_time">All Time</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="last_7_days">Last 7 Days</option>
-              <option value="last_30_days">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
-            </select>
-
-            {dateFilter === 'custom' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-                <span className="text-slate-500 text-sm">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-            )}
-          </div>
-        )}
+        </div>
         {isManager && !isSelfTasksView && (
           <CsvExportButton
             onClick={handleExportCsv}
@@ -1694,7 +1516,6 @@ export const TaskTable: React.FC = () => {
                   {renderSortIcon('due_date')}
                 </button>
               </th>
-              {/* <th className="whitespace-nowrap text-center">Priority</th> */}
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
               <th className="whitespace-nowrap text-center">Doer's Remark</th>
@@ -1768,20 +1589,6 @@ export const TaskTable: React.FC = () => {
                     <td className="text-center whitespace-nowrap text-slate-600 font-medium">
                       {formatDateValue(t.due_date)}
                     </td>
-                    {/*
-                    <td className="text-center">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium whitespace-nowrap ${t.priority === 'urgent'
-                          ? 'bg-red-100 text-red-800'
-                          : t.priority === 'high'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-slate-100 text-slate-600'
-                          }`}
-                      >
-                        {t.priority}
-                      </span>
-                    </td>
-                    */}
                     <td className="text-center">
                       <span className="inline-flex px-2 py-0.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 capitalize whitespace-nowrap">
                         {formatRecurringLabel(getDisplayRecurring(t, taskById), 'None')}
@@ -1828,13 +1635,16 @@ export const TaskTable: React.FC = () => {
                       </span>
                     </td>
                     <td className="text-center">
-                      {(t.attachment_url || t.attachment_text) ? (
+                      {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                         <button
                           type="button"
-                          onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                          onClick={() => setViewAttachment({ 
+                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
+                            text: t.attachment_text 
+                          })}
                           className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                         >
-                          {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
+                          <ExternalLink size={14} />
                           View
                         </button>
                       ) : t.attachment_required ? (
@@ -1909,158 +1719,20 @@ export const TaskTable: React.FC = () => {
       <div className="mt-3 flex justify-end">{paginationControls}</div>
 
       {completeTask && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-semibold mb-2">
-              {completeTask.attachment_required
-                ? completeTask.attachment_type === 'text'
-                  ? 'Text required to mark complete'
-                  : 'Upload media required to mark complete'
-                : 'Mark task complete'}
-            </h3>
-            {completeTask.attachment_required && (
-              <p className="text-sm text-slate-600 mb-4">
-                {completeTask.attachment_description ||
-                  (completeTask.attachment_type === 'text'
-                    ? 'You must enter text below to complete this task.'
-                    : 'Upload a photo/video or paste a link to your media.')}
-              </p>
-            )}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Doer's Remark <span className="text-red-600">*</span>
-              </label>
-              <textarea
-                value={doerRemark}
-                onChange={(e) => setDoerRemark(e.target.value)}
-                placeholder="Add a completion remark (required)..."
-                rows={3}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                required
-              />
-            </div>
-            {completeTask.attachment_required && (completeTask.attachment_type === 'text' ? (
-              <textarea
-                value={attachmentText}
-                onChange={(e) => setAttachmentText(e.target.value)}
-                placeholder="Enter your text here (required)..."
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
-                required
-              />
-            ) : (
-              <div className="space-y-3 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Upload photo or video
-                  </label>
-                  <input
-                    key={completeTask.id}
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={handleMediaFileSelect}
-                    className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
-                  />
-                  {attachmentFile && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      {uploading && `Uploading(${Math.round(uploadProgress)}%) — `}
-                      {!uploading && attachmentUrl && 'Done — '}
-                      {attachmentFile.name}
-                    </p>
-                  )}
-                  {uploadError && (
-                    <p className="text-xs text-red-600 mt-1">{uploadError}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Or paste media link
-                  </label>
-                  <input
-                    type="url"
-                    value={attachmentUrl}
-                    onChange={(e) => {
-                      setAttachmentUrl(e.target.value);
-                      setAttachmentFile(null);
-                      setUploadError(null);
-                    }}
-                    placeholder="e.g. Google Drive, cloud link for photo/video"
-                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                  />
-                </div>
-                <p className="text-xs text-slate-500">
-                  You must either upload a file or provide a link to mark this task complete.
-                </p>
-                {attachmentUrl.trim().length > 0 && (() => {
-                  try {
-                    const parsed = new URL(attachmentUrl.trim());
-                    return !(parsed.protocol === 'http:' || parsed.protocol === 'https:');
-                  } catch {
-                    return true;
-                  }
-                })() && (
-                    <p className="text-xs text-red-600 mt-1">Enter a valid URL (for example: https://...)</p>
-                  )}
-              </div>
-            ))}
-            <div className="flex flex-wrap gap-2 justify-end">
-              <Button variant="secondary" onClick={closeCompleteModal}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  handleComplete(
-                    completeTask,
-                    completeTask.attachment_type === 'text' ? undefined : attachmentUrl,
-                    completeTask.attachment_type === 'text' ? attachmentText : undefined,
-                    doerRemark
-                  )
-                }
-                disabled={
-                  completing ||
-                  !doerRemark.trim() ||
-                  (completeTask.attachment_required
-                    ? (completeTask.attachment_type === 'text'
-                      ? !attachmentText.trim()
-                      : !attachmentUrl.trim())
-                    : false)
-                }
-              >
-                Complete
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CompleteTaskModal
+          task={completeTask}
+          onClose={closeCompleteModal}
+          onComplete={handleComplete}
+          completing={completing}
+        />
       )}
 
       {viewAttachment && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setViewAttachment(null)}>
-          <div className="card p-6 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-3">Attachment</h3>
-            {viewAttachment.url && (
-              <div className="mb-4">
-                <a
-                  href={viewAttachment.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-teal-600 hover:underline font-medium"
-                >
-                  <ExternalLink size={18} />
-                  Open media / link
-                </a>
-              </div>
-            )}
-            {viewAttachment.text != null && viewAttachment.text !== '' && (
-              <pre className="flex-1 overflow-auto text-sm text-slate-700 whitespace-pre-wrap border border-slate-200 rounded-lg p-4 bg-slate-50 min-h-[100px]">
-                {viewAttachment.text}
-              </pre>
-            )}
-            {viewAttachment.url && !viewAttachment.text && <p className="text-sm text-slate-500">Media or link attached. Use the link above to view.</p>}
-            <div className="mt-4 flex justify-end">
-              <Button variant="secondary" onClick={() => setViewAttachment(null)}>Close</Button>
-            </div>
-          </div>
-        </div>
+        <AttachmentViewerModal
+          urls={viewAttachment.urls}
+          text={viewAttachment.text}
+          onClose={() => setViewAttachment(null)}
+        />
       )}
 
       {rejectTask && user && (
