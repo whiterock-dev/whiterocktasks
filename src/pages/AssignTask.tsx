@@ -24,10 +24,6 @@ const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.VERIFIER]: 'Verifier',
 };
 
-// PRD: Default Verifier Assignment for Owner-Created Tasks
-const OWNER_USER_ID = 'Jr2jqzHecJrs7t0sIZJl';           // Shravan Suthar
-const DEFAULT_VERIFIER_ID = 'kRSJkrdZJiTGPdQoFqfh';     // Triloki Rana (EA)
-
 export const AssignTask: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -79,22 +75,14 @@ export const AssignTask: React.FC = () => {
     });
   }, [user?.role, navigate]);
 
-  const isOwnerUser = user?.id === OWNER_USER_ID;
-
   useEffect(() => {
     if (!verificationRequired || verifierId) return;
 
-    if (isOwnerUser && !assignedToIds.includes(DEFAULT_VERIFIER_ID)) {
-      // FR-2: Auto-assign EA as default verifier for owner-created tasks
-      setVerifierId(DEFAULT_VERIFIER_ID);
-      return;
-    }
-
-    // FR-4: Non-owner fallback — default to self (existing behavior)
+    // Default to self (existing behavior)
     if (user?.id && !assignedToIds.includes(user.id)) {
       setVerifierId(user.id);
     }
-  }, [verificationRequired, verifierId, user?.id, assignedToIds, isOwnerUser]);
+  }, [verificationRequired, verifierId, user?.id, assignedToIds]);
 
   const DAYS = [
     { value: 0, label: 'Mon' },

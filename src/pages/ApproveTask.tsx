@@ -17,7 +17,6 @@ import {
     ChevronsLeft,
     ChevronsRight,
     ExternalLink,
-    FileText,
     ClipboardCheck,
     Pencil,
 } from 'lucide-react';
