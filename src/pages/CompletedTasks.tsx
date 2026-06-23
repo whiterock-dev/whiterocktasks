@@ -369,9 +369,9 @@ export const CompletedTasks: React.FC = () => {
                                             {((task.attachment_urls && task.attachment_urls.length > 0) || task.attachment_url || task.attachment_text) ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setViewAttachment({ 
-                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []), 
-                                                        text: task.attachment_text 
+                                                    onClick={() => setViewAttachment({
+                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []),
+                                                        text: task.attachment_text
                                                     })}
                                                     className="inline-flex items-center gap-1 text-teal-600 hover:underline"
                                                 >

@@ -894,12 +894,7 @@ export const AssignedByMe: React.FC = () => {
     e.preventDefault();
     if (!editingTask || !user) return;
     setEditError('');
-
-    if (editStartDate && editDueDate < editStartDate) {
-      setEditError('Due date cannot be before start date.');
-      return;
-    }
-
+    // Redundant date check removed as input min handles it
     const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user.id;
 
     if (!isAssigneeLimitedEdit) {

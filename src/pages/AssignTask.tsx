@@ -282,8 +282,8 @@ export const AssignTask: React.FC = () => {
                     onClick={titleSpeech.toggleListening}
                     title={titleSpeech.isListening ? 'Stop dictating' : 'Dictate title'}
                     className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border transition-all duration-200 ${titleSpeech.isListening
-                        ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
-                        : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
+                      ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
+                      : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
                       }`}
                   >
                     <Mic size={16} />
@@ -310,8 +310,8 @@ export const AssignTask: React.FC = () => {
                     onClick={descSpeech.toggleListening}
                     title={descSpeech.isListening ? 'Stop dictating' : 'Dictate description'}
                     className={`absolute right-2 top-2 flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 ${descSpeech.isListening
-                        ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
-                        : 'bg-white border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
+                      ? 'bg-red-50 border-red-300 text-red-500 shadow-sm shadow-red-100 animate-pulse'
+                      : 'bg-white border-slate-200 text-slate-400 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-600'
                       }`}
                   >
                     <Mic size={16} />
