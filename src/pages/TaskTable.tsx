@@ -895,12 +895,6 @@ export const TaskTable: React.FC = () => {
     e.preventDefault();
     if (!editingTask || !user) return;
     setEditError('');
-
-    if (editStartDate && editDueDate < editStartDate) {
-      setEditError('Due date cannot be before start date.');
-      return;
-    }
-
     const isAssigneeLimitedEdit = isDoer && editingTask.assigned_to_id === user.id;
 
     if (!isAssigneeLimitedEdit) {

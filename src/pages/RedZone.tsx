@@ -690,6 +690,7 @@ export const RedZone: React.FC = () => {
                     type="date"
                     value={editDueDate}
                     onChange={(e) => setEditDueDate(e.target.value)}
+                    min={editingTask?.start_date || undefined}
                     required
                     className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                   />
