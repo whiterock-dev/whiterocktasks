@@ -239,7 +239,6 @@ export const AssignedByMe: React.FC = () => {
     } = {};
     const openStatuses: Task['status'][] = [
       'pending',
-      'in_progress',
       'overdue',
       'cancelled',
       'pending_verification',
@@ -258,20 +257,35 @@ export const AssignedByMe: React.FC = () => {
     }
 
     if (!isAuditor && !isVerifier) {
-      if (!isSelfTasksView && statusFilter) {
+      if (statusFilter === 'overdue') {
+        filters.statusIn = ['pending', 'overdue', 'pending_verification', 'correction_required'];
+      } else if (statusFilter) {
         filters.status = statusFilter as Task['status'];
-      } else if (isSelfTasksView && statusFilter) {
-        filters.status = statusFilter as Task['status'];
-      } else if (!isSelfTasksView && !statusFilter) {
-        filters.statusIn = openStatuses;
-      } else if (isSelfTasksView && !statusFilter) {
+      } else {
         filters.statusIn = openStatuses;
       }
     }
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
+    
+    if (statusFilter === 'overdue') {
+      const today = new Date();
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const year = y.getFullYear();
+      const month = String(y.getMonth() + 1).padStart(2, '0');
+      const day = String(y.getDate()).padStart(2, '0');
+      const yesterday = `${year}-${month}-${day}`;
+      
+      if (range.dueDateTo && range.dueDateTo < yesterday) {
+        filters.dueDateTo = range.dueDateTo;
+      } else {
+        filters.dueDateTo = yesterday;
+      }
+    } else if (range.dueDateTo) {
+      filters.dueDateTo = range.dueDateTo;
+    }
 
     return filters;
   }, [user?.id, isSelfTasksView, isAuditor, isVerifier, resolveDoerDateRange, statusFilter, dateFilter]);
@@ -287,14 +301,15 @@ export const AssignedByMe: React.FC = () => {
 
     const openStatuses: Task['status'][] = [
       'pending',
-      'in_progress',
       'overdue',
       'cancelled',
       'pending_verification',
       'correction_required',
     ];
 
-    if (statusFilter) {
+    if (statusFilter === 'overdue') {
+      filters.statusIn = ['pending', 'overdue', 'pending_verification', 'correction_required'];
+    } else if (statusFilter) {
       filters.status = statusFilter as Task['status'];
     } else {
       filters.statusIn = openStatuses;
@@ -302,7 +317,24 @@ export const AssignedByMe: React.FC = () => {
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
+    
+    if (statusFilter === 'overdue') {
+      const today = new Date();
+      const y = new Date(today);
+      y.setDate(y.getDate() - 1);
+      const year = y.getFullYear();
+      const month = String(y.getMonth() + 1).padStart(2, '0');
+      const day = String(y.getDate()).padStart(2, '0');
+      const yesterday = `${year}-${month}-${day}`;
+      
+      if (range.dueDateTo && range.dueDateTo < yesterday) {
+        filters.dueDateTo = range.dueDateTo;
+      } else {
+        filters.dueDateTo = yesterday;
+      }
+    } else if (range.dueDateTo) {
+      filters.dueDateTo = range.dueDateTo;
+    }
 
     return filters;
   }, [resolveDoerDateRange, statusFilter, dateFilter]);
@@ -1423,7 +1455,6 @@ export const AssignedByMe: React.FC = () => {
             >
               <option value="">Status</option>
               <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
@@ -1502,7 +1533,6 @@ export const AssignedByMe: React.FC = () => {
             >
               <option value="">Status</option>
               <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="overdue">Overdue</option>
               <option value="cancelled">Cancelled</option>
