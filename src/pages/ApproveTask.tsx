@@ -20,7 +20,7 @@ import {
     ClipboardCheck,
     Pencil,
 } from 'lucide-react';
-import { formatDateDDMMYYYY } from '../lib/utils';
+import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
@@ -44,6 +44,50 @@ export const ApproveTask: React.FC = () => {
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
     const [assignedToFilter, setAssignedToFilter] = useState('');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
+
+    const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
+
+    const hydrateRecurringLookup = useCallback(async (rows: Task[]) => {
+        let currentMap: Map<string, Task> = new Map();
+        setRecurringTaskLookup((prev) => { currentMap = prev; return prev; });
+
+        const lookup = new Map(currentMap);
+        let changed = false;
+
+        rows.forEach((task) => {
+            if (!lookup.has(task.id)) {
+                lookup.set(task.id, task);
+                changed = true;
+            }
+        });
+
+        const parentIds = Array.from(
+            new Set(
+                rows
+                    .map((task) => task.parent_task_id)
+                    .filter((parentId): parentId is string => Boolean(parentId))
+            )
+        );
+
+        const missingParentIds = parentIds.filter((parentId) => !lookup.has(parentId) && lookup.get(parentId) !== null);
+
+        if (missingParentIds.length > 0) {
+            const parents = await Promise.all(missingParentIds.map((parentId) => api.getTaskById(parentId)));
+            parents.forEach((parent, idx) => {
+                if (parent) {
+                    lookup.set(parent.id, parent);
+                } else {
+                    lookup.set(missingParentIds[idx], null as unknown as Task);
+                }
+            });
+            changed = true;
+        }
+
+        if (changed) {
+            setRecurringTaskLookup(lookup);
+        }
+        return lookup;
+    }, []);
 
     const setClientPageFromRows = useCallback(
         (rows: Task[], pageNumber: number) => {
@@ -75,13 +119,14 @@ export const ApproveTask: React.FC = () => {
                 status: 'pending_verification',
                 verifierId: user.id
             });
+            await hydrateRecurringLookup(pendingTasks);
             setAllPendingTasks(pendingTasks);
         } catch (err) {
             console.error('Failed to load pending tasks:', err);
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, hydrateRecurringLookup]);
 
     useEffect(() => {
         loadAllPendingTasks();
@@ -275,6 +320,7 @@ export const ApproveTask: React.FC = () => {
                             <th>Doer's Remark</th>
                             <th className="whitespace-nowrap">Doer</th>
                             {!isDoer && <th className="whitespace-nowrap">Verifier</th>}
+                            <th className="whitespace-nowrap">Frequency</th>
                             <th className="whitespace-nowrap text-center">Due Date</th>
                             {/* <th className="whitespace-nowrap text-center">Priority</th> */}
                             <th className="whitespace-nowrap text-center">Attachment</th>
@@ -284,7 +330,7 @@ export const ApproveTask: React.FC = () => {
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={isDoer ? 8 : 9} className="py-12 text-center text-slate-500">
+                                <td colSpan={isDoer ? 9 : 10} className="py-12 text-center text-slate-500">
                                     <div className="flex justify-center mb-4">
                                         <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin"></div>
                                     </div>
@@ -293,7 +339,7 @@ export const ApproveTask: React.FC = () => {
                             </tr>
                         ) : tasks.length === 0 ? (
                             <tr>
-                                <td colSpan={isDoer ? 8 : 9} className="py-16">
+                                <td colSpan={isDoer ? 9 : 10} className="py-16">
                                     <div className="flex flex-col items-center justify-center text-slate-500">
                                         <ClipboardCheck className="w-12 h-12 text-slate-300 mb-3" />
                                         <p className="text-base font-medium text-slate-600">No approval tasks found.</p>
@@ -326,6 +372,9 @@ export const ApproveTask: React.FC = () => {
                                                 <span className="text-sm font-medium text-slate-700">{task.verifier_name || '-'}</span>
                                             </td>
                                         )}
+                                        <td className="whitespace-nowrap text-sm text-slate-700 capitalize">
+                                            {formatRecurringLabel(getDisplayRecurring(task, recurringTaskLookup), 'None')}
+                                        </td>
                                         <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateDDMMYYYY(task.due_date)}</td>
                                         {/*
                                         <td className="text-center">
