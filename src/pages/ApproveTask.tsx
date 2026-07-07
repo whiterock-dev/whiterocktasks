@@ -43,7 +43,6 @@ export const ApproveTask: React.FC = () => {
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
     const [assignedToFilter, setAssignedToFilter] = useState('');
-    const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
 
     const setClientPageFromRows = useCallback(
@@ -60,10 +59,7 @@ export const ApproveTask: React.FC = () => {
         [rowsPerPage]
     );
 
-    useEffect(() => {
-        const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
-        return () => clearTimeout(t);
-    }, [assignedToFilter]);
+
 
     useEffect(() => {
         api.getUsers().then(setAllUsers).catch(console.error);
@@ -98,15 +94,14 @@ export const ApproveTask: React.FC = () => {
         const uniqueDoerIds = new Set(allPendingTasks.map(t => t.assigned_to_id).filter(Boolean));
         setAvailableUsers(allUsers.filter(u => uniqueDoerIds.has(u.id)));
 
-        // Apply name filter
-        const query = debouncedAssignedTo.toLowerCase().trim();
-        const filtered = query
-            ? allPendingTasks.filter(t => (t.assigned_to_name || '').toLowerCase().includes(query))
+        // Apply ID filter
+        const filtered = assignedToFilter
+            ? allPendingTasks.filter(t => t.assigned_to_id === assignedToFilter)
             : allPendingTasks;
 
         setTotalResults(filtered.length);
         setNameFilteredRows(filtered);
-    }, [allPendingTasks, allUsers, debouncedAssignedTo]);
+    }, [allPendingTasks, allUsers, assignedToFilter]);
 
     useEffect(() => {
         if (!nameFilteredRows) return;
@@ -264,8 +259,8 @@ export const ApproveTask: React.FC = () => {
                 <div className="w-full sm:w-[250px]">
                     <SearchableUserSelect
                         users={availableUsers}
-                        nameValue={assignedToFilter}
-                        onNameChange={setAssignedToFilter}
+                        value={assignedToFilter}
+                        onChange={setAssignedToFilter}
                         placeholder="Search Doer Name"
                     />
                 </div>
@@ -350,9 +345,9 @@ export const ApproveTask: React.FC = () => {
                                             {((task.attachment_urls && task.attachment_urls.length > 0) || task.attachment_url || task.attachment_text) ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setViewAttachment({ 
-                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []), 
-                                                        text: task.attachment_text 
+                                                    onClick={() => setViewAttachment({
+                                                        urls: task.attachment_urls || (task.attachment_url ? [task.attachment_url] : []),
+                                                        text: task.attachment_text
                                                     })}
                                                     className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                                                 >

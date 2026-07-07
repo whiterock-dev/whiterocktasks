@@ -212,19 +212,22 @@ export const RecurringTasks: React.FC = () => {
 
   // Client-side name filtering
   const filteredTasks = useMemo(() => {
-    const assignedToQuery = assignedToFilter.toLowerCase().trim();
-    const assignedByQuery = assignedByFilter.toLowerCase().trim();
-    const verifierQuery = verifierFilter.toLowerCase().trim();
+    return allTasks.filter((task) => {
+      if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
+      if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
+      if (verifierFilter && task.verifier_id !== verifierFilter) return false;
+      if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
 
-    if (!assignedToQuery && !assignedByQuery && !verifierQuery) return allTasks;
-
-    return allTasks.filter((t) => {
-      if (assignedToQuery && !(t.assigned_to_name || '').toLowerCase().includes(assignedToQuery)) return false;
-      if (assignedByQuery && !(t.assigned_by_name || '').toLowerCase().includes(assignedByQuery)) return false;
-      if (verifierQuery && !(t.verifier_name || '').toLowerCase().includes(verifierQuery)) return false;
       return true;
     });
-  }, [allTasks, assignedToFilter, assignedByFilter, verifierFilter]);
+  }, [
+    allTasks,
+    assignedToFilter,
+    assignedByFilter,
+    verifierFilter,
+    recurringFilter,
+    taskById,
+  ]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -447,23 +450,23 @@ export const RecurringTasks: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <SearchableUserSelect
             users={allUsers}
-            nameValue={assignedToFilter}
-            onNameChange={setAssignedToFilter}
+            value={assignedToFilter}
+            onChange={setAssignedToFilter}
             placeholder="Search Doer Name"
           />
 
           <SearchableUserSelect
             users={allUsers}
-            nameValue={assignedByFilter}
-            onNameChange={setAssignedByFilter}
+            value={assignedByFilter}
+            onChange={setAssignedByFilter}
             placeholder="Search Assigned By"
           />
 
           <SearchableUserSelect
             users={allUsers}
-            nameValue={verifierFilter}
-            onNameChange={setVerifierFilter}
-            placeholder="Search Verifier Name"
+            value={verifierFilter}
+            onChange={setVerifierFilter}
+            placeholder="Search Verifier"
           />
 
           <select

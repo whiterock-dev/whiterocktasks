@@ -75,18 +75,9 @@ export const TaskTable: React.FC = () => {
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
 
-  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
-  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedToFilter]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedByFilter]);
+
 
   const [statusFilter, setStatusFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
@@ -103,6 +94,7 @@ export const TaskTable: React.FC = () => {
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
+  const defaultAssignedToApplied = useRef(false);
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -262,7 +254,7 @@ export const TaskTable: React.FC = () => {
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    
+
     if (statusFilter === 'overdue') {
       const today = new Date();
       const y = new Date(today);
@@ -271,7 +263,7 @@ export const TaskTable: React.FC = () => {
       const month = String(y.getMonth() + 1).padStart(2, '0');
       const day = String(y.getDate()).padStart(2, '0');
       const yesterday = `${year}-${month}-${day}`;
-      
+
       if (range.dueDateTo && range.dueDateTo < yesterday) {
         filters.dueDateTo = range.dueDateTo;
       } else {
@@ -310,7 +302,7 @@ export const TaskTable: React.FC = () => {
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    
+
     if (statusFilter === 'overdue') {
       const today = new Date();
       const y = new Date(today);
@@ -319,7 +311,7 @@ export const TaskTable: React.FC = () => {
       const month = String(y.getMonth() + 1).padStart(2, '0');
       const day = String(y.getDate()).padStart(2, '0');
       const yesterday = `${year}-${month}-${day}`;
-      
+
       if (range.dueDateTo && range.dueDateTo < yesterday) {
         filters.dueDateTo = range.dueDateTo;
       } else {
@@ -387,21 +379,16 @@ export const TaskTable: React.FC = () => {
 
   const applyNameFilters = useCallback(
     (list: Task[]) => {
-      const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
-      const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
-
       return list.filter((task) => {
-        const assignee = (task.assigned_to_name || '').toLowerCase();
-        const assigner = (task.assigned_by_name || '').toLowerCase();
-        if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
-        if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
+        if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
+        if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
         return true;
       });
     },
-    [debouncedAssignedBy, debouncedAssignedTo]
+    [assignedByFilter, assignedToFilter]
   );
 
-  const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
+  const hasNameFilter = assignedToFilter.length > 0 || assignedByFilter.length > 0;
   const isStartDateSort = sortConfig?.key === 'start_date';
 
   const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
@@ -742,10 +729,11 @@ export const TaskTable: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (isSelfTasksView && isDoer && user?.name && !assignedToFilter) {
-      setAssignedToFilter(user.name);
+    if (!defaultAssignedToApplied.current && user?.id && isSelfTasksView && !assignedToFilter) {
+      setAssignedToFilter(user.id);
+      defaultAssignedToApplied.current = true;
     }
-  }, [isSelfTasksView, isDoer, user?.name]);
+  }, [assignedToFilter, isSelfTasksView, user?.id]);
 
   const handleCompleteClick = (t: Task) => {
     setCompleteTask(t);
@@ -763,7 +751,7 @@ export const TaskTable: React.FC = () => {
     if (completing) return;
     const closePermanently = opts?.closePermanently === true;
     if (!closePermanently && !remark?.trim()) return;
-    
+
     setCompleting(true);
     try {
       const baseUpdates: Partial<Task> = {
@@ -1190,9 +1178,9 @@ export const TaskTable: React.FC = () => {
                     {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ 
-                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
-                          text: t.attachment_text 
+                        onClick={() => setViewAttachment({
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                          text: t.attachment_text
                         })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium"
                       >
@@ -1335,9 +1323,9 @@ export const TaskTable: React.FC = () => {
                     {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ 
-                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
-                          text: t.attachment_text 
+                        onClick={() => setViewAttachment({
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                          text: t.attachment_text
                         })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                       >
@@ -1428,81 +1416,81 @@ export const TaskTable: React.FC = () => {
 
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
         <div className="flex flex-wrap items-center gap-3">
-            <SearchableUserSelect
-              users={allUsers}
-              nameValue={assignedToFilter}
-              onNameChange={setAssignedToFilter}
-              placeholder="Search Doer Name"
-            />
+          <SearchableUserSelect
+            users={allUsers}
+            value={assignedToFilter}
+            onChange={setAssignedToFilter}
+            placeholder="Search Doer Name"
+          />
 
-            <SearchableUserSelect
-              users={allUsers}
-              nameValue={assignedByFilter}
-              onNameChange={setAssignedByFilter}
-              placeholder="Search Assigned By"
-            />
+          <SearchableUserSelect
+            users={allUsers}
+            value={assignedByFilter}
+            onChange={setAssignedByFilter}
+            placeholder="Search Assigned By"
+          />
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">Status</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="overdue">Overdue</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="closed_permanently">Closed Permanently</option>
-              <option value="pending_verification">Pending Verification</option>
-              <option value="correction_required">Correction Required</option>
-            </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+          >
+            <option value="">Status</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+            <option value="overdue">Overdue</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="closed_permanently">Closed Permanently</option>
+            <option value="pending_verification">Pending Verification</option>
+            <option value="correction_required">Correction Required</option>
+          </select>
 
-            <select
-              value={recurringFilter}
-              onChange={(e) => setRecurringFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
-            >
-              <option value="">All Recurring Types</option>
-              <option value="none">None</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="fortnightly">Fortnightly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="half_yearly">Half Yearly</option>
-              <option value="yearly">Yearly</option>
-            </select>
+          <select
+            value={recurringFilter}
+            onChange={(e) => setRecurringFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+          >
+            <option value="">All Recurring Types</option>
+            <option value="none">None</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="fortnightly">Fortnightly</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="half_yearly">Half Yearly</option>
+            <option value="yearly">Yearly</option>
+          </select>
 
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-            >
-              <option value="all_time">All Time</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="last_7_days">Last 7 Days</option>
-              <option value="last_30_days">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
-            </select>
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="all_time">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="last_7_days">Last 7 Days</option>
+            <option value="last_30_days">Last 30 Days</option>
+            <option value="custom">Custom Range</option>
+          </select>
 
-            {dateFilter === 'custom' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-                <span className="text-slate-500 text-sm">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-            )}
+          {dateFilter === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+              <span className="text-slate-500 text-sm">to</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+          )}
         </div>
         {isManager && !isSelfTasksView && (
           <CsvExportButton
@@ -1663,9 +1651,9 @@ export const TaskTable: React.FC = () => {
                       {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                         <button
                           type="button"
-                          onClick={() => setViewAttachment({ 
-                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
-                            text: t.attachment_text 
+                          onClick={() => setViewAttachment({
+                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                            text: t.attachment_text
                           })}
                           className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                         >

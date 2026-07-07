@@ -54,8 +54,6 @@ export const RedZone: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || '');
   const [assignedByFilter, setAssignedByFilter] = useState('');
-  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
-  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringFilter, setRecurringFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [cityFilter, setCityFilter] = useState('');
@@ -103,16 +101,6 @@ export const RedZone: React.FC = () => {
     return merged;
   }, [recurringTaskLookup, tasks]);
 
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedToFilter]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedByFilter]);
 
   useEffect(() => {
     api.getUsers().then(setAllUsers).catch(console.error);
@@ -197,24 +185,19 @@ export const RedZone: React.FC = () => {
     }
 
     return dateFilteredTasks.filter((task) => {
-      const assignee = (task.assigned_to_name || '').toLowerCase();
-      const assigner = (task.assigned_by_name || '').toLowerCase();
-      const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
-      const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
-
-      if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
-      if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
+      if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
+      if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
       if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
       if (cityFilter && (task.assigned_to_city || '').toLowerCase() !== cityFilter.toLowerCase()) return false;
       if (statusFilter && task.status !== statusFilter) return false;
       return true;
     });
-  }, [cityFilter, debouncedAssignedBy, debouncedAssignedTo, isDoer, isManager, isOwner, recurringFilter, statusFilter, resolveDateRange, taskById, tasks, user?.id]);
+  }, [cityFilter, assignedByFilter, assignedToFilter, isDoer, isManager, isOwner, recurringFilter, statusFilter, resolveDateRange, taskById, tasks, user?.id]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [cityFilter, debouncedAssignedTo, debouncedAssignedBy, recurringFilter, statusFilter, dateFilter, customStart, customEnd, tasks]);
+  }, [cityFilter, assignedToFilter, assignedByFilter, recurringFilter, statusFilter, dateFilter, customStart, customEnd, tasks]);
 
   // Pagination
   const totalResults = filtered.length;
@@ -471,15 +454,15 @@ export const RedZone: React.FC = () => {
 
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedToFilter}
-              onNameChange={setAssignedToFilter}
+              value={assignedToFilter}
+              onChange={setAssignedToFilter}
               placeholder="Search Doer Name"
             />
 
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedByFilter}
-              onNameChange={setAssignedByFilter}
+              value={assignedByFilter}
+              onChange={setAssignedByFilter}
               placeholder="Search Assigned By"
             />
 
@@ -569,6 +552,7 @@ export const RedZone: React.FC = () => {
                         <p className="mt-1 text-sm text-slate-600 line-clamp-2">{t.description}</p>
                       ) : null}
                       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                        Task id: {t.id}
                         {!isDoer ? (
                           <span>
                             <span className="font-medium text-slate-700">Doer:</span> {t.assigned_to_name}

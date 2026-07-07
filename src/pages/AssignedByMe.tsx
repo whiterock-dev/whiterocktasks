@@ -73,9 +73,6 @@ export const AssignedByMe: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
-  
-  const [debouncedAssignedTo, setDebouncedAssignedTo] = useState('');
-  const [debouncedAssignedBy, setDebouncedAssignedBy] = useState('');
   const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
   const defaultAssignedByApplied = useRef(false);
 
@@ -128,15 +125,7 @@ export const AssignedByMe: React.FC = () => {
     return merged;
   }, [recurringTaskLookup, tasks]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedTo(assignedToFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedToFilter]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedAssignedBy(assignedByFilter), 300);
-    return () => clearTimeout(t);
-  }, [assignedByFilter]);
 
 
   const [statusFilter, setStatusFilter] = useState('');
@@ -179,11 +168,11 @@ export const AssignedByMe: React.FC = () => {
   const isSelfTasksView = true;
 
   useEffect(() => {
-    if (!defaultAssignedByApplied.current && user?.name && isSelfTasksView && !assignedByFilter) {
-      setAssignedByFilter(user.name);
+    if (!defaultAssignedByApplied.current && user?.id && isSelfTasksView && !assignedByFilter) {
+      setAssignedByFilter(user.id);
       defaultAssignedByApplied.current = true;
     }
-  }, [assignedByFilter, isSelfTasksView, user?.name]);
+  }, [assignedByFilter, isSelfTasksView, user?.id]);
 
   const isRecurringMasterTask = useCallback((task: Task) => {
     return task.is_recurring_master === true;
@@ -268,7 +257,7 @@ export const AssignedByMe: React.FC = () => {
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    
+
     if (statusFilter === 'overdue') {
       const today = new Date();
       const y = new Date(today);
@@ -277,7 +266,7 @@ export const AssignedByMe: React.FC = () => {
       const month = String(y.getMonth() + 1).padStart(2, '0');
       const day = String(y.getDate()).padStart(2, '0');
       const yesterday = `${year}-${month}-${day}`;
-      
+
       if (range.dueDateTo && range.dueDateTo < yesterday) {
         filters.dueDateTo = range.dueDateTo;
       } else {
@@ -317,7 +306,7 @@ export const AssignedByMe: React.FC = () => {
 
     const range = resolveDoerDateRange();
     if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
-    
+
     if (statusFilter === 'overdue') {
       const today = new Date();
       const y = new Date(today);
@@ -326,7 +315,7 @@ export const AssignedByMe: React.FC = () => {
       const month = String(y.getMonth() + 1).padStart(2, '0');
       const day = String(y.getDate()).padStart(2, '0');
       const yesterday = `${year}-${month}-${day}`;
-      
+
       if (range.dueDateTo && range.dueDateTo < yesterday) {
         filters.dueDateTo = range.dueDateTo;
       } else {
@@ -377,23 +366,18 @@ export const AssignedByMe: React.FC = () => {
 
   const applyNameFilters = useCallback(
     (list: Task[]) => {
-      const assignedToQuery = debouncedAssignedTo.toLowerCase().trim();
-      const assignedByQuery = debouncedAssignedBy.toLowerCase().trim();
-
       return list.filter((task) => {
-        const assignee = (task.assigned_to_name || '').toLowerCase();
-        const assigner = (task.assigned_by_name || '').toLowerCase();
-        if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
-        if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
+        if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
+        if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
         return true;
       });
     },
-    [debouncedAssignedBy, debouncedAssignedTo]
+    [assignedByFilter, assignedToFilter]
   );
 
   // filterByStartDate removed — future tasks are now hidden via the 'scheduled' status at the DB level
 
-  const hasNameFilter = debouncedAssignedTo.trim().length > 0 || debouncedAssignedBy.trim().length > 0;
+  const hasNameFilter = assignedToFilter.length > 0 || assignedByFilter.length > 0;
 
   const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
     const { includeTime = false, emptyValue = '' } = opts || {};
@@ -760,7 +744,7 @@ export const AssignedByMe: React.FC = () => {
     if (completing) return;
     const closePermanently = opts?.closePermanently === true;
     if (!closePermanently && !remark?.trim()) return;
-    
+
     setCompleting(true);
     try {
       const baseUpdates: Partial<Task> = {
@@ -1436,15 +1420,15 @@ export const AssignedByMe: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedToFilter}
-              onNameChange={setAssignedToFilter}
+              value={assignedToFilter}
+              onChange={setAssignedToFilter}
               placeholder="Search Doer Name"
             />
 
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedByFilter}
-              onNameChange={setAssignedByFilter}
+              value={assignedByFilter}
+              onChange={setAssignedByFilter}
               placeholder="Search Assigned By"
             />
 
@@ -1514,15 +1498,15 @@ export const AssignedByMe: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedToFilter}
-              onNameChange={setAssignedToFilter}
+              value={assignedToFilter}
+              onChange={setAssignedToFilter}
               placeholder="Search Doer Name"
             />
 
             <SearchableUserSelect
               users={allUsers}
-              nameValue={assignedByFilter}
-              onNameChange={setAssignedByFilter}
+              value={assignedByFilter}
+              onChange={setAssignedByFilter}
               placeholder="Search Assigned By"
             />
 
@@ -1759,9 +1743,9 @@ export const AssignedByMe: React.FC = () => {
                       {((t.attachment_urls && t.attachment_urls.length > 0) || t.attachment_url || t.attachment_text) ? (
                         <button
                           type="button"
-                          onClick={() => setViewAttachment({ 
-                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []), 
-                            text: t.attachment_text 
+                          onClick={() => setViewAttachment({
+                            urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                            text: t.attachment_text
                           })}
                           className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                         >
