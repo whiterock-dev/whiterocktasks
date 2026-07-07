@@ -174,15 +174,9 @@ export const CompletedTasks: React.FC = () => {
     }, [isManager, isDoer, user?.id, dateFilter, customStart, customEnd]);
 
     const filteredTasks = useMemo(() => {
-
-        const assignedToQuery = assignedToFilter.toLowerCase().trim();
-        const assignedByQuery = assignedByFilter.toLowerCase().trim();
-
         return tasks.filter((task) => {
-            const assignee = (task.assigned_to_name || '').toLowerCase();
-            const assigner = (task.assigned_by_name || '').toLowerCase();
-            if (assignedToQuery && !assignee.includes(assignedToQuery)) return false;
-            if (assignedByQuery && !assigner.includes(assignedByQuery)) return false;
+            if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
+            if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
             if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
             return true;
         });
@@ -281,15 +275,15 @@ export const CompletedTasks: React.FC = () => {
 
                     <SearchableUserSelect
                         users={allUsers}
-                        nameValue={assignedToFilter}
-                        onNameChange={setAssignedToFilter}
+                        value={assignedToFilter}
+                        onChange={setAssignedToFilter}
                         placeholder="Search Doer Name"
                     />
 
                     <SearchableUserSelect
                         users={allUsers}
-                        nameValue={assignedByFilter}
-                        onNameChange={setAssignedByFilter}
+                        value={assignedByFilter}
+                        onChange={setAssignedByFilter}
                         placeholder="Search Assigned By"
                     />
 
