@@ -274,7 +274,7 @@ export const Kpi: React.FC = () => {
                     key={row.userId}
                     onClick={() => {
                       if (!isDoer) {
-                        navigate(`/redzone?assignedTo=${encodeURIComponent(row.userName)}`);
+                        navigate(`/redzone?assignedTo=${encodeURIComponent(row.userId)}`);
                       }
                     }}
                     className={`border-b border-slate-100 hover:bg-slate-50 ${!isDoer ? 'cursor-pointer' : ''}`}
