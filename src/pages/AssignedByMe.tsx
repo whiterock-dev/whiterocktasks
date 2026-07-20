@@ -9,15 +9,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
 import { useSearchParams } from 'react-router-dom';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '../lib/firebase';
+
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { isHoliday, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
 import {
   Paperclip,
@@ -35,8 +34,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  Search,
-  ChevronDown,
+
   Table2,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
@@ -236,6 +234,12 @@ export const AssignedByMe: React.FC = () => {
 
     if (isSelfTasksView) {
       filters.assignedTo = user?.id ?? '';
+    } else if (assignedToFilter) {
+      filters.assignedTo = assignedToFilter;
+    }
+    
+    if (assignedByFilter) {
+      filters.assignedBy = assignedByFilter;
     }
     if (isAuditor) {
       filters.status = 'completed';
@@ -277,7 +281,7 @@ export const AssignedByMe: React.FC = () => {
     }
 
     return filters;
-  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, resolveDoerDateRange, statusFilter, dateFilter]);
+  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, resolveDoerDateRange, statusFilter, dateFilter, assignedToFilter, assignedByFilter]);
 
   const getDoerBaseFilters = useCallback(() => {
     const filters: {
@@ -377,8 +381,6 @@ export const AssignedByMe: React.FC = () => {
 
   // filterByStartDate removed — future tasks are now hidden via the 'scheduled' status at the DB level
 
-  const hasNameFilter = assignedToFilter.length > 0 || assignedByFilter.length > 0;
-
   const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
     const { includeTime = false, emptyValue = '' } = opts || {};
     return formatDateDDMMYYYY(value, { includeTime, emptyValue });
@@ -470,7 +472,7 @@ export const AssignedByMe: React.FC = () => {
         return;
       }
 
-      if (hasNameFilter || recurringFilter) {
+      if (recurringFilter) {
         try {
           const allRows = await api.getAllTasksByFilters({
             sortBy: sortConfig?.key,
@@ -526,7 +528,6 @@ export const AssignedByMe: React.FC = () => {
     };
   }, [
     recurringFilter,
-    hasNameFilter,
     applyNameFilters,
     getActiveFilters,
     getDoerVisibleRows,
@@ -556,45 +557,35 @@ export const AssignedByMe: React.FC = () => {
     return () => clearTimeout(timer);
   }, [midnightRefreshKey]);
 
+  // 1. Calculate Summary for Client-Side Views (My Tasks) instantly without fetching
   useEffect(() => {
-    if (isAuditor || isVerifier) return;
+    if (!isSelfTasksView || !nameFilteredRows) return;
+    
+    const today = getTodayIST();
+    let dueToday = 0;
+    let overdue = 0;
+    
+    nameFilteredRows.forEach(t => {
+      if (t.status === 'completed' || t.status === 'cancelled' || t.status === 'closed_permanently') return;
+      if (t.due_date === today) dueToday++;
+      else if (t.due_date && t.due_date < today) overdue++;
+    });
+    
+    setTaskSummary({ dueToday, overdue });
+  }, [nameFilteredRows, isSelfTasksView]);
+
+  // 2. Fetch Global Summary for Server-Side Views (Main Table) natively
+  useEffect(() => {
+    if (isAuditor || isVerifier || isSelfTasksView) return;
     let isMounted = true;
 
     const loadSummary = async () => {
       setSummaryLoading(true);
       try {
-        let summaryTasks: Task[] = [];
-
-        if (isSelfTasksView) {
-          summaryTasks = await getDoerVisibleRows();
-        } else {
-          const filters = getActiveFilters();
-          const summaryResult = await api.getTasksPaginated({
-            pageSize: 5000,
-            ...filters,
-          });
-          summaryTasks = summaryResult.tasks;
-        }
-
-        const summaryRows = applyNameFilters(summaryTasks);
-
-        const today = getTodayIST();
-        const dueToday = summaryRows.filter(
-          (t) =>
-            t.due_date === today &&
-            t.status !== 'completed' &&
-            t.status !== 'cancelled' &&
-            t.status !== 'closed_permanently'
-        ).length;
-        const overdue = summaryRows.filter(
-          (t) =>
-            t.due_date < today &&
-            t.status !== 'completed' &&
-            t.status !== 'cancelled' &&
-            t.status !== 'closed_permanently'
-        ).length;
-
-        if (isMounted) setTaskSummary({ dueToday, overdue });
+        const filters = getActiveFilters();
+        const counts = await api.getTaskSummaryCounts(filters);
+        
+        if (isMounted) setTaskSummary(counts);
       } catch (err) {
         console.error('Failed to load task summary:', err);
         if (isMounted) setTaskSummary({ dueToday: 0, overdue: 0 });
@@ -608,7 +599,7 @@ export const AssignedByMe: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, isAuditor, isSelfTasksView, isVerifier]);
+  }, [getActiveFilters, isAuditor, isSelfTasksView, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -627,7 +618,7 @@ export const AssignedByMe: React.FC = () => {
     return aValue > bValue ? -1 : 1;
   });
 
-  const isClientMode = hasNameFilter || isSelfTasksView || recurringFilter.length > 0;
+  const isClientMode = isSelfTasksView || recurringFilter.length > 0;
   const tableColumnCount = 11;
 
   const effectiveTotalResults = isClientMode
@@ -1174,7 +1165,10 @@ export const AssignedByMe: React.FC = () => {
                     {(t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                        onClick={() => setViewAttachment({
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                          text: t.attachment_text
+                        })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium"
                       >
                         {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}
@@ -1331,7 +1325,10 @@ export const AssignedByMe: React.FC = () => {
                     {(t.attachment_url || t.attachment_text) ? (
                       <button
                         type="button"
-                        onClick={() => setViewAttachment({ url: t.attachment_url, text: t.attachment_text })}
+                        onClick={() => setViewAttachment({
+                          urls: t.attachment_urls || (t.attachment_url ? [t.attachment_url] : []),
+                          text: t.attachment_text
+                        })}
                         className="text-teal-600 hover:underline text-sm inline-flex items-center justify-center gap-1 font-medium whitespace-nowrap"
                       >
                         {t.attachment_url ? <ExternalLink size={14} /> : <FileText size={14} />}

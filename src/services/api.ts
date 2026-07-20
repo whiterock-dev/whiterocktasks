@@ -32,7 +32,7 @@ import {
   User,
   Task,
   TaskStatus,
-  TaskPriority,
+  // TaskPriority,
   Holiday,
   Absence,
   RemovalRequest,
@@ -158,7 +158,7 @@ export const api = {
     const doc = snap.docs[0];
     const data = doc.data();
     if (data.password !== password) throw new Error('Invalid email or password');
-    const { password: _, ...u } = { ...data, id: doc.id };
+    const { password: _, ...u } = { ...data, id: doc.id } as Record<string, any>;
     return u as User;
   },
 
@@ -167,7 +167,7 @@ export const api = {
     const snap = await getDocs(collection(db, COLLECTIONS.USERS));
     return snap.docs.map((d) => {
       const data = d.data();
-      const { password, ...u } = { ...data, id: d.id };
+      const { password, ...u } = { ...data, id: d.id } as Record<string, any>;
       return u as User;
     });
   },
@@ -381,9 +381,15 @@ export const api = {
       const isFallbackError = firestoreError?.code === 'failed-precondition' || firestoreError?.code === 'invalid-argument';
       if (!isFallbackError) throw error;
 
+      if (firestoreError?.code === 'failed-precondition') {
+        console.warn('⚠️ FIRESTORE INDEX MISSING ⚠️');
+        console.warn('The app is falling back to client-side filtering which is slower. To fix this and make it lightning fast, open your browser console, find the Firebase error below, and click the link to create the index:');
+        console.warn(firestoreError.message);
+      }
+
       // Fallback when composite index is missing or multi-inequality is rejected:
-      // Query primarily by ONE equality field, then filter and sort client-side
-      // to avoid any further index or equality-mixing errors.
+      // Query by ALL equality fields to reduce payload as much as natively possible,
+      // then filter ranges and sort client-side.
       const fallbackConstraints: any[] = [];
       if (assignedTo) {
         fallbackConstraints.push(where('assigned_to_id', '==', assignedTo));
@@ -397,7 +403,7 @@ export const api = {
 
       const fallbackQuery =
         fallbackConstraints.length > 0
-          ? query(tasksRef, fallbackConstraints[0]) // Only use the FIRST constraint!
+          ? query(tasksRef, ...fallbackConstraints)
           : query(tasksRef);
 
       const fallbackSnap = await getDocs(fallbackQuery);
@@ -496,6 +502,51 @@ export const api = {
     const q = constraints.length > 0 ? query(tasksRef, ...constraints) : query(tasksRef);
     const countSnap = await getCountFromServer(q);
     return countSnap.data().count;
+  },
+
+  /** Optimized Native Count for Task Summary Dashboard */
+  getTaskSummaryCounts: async (filters: any): Promise<{ dueToday: number; overdue: number }> => {
+    const tasksRef = collection(db, COLLECTIONS.TASKS);
+    const today = getTodayIST();
+    const openStatuses = ['pending', 'pending_verification', 'correction_required'];
+
+    const baseConstraints: any[] = [];
+    if (filters?.assignedTo) baseConstraints.push(where('assigned_to_id', '==', filters.assignedTo));
+    if (filters?.assignedBy) baseConstraints.push(where('assigned_by_id', '==', filters.assignedBy));
+    if (filters?.verifierId) baseConstraints.push(where('verifier_id', '==', filters.verifierId));
+    if (filters?.recurring) baseConstraints.push(where('recurring', '==', filters.recurring));
+    
+    baseConstraints.push(where('status', 'in', openStatuses));
+
+    try {
+      const dueTodayQuery = query(tasksRef, ...baseConstraints, where('due_date', '==', today));
+      const overdueQuery = query(tasksRef, ...baseConstraints, where('due_date', '<', today));
+
+      const [dueTodaySnap, overdueSnap] = await Promise.all([
+        getCountFromServer(dueTodayQuery),
+        getCountFromServer(overdueQuery)
+      ]);
+
+      return {
+        dueToday: dueTodaySnap.data().count,
+        overdue: overdueSnap.data().count
+      };
+    } catch (err) {
+      // Fallback if composite index is missing: Download only open tasks and count in memory
+      const fallbackQuery = query(tasksRef, ...baseConstraints);
+      const snap = await getDocs(fallbackQuery);
+      
+      let dueToday = 0;
+      let overdue = 0;
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        if (d.is_recurring_master) return;
+        if (d.due_date === today) dueToday++;
+        else if (d.due_date && d.due_date < today) overdue++;
+      });
+      
+      return { dueToday, overdue };
+    }
   },
 
   getVerifierPendingCounts: async (): Promise<{ verifier_id: string; verifier_name: string; count: number }[]> => {

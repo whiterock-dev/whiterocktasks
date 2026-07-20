@@ -5,7 +5,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ExternalLink, FileText, CheckCircle2 } from 'lucide-react';
+import { ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, User, UserRole } from '../types';
@@ -23,7 +23,8 @@ export const CompletedTasks: React.FC = () => {
     const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
-    const [dateFilter, setDateFilter] = useState('all_time');
+    const [dateFilter, setDateFilter] = useState('last_7_days');
+    const [showRecurringInstances, setShowRecurringInstances] = useState(false);
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
     const [assignedToFilter, setAssignedToFilter] = useState('');
@@ -129,6 +130,8 @@ export const CompletedTasks: React.FC = () => {
                     statusIn: Task['status'][];
                     dueDateFrom?: string;
                     dueDateTo?: string;
+                    assignedTo?: string;
+                    assignedBy?: string;
                 } = {
                     statusIn: ['completed', 'closed_permanently'],
                 };
@@ -136,6 +139,9 @@ export const CompletedTasks: React.FC = () => {
                 const range = resolveDoerDateRange();
                 if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
                 if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
+                
+                if (assignedToFilter) filters.assignedTo = assignedToFilter;
+                if (assignedByFilter) filters.assignedBy = assignedByFilter;
 
                 let allRows: Task[] = [];
                 if (!isManager) {
@@ -171,20 +177,21 @@ export const CompletedTasks: React.FC = () => {
         return () => {
             isActive = false;
         };
-    }, [isManager, isDoer, user?.id, dateFilter, customStart, customEnd]);
+    }, [isManager, isDoer, user?.id, dateFilter, customStart, customEnd, assignedToFilter, assignedByFilter]);
 
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
+            if (!showRecurringInstances && task.parent_task_id) return false;
             if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
             if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
             if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
             return true;
         });
-    }, [tasks, assignedToFilter, assignedByFilter, recurringFilter, taskById]);
+    }, [tasks, assignedToFilter, assignedByFilter, recurringFilter, taskById, showRecurringInstances]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [assignedToFilter, assignedByFilter, recurringFilter, tasks]);
+    }, [assignedToFilter, assignedByFilter, recurringFilter, showRecurringInstances, tasks]);
 
     const totalResults = filteredTasks.length;
     const totalPages = Math.max(1, Math.ceil(totalResults / rowsPerPage));
@@ -242,6 +249,16 @@ export const CompletedTasks: React.FC = () => {
             {/* ── Filter Bar ── */}
             <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-sm hover:bg-slate-50 transition-colors">
+                        <input 
+                            type="checkbox" 
+                            checked={showRecurringInstances}
+                            onChange={(e) => setShowRecurringInstances(e.target.checked)}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer" 
+                        />
+                        <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Include Recurring Tasks</span>
+                    </label>
+
                     <select
                         value={dateFilter}
                         onChange={(e) => setDateFilter(e.target.value)}
