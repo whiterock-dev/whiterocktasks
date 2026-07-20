@@ -8,8 +8,6 @@ import { Task, UserRole, User } from '../types';
 import { exportRowsToCsv } from '../lib/csv';
 import {
   Repeat,
-  Search,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -146,6 +144,9 @@ export const RecurringTasks: React.FC = () => {
         if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
         if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
       }
+      
+      if (assignedToFilter) filters.assignedTo = assignedToFilter;
+      if (assignedByFilter) filters.assignedBy = assignedByFilter;
 
       let allActive: Task[] = [];
       if (isDoer && user?.id) {
@@ -204,7 +205,7 @@ export const RecurringTasks: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, isDoer, recurringFilter, resolveDoerDateRange]);
+  }, [user?.id, isDoer, recurringFilter, resolveDoerDateRange, assignedToFilter, assignedByFilter]);
 
   useEffect(() => {
     loadTasks();

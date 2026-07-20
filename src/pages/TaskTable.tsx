@@ -9,15 +9,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task, UserRole, User, Holiday } from '../types';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '../lib/firebase';
+
 import { Button } from '../components/ui/Button';
 import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
-import { isHoliday, compressImageForUpload, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { isHoliday, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
 import {
   Paperclip,
@@ -25,7 +24,7 @@ import {
   X,
   HelpCircle,
   ExternalLink,
-  FileText,
+
   Pencil,
   Trash2,
   ChevronLeft,
@@ -35,8 +34,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  Search,
-  ChevronDown,
+
   Table2,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
@@ -80,7 +78,7 @@ export const TaskTable: React.FC = () => {
 
 
   const [statusFilter, setStatusFilter] = useState('');
-  const [cityFilter, setCityFilter] = useState('');
+
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
   const [completing, setCompleting] = useState(false);
@@ -233,6 +231,12 @@ export const TaskTable: React.FC = () => {
 
     if (isSelfTasksView) {
       filters.assignedTo = user?.id ?? '';
+    } else if (assignedToFilter) {
+      filters.assignedTo = assignedToFilter;
+    }
+    
+    if (assignedByFilter) {
+      filters.assignedBy = assignedByFilter;
     }
     if (isAuditor) {
       filters.status = 'completed';
@@ -274,7 +278,7 @@ export const TaskTable: React.FC = () => {
     }
 
     return filters;
-  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter, dateFilter]);
+  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter, dateFilter, assignedToFilter, assignedByFilter]);
 
   const getDoerBaseFilters = useCallback(() => {
     const filters: {
@@ -388,7 +392,6 @@ export const TaskTable: React.FC = () => {
     [assignedByFilter, assignedToFilter]
   );
 
-  const hasNameFilter = assignedToFilter.length > 0 || assignedByFilter.length > 0;
   const isStartDateSort = sortConfig?.key === 'start_date';
 
   const formatDateValue = useCallback((value?: string, opts?: { includeTime?: boolean; emptyValue?: string }) => {
@@ -479,7 +482,7 @@ export const TaskTable: React.FC = () => {
         return;
       }
 
-      if (hasNameFilter || recurringFilter || isStartDateSort) {
+      if (recurringFilter || isStartDateSort) {
         try {
           const allRows = await api.getAllTasksByFilters({
             sortBy: sortConfig?.key,
@@ -535,7 +538,6 @@ export const TaskTable: React.FC = () => {
     };
   }, [
     recurringFilter,
-    hasNameFilter,
     applyNameFilters,
     getActiveFilters,
     getDoerVisibleRows,
@@ -564,45 +566,35 @@ export const TaskTable: React.FC = () => {
     return () => clearTimeout(timer);
   }, [midnightRefreshKey]);
 
+  // 1. Calculate Summary for Client-Side Views (My Tasks) instantly without fetching
   useEffect(() => {
-    if (isAuditor || isVerifier) return;
+    if (!isSelfTasksView || !nameFilteredRows) return;
+    
+    const today = getTodayIST();
+    let dueToday = 0;
+    let overdue = 0;
+    
+    nameFilteredRows.forEach(t => {
+      if (t.status === 'completed' || t.status === 'cancelled' || t.status === 'closed_permanently') return;
+      if (t.due_date === today) dueToday++;
+      else if (t.due_date && t.due_date < today) overdue++;
+    });
+    
+    setTaskSummary({ dueToday, overdue });
+  }, [nameFilteredRows, isSelfTasksView]);
+
+  // 2. Fetch Global Summary for Server-Side Views (Main Table) natively
+  useEffect(() => {
+    if (isAuditor || isVerifier || isSelfTasksView) return;
     let isMounted = true;
 
     const loadSummary = async () => {
       setSummaryLoading(true);
       try {
-        let summaryTasks: Task[] = [];
-
-        if (isSelfTasksView) {
-          summaryTasks = await getDoerVisibleRows();
-        } else {
-          const filters = getActiveFilters();
-          const summaryResult = await api.getTasksPaginated({
-            pageSize: 5000,
-            ...filters,
-          });
-          summaryTasks = summaryResult.tasks;
-        }
-
-        const summaryRows = applyNameFilters(summaryTasks);
-
-        const today = getTodayIST();
-        const dueToday = summaryRows.filter(
-          (t) =>
-            t.due_date === today &&
-            t.status !== 'completed' &&
-            t.status !== 'cancelled' &&
-            t.status !== 'closed_permanently'
-        ).length;
-        const overdue = summaryRows.filter(
-          (t) =>
-            t.due_date < today &&
-            t.status !== 'completed' &&
-            t.status !== 'cancelled' &&
-            t.status !== 'closed_permanently'
-        ).length;
-
-        if (isMounted) setTaskSummary({ dueToday, overdue });
+        const filters = getActiveFilters();
+        const counts = await api.getTaskSummaryCounts(filters);
+        
+        if (isMounted) setTaskSummary(counts);
       } catch (err) {
         console.error('Failed to load task summary:', err);
         if (isMounted) setTaskSummary({ dueToday: 0, overdue: 0 });
@@ -616,7 +608,7 @@ export const TaskTable: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [applyNameFilters, getActiveFilters, getDoerVisibleRows, isAuditor, isSelfTasksView, isVerifier]);
+  }, [getActiveFilters, isAuditor, isSelfTasksView, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -635,7 +627,7 @@ export const TaskTable: React.FC = () => {
     return aValue > bValue ? -1 : 1;
   });
 
-  const isClientMode = hasNameFilter || isSelfTasksView || isStartDateSort;
+  const isClientMode = isSelfTasksView || isStartDateSort;
   const tableColumnCount = 12;
 
   const effectiveTotalResults = isClientMode
