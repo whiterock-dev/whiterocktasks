@@ -27,6 +27,7 @@ import {
   startAfter,
   QueryDocumentSnapshot,
   FirestoreError,
+  writeBatch,
 } from 'firebase/firestore';
 import {
   User,
@@ -185,6 +186,132 @@ export const api = {
 
   deleteUser: async (id: string): Promise<void> => {
     await deleteDoc(doc(db, COLLECTIONS.USERS, id));
+  },
+
+  getMemberDeletionImpact: async (userId: string): Promise<{
+    assignedToCount: number;
+    assignedByCount: number;
+    totalUniqueTasksCount: number;
+  }> => {
+    const tasksRef = collection(db, COLLECTIONS.TASKS);
+    const [assignedToSnap, assignedBySnap] = await Promise.all([
+      getDocs(query(tasksRef, where('assigned_to_id', '==', userId))),
+      getDocs(query(tasksRef, where('assigned_by_id', '==', userId))),
+    ]);
+    const uniqueIds = new Set<string>();
+    assignedToSnap.forEach((d) => uniqueIds.add(d.id));
+    assignedBySnap.forEach((d) => uniqueIds.add(d.id));
+
+    // Also include child instances of any master tasks
+    const masterIds: string[] = [];
+    const map = new Map<string, any>();
+    assignedToSnap.forEach((d) => map.set(d.id, d.data()));
+    assignedBySnap.forEach((d) => map.set(d.id, d.data()));
+    map.forEach((data, id) => {
+      if (data.is_recurring_master === true || (data.recurring && data.recurring !== 'none')) {
+        masterIds.push(id);
+      }
+    });
+    if (masterIds.length > 0) {
+      const childSnaps = await Promise.all(
+        masterIds.map((mid) =>
+          getDocs(query(tasksRef, where('parent_task_id', '==', mid)))
+        )
+      );
+      childSnaps.forEach((snap) => {
+        snap.forEach((d) => uniqueIds.add(d.id));
+      });
+    }
+
+    return {
+      assignedToCount: assignedToSnap.size,
+      assignedByCount: assignedBySnap.size,
+      totalUniqueTasksCount: uniqueIds.size,
+    };
+  },
+
+  deleteUserAndAssociatedTasks: async (userId: string): Promise<{ deletedTasksCount: number }> => {
+    const tasksRef = collection(db, COLLECTIONS.TASKS);
+    const [assignedToSnap, assignedBySnap] = await Promise.all([
+      getDocs(query(tasksRef, where('assigned_to_id', '==', userId))),
+      getDocs(query(tasksRef, where('assigned_by_id', '==', userId))),
+    ]);
+
+    const tasksToDelete = new Map<string, any>();
+    assignedToSnap.forEach((d) => tasksToDelete.set(d.id, d.data()));
+    assignedBySnap.forEach((d) => tasksToDelete.set(d.id, d.data()));
+
+    // Include child instances of any master tasks
+    const masterIds: string[] = [];
+    tasksToDelete.forEach((data, id) => {
+      if (data.is_recurring_master === true || (data.recurring && data.recurring !== 'none')) {
+        masterIds.push(id);
+      }
+    });
+    if (masterIds.length > 0) {
+      const childSnaps = await Promise.all(
+        masterIds.map((mid) =>
+          getDocs(query(tasksRef, where('parent_task_id', '==', mid)))
+        )
+      );
+      childSnaps.forEach((snap) => {
+        snap.forEach((d) => tasksToDelete.set(d.id, d.data()));
+      });
+    }
+
+    // Safeguard other doers: unlink verifier_id == userId on tasks belonging to other members
+    const verifierSnap = await getDocs(query(tasksRef, where('verifier_id', '==', userId)));
+    for (const docSnap of verifierSnap.docs) {
+      if (!tasksToDelete.has(docSnap.id)) {
+        const data = docSnap.data();
+        const updates: Record<string, any> = {
+          verification_required: false,
+          verifier_id: null,
+          verifier_name: null,
+          updated_at: isoToTimestamp(new Date().toISOString()),
+        };
+        if (data.status === 'pending_verification') {
+          updates.status = 'completed';
+          updates.completed_at = timestampToISO(new Date().toISOString());
+        }
+        await updateDoc(doc(db, COLLECTIONS.TASKS, docSnap.id), updates);
+      }
+    }
+
+    // Clean up removal requests
+    const allReqsSnap = await getDocs(collection(db, COLLECTIONS.REMOVAL_REQUESTS));
+    const reqIdsToDelete = new Set<string>();
+    allReqsSnap.forEach((d) => {
+      const data = d.data();
+      if (data.requested_by_id === userId || (data.task_id && tasksToDelete.has(data.task_id))) {
+        reqIdsToDelete.add(d.id);
+      }
+    });
+
+    // Clean up absences
+    const absSnap = await getDocs(
+      query(collection(db, COLLECTIONS.ABSENCES), where('user_id', '==', userId))
+    );
+    const absIdsToDelete = absSnap.docs.map((d) => d.id);
+
+    // Batch delete all matched documents in chunks of 450
+    const taskDocRefs = Array.from(tasksToDelete.keys()).map((id) => doc(db, COLLECTIONS.TASKS, id));
+    const reqDocRefs = Array.from(reqIdsToDelete).map((id) =>
+      doc(db, COLLECTIONS.REMOVAL_REQUESTS, id)
+    );
+    const absDocRefs = absIdsToDelete.map((id) => doc(db, COLLECTIONS.ABSENCES, id));
+    const userDocRef = doc(db, COLLECTIONS.USERS, userId);
+
+    const allRefsToDelete = [...taskDocRefs, ...reqDocRefs, ...absDocRefs, userDocRef];
+    const BATCH_SIZE = 450;
+    for (let i = 0; i < allRefsToDelete.length; i += BATCH_SIZE) {
+      const chunk = allRefsToDelete.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    return { deletedTasksCount: tasksToDelete.size };
   },
 
   updateUser: async (id: string, updates: Partial<User>): Promise<void> => {

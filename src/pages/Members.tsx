@@ -10,7 +10,7 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Filter } from 'lucide-react';
+import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import Papa from 'papaparse';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100] as const;
@@ -53,9 +53,13 @@ export const Members: React.FC = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState('');
 
-  const [deleteModal, setDeleteModal] = useState<{ user: User; taskCount: number } | null>(null);
-  const [deleteReassignToId, setDeleteReassignToId] = useState('');
-  const [deleteAction, setDeleteAction] = useState<'reassign' | 'mark_deleted' | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{
+    user: User;
+    assignedToCount: number;
+    assignedByCount: number;
+    totalUniqueTasksCount: number;
+  } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const isOwner = user?.role === UserRole.OWNER;
@@ -100,12 +104,20 @@ export const Members: React.FC = () => {
   };
 
   const handleDeleteMember = async (u: User) => {
-    if (!confirm('Remove this member? This cannot be undone.')) return;
+    setDeleteLoading(true);
     try {
-      await api.deleteUser(u.id);
-      setUsers(await api.getUsers());
+      const impact = await api.getMemberDeletionImpact(u.id);
+      setDeleteModal({
+        user: u,
+        assignedToCount: impact.assignedToCount,
+        assignedByCount: impact.assignedByCount,
+        totalUniqueTasksCount: impact.totalUniqueTasksCount,
+      });
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load deletion impact:', err);
+      alert('Failed to check tasks for this member.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -114,19 +126,13 @@ export const Members: React.FC = () => {
     const { user: u } = deleteModal;
     setDeleteSubmitting(true);
     try {
-      if (deleteAction === 'reassign' && deleteReassignToId) {
-        const toUser = users.find((x) => x.id === deleteReassignToId);
-        if (toUser) {
-          await api.reassignTasksToUser(u.id, toUser);
-        }
-      } else if (deleteAction === 'mark_deleted') {
-        await api.markTasksAssigneeDeleted(u.id);
-      }
-      await api.deleteUser(u.id);
+      const res = await api.deleteUserAndAssociatedTasks(u.id);
       setUsers(await api.getUsers());
       setDeleteModal(null);
+      alert(`Deleted member ${u.name} and permanently removed ${res.deletedTasksCount} associated task(s).`);
     } catch (err) {
       console.error(err);
+      alert('Failed to delete member and tasks.');
     } finally {
       setDeleteSubmitting(false);
     }
@@ -575,7 +581,7 @@ export const Members: React.FC = () => {
                     size="sm"
                     variant="danger"
                     onClick={() => handleDeleteMember(u)}
-                    disabled={u.id === user?.id}
+                    disabled={u.id === user?.id || deleteLoading}
                     title="Remove member"
                   >
                     <Trash2 size={14} />
@@ -644,62 +650,38 @@ export const Members: React.FC = () => {
       {deleteModal && (
         <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">Delete member?</h2>
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">Delete member &amp; tasks?</h2>
             <p className="text-slate-600 text-sm mb-4">
-              <strong>{deleteModal.user.name}</strong> has <strong>{deleteModal.taskCount}</strong> task(s) assigned.
-              How do you want to proceed?
+              Are you sure you want to permanently delete <strong>{deleteModal.user.name}</strong> ({ROLE_LABELS[deleteModal.user.role]})?
             </p>
-            <div className="space-y-3 mb-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="deleteAction"
-                  checked={deleteAction === 'reassign'}
-                  onChange={() => setDeleteAction('reassign')}
-                  className="text-teal-600"
-                />
-                <span className="text-sm">Reassign tasks to another member</span>
-              </label>
-              {deleteAction === 'reassign' && (
-                <select
-                  value={deleteReassignToId}
-                  onChange={(e) => setDeleteReassignToId(e.target.value)}
-                  className="ml-6 w-full max-w-xs h-9 rounded-lg border border-slate-300 px-3 text-sm"
-                >
-                  <option value="">Select member</option>
-                  {users.filter((x) => x.id !== deleteModal.user.id).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} · {ROLE_LABELS[u.role]}
-                      {u.city ? ` · ${u.city}` : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="deleteAction"
-                  checked={deleteAction === 'mark_deleted'}
-                  onChange={() => setDeleteAction('mark_deleted')}
-                  className="text-teal-600"
-                />
-                <span className="text-sm">Just delete (mark tasks as &quot;Member deleted&quot;)</span>
-              </label>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm space-y-1 mb-4">
+              <div className="flex justify-between text-slate-600">
+                <span>Tasks assigned to member:</span>
+                <span className="font-semibold text-slate-800">{deleteModal.assignedToCount}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Tasks assigned by member:</span>
+                <span className="font-semibold text-slate-800">{deleteModal.assignedByCount}</span>
+              </div>
+              <div className="border-t border-slate-200 pt-1 mt-1 flex justify-between text-slate-700 font-medium">
+                <span>Total tasks to be deleted:</span>
+                <span className="font-bold text-red-600">{deleteModal.totalUniqueTasksCount}</span>
+              </div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 mb-6">
+              <strong>Warning:</strong> Deleting this member will permanently remove all <strong>{deleteModal.totalUniqueTasksCount}</strong> task(s) from the database across all types of tasks. This cannot be undone.
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="secondary" onClick={() => setDeleteModal(null)} disabled={deleteSubmitting}>
                 Cancel
               </Button>
               <Button
+                variant="danger"
                 onClick={handleDeleteConfirm}
-                disabled={
-                  deleteSubmitting ||
-                  !deleteAction ||
-                  (deleteAction === 'reassign' ? !deleteReassignToId : false)
-                }
+                disabled={deleteSubmitting}
                 isLoading={deleteSubmitting}
               >
-                Delete member
+                Delete member &amp; tasks
               </Button>
             </div>
           </div>
