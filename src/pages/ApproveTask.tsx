@@ -167,7 +167,7 @@ export const ApproveTask: React.FC = () => {
                 completed_at: new Date().toISOString(),
                 verified_by: user.name,
                 verified_at: new Date().toISOString(),
-            });
+            }, { id: user.id, name: user.name, role: user.role }, 'Verified by verifier from ApproveTask');
             await loadAllPendingTasks();
         } catch (err) {
             console.error('Failed to approve task:', err);
@@ -182,7 +182,7 @@ export const ApproveTask: React.FC = () => {
                 verification_rejection_comment: rejectComment.trim(),
                 verification_rejected_at: new Date().toISOString(),
                 verification_rejected_by: user.name,
-            } as Partial<Task>);
+            } as Partial<Task>, { id: user.id, name: user.name, role: user.role }, 'Verification rejected from ApproveTask');
             setRejectTask(null);
             setRejectComment('');
             await loadAllPendingTasks();
@@ -192,9 +192,9 @@ export const ApproveTask: React.FC = () => {
     };
 
     const handleEditDueDate = async () => {
-        if (!editTask || !editDueDate.trim()) return;
+        if (!editTask || !editDueDate.trim() || !user) return;
         try {
-            await api.updateTask(editTask.id, { due_date: editDueDate });
+            await api.updateTask(editTask.id, { due_date: editDueDate }, { id: user.id, name: user.name, role: user.role }, 'Due date edited from ApproveTask');
             setEditTask(null);
             setEditDueDate('');
             await loadAllPendingTasks();

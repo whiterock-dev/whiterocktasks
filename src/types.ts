@@ -171,3 +171,30 @@ export interface KpiMetrics {
   overdue_percent: number;
   late_completion_percent: number;
 }
+
+export type TaskLogAction =
+  | 'created'
+  | 'updated'
+  | 'status_changed'
+  | 'deleted'
+  | 'closed_permanently'
+  | 'audit_set'
+  | 'verified'
+  | 'verification_rejected';
+
+export interface TaskLog {
+  id: string;
+  task_id: string;
+  task_title: string;
+  action: TaskLogAction;
+  actor_id: string;
+  actor_name: string;
+  actor_role: string;
+  timestamp: string;
+  /** Changed fields: key → { from, to }. Only for 'updated' and 'status_changed'. */
+  changes?: Record<string, { from: unknown; to: unknown }>;
+  /** Full task snapshot captured before deletion. Only for 'deleted'. */
+  deleted_snapshot?: Record<string, unknown>;
+  /** Free-text context (e.g. page name or bulk action label). */
+  note?: string;
+}

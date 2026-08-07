@@ -792,7 +792,8 @@ export const TaskTable: React.FC = () => {
   const handleAudit = async (taskId: string, status: 'audited' | 'bogus' | 'unclear') => {
     if (!user) return;
     try {
-      await api.setAuditStatus(taskId, status, user.name);
+      const actor = { id: user.id, name: user.name, role: user.role };
+      await api.setAuditStatus(taskId, status, user.name, actor);
       setLoading(true);
       await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
     } catch (err) {
@@ -1017,7 +1018,7 @@ export const TaskTable: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) return;
     setLoading(true);
     try {
-      await api.deleteTask(taskId);
+      await api.deleteTask(taskId, { id: user!.id, name: user!.name, role: user!.role }, 'Deleted from Task Table');
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -1031,7 +1032,7 @@ export const TaskTable: React.FC = () => {
     if (!window.confirm('Are you sure you want to permanently close this recurring task? It will never spawn again.')) return;
     setLoading(true);
     try {
-      await api.updateTask(task.id, { status: 'closed_permanently' });
+      await api.updateTask(task.id, { status: 'closed_permanently' }, { id: user!.id, name: user!.name, role: user!.role }, 'Closed permanently from Task Table');
       setTasks((prev) =>
         prev.map((t) =>
           t.id === task.id ? { ...t, status: 'closed_permanently', updated_at: new Date().toISOString() } : t
@@ -1345,7 +1346,7 @@ export const TaskTable: React.FC = () => {
                                 completed_at: completedAt,
                                 verified_by: user.name,
                                 verified_at: completedAt,
-                              });
+                              }, { id: user.id, name: user.name, role: user.role }, 'Verified by verifier');
                               setLoading(true);
                               await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
                             } catch (err) {
@@ -1775,7 +1776,7 @@ export const TaskTable: React.FC = () => {
                       verification_rejection_comment: rejectComment.trim(),
                       verification_rejected_at: new Date().toISOString(),
                       verification_rejected_by: user.name,
-                    } as Partial<Task>);
+                    } as Partial<Task>, { id: user.id, name: user.name, role: user.role }, 'Verification rejected');
                     setRejectTask(null);
                     setRejectComment('');
                     setLoading(true);

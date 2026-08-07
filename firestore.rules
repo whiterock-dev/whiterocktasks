@@ -22,5 +22,10 @@ service cloud.firestore {
     match /help_tickets/{docId} {
       allow read, write: if true;
     }
+    match /task_logs/{logId} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if false;
+    }
   }
 }
