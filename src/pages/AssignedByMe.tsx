@@ -784,7 +784,8 @@ export const AssignedByMe: React.FC = () => {
   const handleAudit = async (taskId: string, status: 'audited' | 'bogus' | 'unclear') => {
     if (!user) return;
     try {
-      await api.setAuditStatus(taskId, status, user.name);
+      const actor = { id: user.id, name: user.name, role: user.role };
+      await api.setAuditStatus(taskId, status, user.name, actor);
       setLoading(true);
       await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
     } catch (err) {
@@ -943,7 +944,7 @@ export const AssignedByMe: React.FC = () => {
         if (editingTask.due_date !== editDueDate) {
           updates.is_holiday = isHoliday(editDueDate, holidays);
         }
-        await api.updateTask(editingTask.id, updates);
+        await api.updateTask(editingTask.id, updates, { id: user.id, name: user.name, role: user.role }, 'Task edit (assignee view)');
         setTasks((prev) =>
           prev.map((t) =>
             t.id === editingTask.id ? { ...t, ...updates, updated_at: new Date().toISOString() } : t
@@ -985,7 +986,7 @@ export const AssignedByMe: React.FC = () => {
           updates.is_holiday = isHoliday(editDueDate, holidays);
         }
 
-        await api.updateTask(editingTask.id, updates);
+        await api.updateTask(editingTask.id, updates, { id: user.id, name: user.name, role: user.role }, 'Task edit');
 
         setTasks((prev) =>
           prev.map((t) =>
@@ -1012,7 +1013,7 @@ export const AssignedByMe: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) return;
     setLoading(true);
     try {
-      await api.deleteTask(taskId);
+      await api.deleteTask(taskId, { id: user!.id, name: user!.name, role: user!.role }, 'Deleted from Assigned By Me');
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -1026,7 +1027,7 @@ export const AssignedByMe: React.FC = () => {
     if (!window.confirm('Are you sure you want to permanently close this recurring task? It will never spawn again.')) return;
     setLoading(true);
     try {
-      await api.updateTask(task.id, { status: 'closed_permanently' });
+      await api.updateTask(task.id, { status: 'closed_permanently' }, { id: user!.id, name: user!.name, role: user!.role }, 'Closed permanently from Assigned By Me');
       setTasks((prev) =>
         prev.map((t) =>
           t.id === task.id ? { ...t, status: 'closed_permanently', updated_at: new Date().toISOString() } : t
@@ -1355,7 +1356,7 @@ export const AssignedByMe: React.FC = () => {
                                 completed_at: completedAt,
                                 verified_by: user.name,
                                 verified_at: completedAt,
-                              });
+                              }, { id: user.id, name: user.name, role: user.role }, 'Verified by verifier');
                               setLoading(true);
                               await loadPage(pageCursors[currentPage - 1] ?? null, currentPage);
                             } catch (err) {
@@ -1871,7 +1872,7 @@ export const AssignedByMe: React.FC = () => {
                       verification_rejection_comment: rejectComment.trim(),
                       verification_rejected_at: new Date().toISOString(),
                       verification_rejected_by: user.name,
-                    } as Partial<Task>);
+                    } as Partial<Task>, { id: user.id, name: user.name, role: user.role }, 'Verification rejected');
                     setRejectTask(null);
                     setRejectComment('');
                     setLoading(true);

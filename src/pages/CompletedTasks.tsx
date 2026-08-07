@@ -139,7 +139,7 @@ export const CompletedTasks: React.FC = () => {
                 const range = resolveDoerDateRange();
                 if (range.dueDateFrom) filters.dueDateFrom = range.dueDateFrom;
                 if (range.dueDateTo) filters.dueDateTo = range.dueDateTo;
-                
+
                 if (assignedToFilter) filters.assignedTo = assignedToFilter;
                 if (assignedByFilter) filters.assignedBy = assignedByFilter;
 
@@ -250,11 +250,11 @@ export const CompletedTasks: React.FC = () => {
             <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-sm hover:bg-slate-50 transition-colors">
-                        <input 
-                            type="checkbox" 
+                        <input
+                            type="checkbox"
                             checked={showRecurringInstances}
                             onChange={(e) => setShowRecurringInstances(e.target.checked)}
-                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer" 
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
                         />
                         <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Include Recurring Tasks</span>
                     </label>

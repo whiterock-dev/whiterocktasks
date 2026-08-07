@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Task } from '../types';
 import { Button } from '../components/ui/Button';
-import { Check, X, HelpCircle, ExternalLink, FileText } from 'lucide-react';
+import { Check, X, HelpCircle, ExternalLink } from 'lucide-react';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
 export const BogusAttachment: React.FC = () => {

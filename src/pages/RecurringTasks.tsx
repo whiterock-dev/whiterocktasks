@@ -16,6 +16,9 @@ import {
   Trash2,
   ExternalLink,
   FileText,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 
@@ -30,6 +33,14 @@ const DAYS = [
   { value: 5, label: 'Sat' },
   { value: 6, label: 'Sun' },
 ] as const;
+
+const getAgeDays = (createdAt: string | undefined | null) => {
+  if (!createdAt) return null;
+  const created = new Date(createdAt);
+  const today = new Date();
+  const diffTime = today.getTime() - created.getTime();
+  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+};
 
 export const RecurringTasks: React.FC = () => {
   const { user } = useAuth();
@@ -69,6 +80,13 @@ export const RecurringTasks: React.FC = () => {
   const [dateFilter, setDateFilter] = useState('all_time');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+
+  // New Filters & Sort
+  const [minAgeFilter, setMinAgeFilter] = useState('');
+  const [maxAgeFilter, setMaxAgeFilter] = useState('');
+  const [createdFromFilter, setCreatedFromFilter] = useState('');
+  const [createdToFilter, setCreatedToFilter] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: 'created_at' | 'age'; direction: 'asc' | 'desc' } | null>(null);
 
   // Users for name dropdowns
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -213,14 +231,46 @@ export const RecurringTasks: React.FC = () => {
 
   // Client-side name filtering
   const filteredTasks = useMemo(() => {
-    return allTasks.filter((task) => {
+    let result = allTasks.filter((task) => {
       if (assignedToFilter && task.assigned_to_id !== assignedToFilter) return false;
       if (assignedByFilter && task.assigned_by_id !== assignedByFilter) return false;
       if (verifierFilter && task.verifier_id !== verifierFilter) return false;
       if (recurringFilter && getDisplayRecurring(task, taskById) !== recurringFilter) return false;
 
+      if (minAgeFilter !== '') {
+        const age = getAgeDays(task.created_at);
+        if (age === null || age < Number(minAgeFilter)) return false;
+      }
+      if (maxAgeFilter !== '') {
+        const age = getAgeDays(task.created_at);
+        if (age === null || age > Number(maxAgeFilter)) return false;
+      }
+      if (createdFromFilter) {
+        if (!task.created_at || task.created_at < createdFromFilter) return false;
+      }
+      if (createdToFilter) {
+        if (!task.created_at || task.created_at.split('T')[0] > createdToFilter) return false;
+      }
+
       return true;
     });
+
+    if (sortConfig) {
+      result.sort((a, b) => {
+        if (sortConfig.key === 'created_at') {
+          const aVal = a.created_at || '';
+          const bVal = b.created_at || '';
+          return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        } else if (sortConfig.key === 'age') {
+          const aVal = getAgeDays(a.created_at) ?? -1;
+          const bVal = getAgeDays(b.created_at) ?? -1;
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        return 0;
+      });
+    }
+    
+    return result;
   }, [
     allTasks,
     assignedToFilter,
@@ -228,12 +278,17 @@ export const RecurringTasks: React.FC = () => {
     verifierFilter,
     recurringFilter,
     taskById,
+    minAgeFilter,
+    maxAgeFilter,
+    createdFromFilter,
+    createdToFilter,
+    sortConfig,
   ]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [assignedToFilter, assignedByFilter, verifierFilter, recurringFilter, allTasks]);
+  }, [assignedToFilter, assignedByFilter, verifierFilter, recurringFilter, minAgeFilter, maxAgeFilter, createdFromFilter, createdToFilter, sortConfig, allTasks]);
 
   // Pagination calculations
   const totalResults = filteredTasks.length;
@@ -245,9 +300,10 @@ export const RecurringTasks: React.FC = () => {
   const endRow = totalResults === 0 ? 0 : Math.min(startIndex + rowsPerPage, totalResults);
 
   const handleClosePermanently = async (taskId: string) => {
+    if (!user) return;
     if (!window.confirm('Are you sure you want to permanently close this recurring task? It will never spawn again.')) return;
     try {
-      await api.updateTask(taskId, { status: 'closed_permanently' });
+      await api.updateTask(taskId, { status: 'closed_permanently' }, { id: user.id, name: user.name, role: user.role }, 'Closed permanently from Recurring Tasks');
       await loadTasks();
     } catch (err) {
       console.error(err);
@@ -255,6 +311,7 @@ export const RecurringTasks: React.FC = () => {
   };
 
   const handleDeleteRecurringStream = async (taskId: string) => {
+    if (!user) return;
     if (!window.confirm('Delete this recurring stream? This will remove the parent and all linked child tasks.')) return;
     try {
       const all = await api.getAllTasksByFilters({ includeRecurringMasters: true, batchSize: 5000 });
@@ -263,7 +320,7 @@ export const RecurringTasks: React.FC = () => {
         .map((t) => t.id);
 
       for (const id of idsToDelete) {
-        await api.deleteTask(id);
+        await api.deleteTask(id, { id: user.id, name: user.name, role: user.role }, 'Deleted from Recurring Tasks');
       }
 
       await loadTasks();
@@ -291,6 +348,8 @@ export const RecurringTasks: React.FC = () => {
           { header: 'Assigned To', accessor: (t) => t.assigned_to_name || '' },
           { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
           { header: 'Verifier', accessor: (t) => (t.verification_required ? (t.verifier_name || 'Required') : '') },
+          { header: 'Task Created On', accessor: (t) => t.created_at ? formatDateDDMMYYYY(t.created_at) : 'N/A' },
+          { header: 'Age (Days)', accessor: (t) => { const age = getAgeDays(t.created_at); return age !== null ? String(age) : 'N/A'; } },
           { header: 'Attachment Required', accessor: (t) => t.attachment_required ? 'Yes' : 'No' },
           { header: 'Attachment Type', accessor: (t) => t.attachment_type || '' },
           { header: 'Next Due Date', accessor: (t) => formatDateDDMMYYYY(t.due_date) },
@@ -324,7 +383,7 @@ export const RecurringTasks: React.FC = () => {
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingTask) return;
+    if (!editingTask || !user) return;
     setEditError('');
 
     if (editVerificationRequired && !editVerifierId) {
@@ -360,7 +419,7 @@ export const RecurringTasks: React.FC = () => {
         verifier_name: editVerificationRequired ? (verifierUser?.name || '') : undefined,
       };
 
-      await api.updateTask(editingTask.id, updates);
+      await api.updateTask(editingTask.id, updates, { id: user.id, name: user.name, role: user.role }, 'Task edit from Recurring Tasks');
       setEditingTask(null);
       await loadTasks();
     } catch (err) {
@@ -440,6 +499,24 @@ export const RecurringTasks: React.FC = () => {
       </div>
     </div>
   );
+
+  const handleSort = (key: 'created_at' | 'age') => {
+    setSortConfig((prev) => {
+      if (prev?.key === key) {
+        return prev.direction === 'asc' ? { key, direction: 'desc' } : null;
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const renderSortIcon = (key: 'created_at' | 'age') => {
+    if (sortConfig?.key !== key) {
+      return <ArrowUpDown size={14} className="inline ml-1 text-slate-400 opacity-50" />;
+    }
+    return sortConfig.direction === 'asc' 
+      ? <ArrowUp size={14} className="inline ml-1 text-teal-600" /> 
+      : <ArrowDown size={14} className="inline ml-1 text-teal-600" />;
+  };
 
   return (
     <div className="space-y-6">
@@ -531,6 +608,46 @@ export const RecurringTasks: React.FC = () => {
           </div>
         )}
       </div>
+      
+      {/* ── Advanced Filters ── */}
+      <div className="relative z-30 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-600">Task Created On:</span>
+          <input
+            type="date"
+            value={createdFromFilter}
+            onChange={(e) => setCreatedFromFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+          <span className="text-slate-500 text-sm">to</span>
+          <input
+            type="date"
+            value={createdToFilter}
+            onChange={(e) => setCreatedToFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-600">Age (Days):</span>
+          <input
+            type="number"
+            min="0"
+            placeholder="Min Age"
+            value={minAgeFilter}
+            onChange={(e) => setMinAgeFilter(e.target.value)}
+            className="h-9 w-24 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+          <span className="text-slate-500 text-sm">-</span>
+          <input
+            type="number"
+            min="0"
+            placeholder="Max Age"
+            value={maxAgeFilter}
+            onChange={(e) => setMaxAgeFilter(e.target.value)}
+            className="h-9 w-24 rounded-lg border border-slate-300 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+        </div>
+      </div>
 
       {/* ── Pagination ── */}
       <div>{paginationControls}</div>
@@ -549,6 +666,18 @@ export const RecurringTasks: React.FC = () => {
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned To</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-56">Assigned By</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-52">Verifier</th>
+                <th 
+                  className="px-4 py-3 font-medium text-slate-600 w-44 cursor-pointer hover:bg-slate-100 transition-colors"
+                  onClick={() => handleSort('created_at')}
+                >
+                  Task Created On {renderSortIcon('created_at')}
+                </th>
+                <th 
+                  className="px-4 py-3 font-medium text-slate-600 w-32 cursor-pointer hover:bg-slate-100 transition-colors text-center"
+                  onClick={() => handleSort('age')}
+                >
+                  Age (Days) {renderSortIcon('age')}
+                </th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Attachment</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-32 text-center">Next Due</th>
                 <th className="px-4 py-3 font-medium text-slate-600 w-48">Actions</th>
@@ -557,13 +686,13 @@ export const RecurringTasks: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-500">
+                  <td colSpan={12} className="p-8 text-center text-slate-500">
                     Loading recurring tasks...
                   </td>
                 </tr>
               ) : pageTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8">
+                  <td colSpan={12} className="p-8">
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Repeat className="w-12 h-12 text-slate-300 mb-3" />
                       <p className="text-base font-medium text-slate-600">No active recurring tasks found.</p>
@@ -596,6 +725,20 @@ export const RecurringTasks: React.FC = () => {
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">{t.assigned_by_name || '-'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
                       {t.verification_required ? (t.verifier_name || 'Required') : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
+                      {t.created_at ? formatDateDDMMYYYY(t.created_at) : 'N/A'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6 text-center font-medium">
+                      {(() => {
+                        const age = getAgeDays(t.created_at);
+                        if (age === null) return 'N/A';
+                        return (
+                          <span className={age > 30 ? 'text-rose-600' : age > 14 ? 'text-amber-600' : ''}>
+                            {age}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-slate-600 text-center">
                       {(t.attachment_url || t.attachment_text) ? (

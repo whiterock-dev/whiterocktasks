@@ -42,8 +42,41 @@ import {
   HelpTicketStatus,
   HelpTicketProposedSolution,
   HelpTicketRating,
+  TaskLogAction,
 } from '../types';
 import { getTodayIST, resolveInitialTaskStatus } from '../lib/dates';
+
+/** Actor descriptor passed into audit-logging mutations. */
+type Actor = { id: string; name: string; role: string };
+
+/**
+ * Internal fire-and-forget audit log writer.
+ * Never throws — a logging failure must never block the real operation.
+ */
+const writeTaskLog = (
+  action: TaskLogAction,
+  taskId: string,
+  taskTitle: string,
+  actor: Actor,
+  extra?: {
+    changes?: Record<string, { from: unknown; to: unknown }>;
+    deleted_snapshot?: Record<string, unknown>;
+    note?: string;
+  }
+): void => {
+  addDoc(collection(db, COLLECTIONS.TASK_LOGS), {
+    task_id: taskId,
+    task_title: taskTitle,
+    action,
+    actor_id: actor.id,
+    actor_name: actor.name,
+    actor_role: actor.role,
+    timestamp: isoToTimestamp(new Date().toISOString()),
+    ...(extra?.changes && { changes: extra.changes }),
+    ...(extra?.deleted_snapshot && { deleted_snapshot: extra.deleted_snapshot }),
+    ...(extra?.note && { note: extra.note }),
+  }).catch((err) => console.error('[TaskLog] write failed:', err));
+};
 
 /** Debounce in-flight scheduled→pending promotions per task id. */
 const activatingScheduledTaskIds = new Set<string>();
@@ -712,7 +745,8 @@ export const api = {
   },
 
   createTask: async (
-    t: Omit<Task, 'id' | 'created_at' | 'updated_at'>
+    t: Omit<Task, 'id' | 'created_at' | 'updated_at'>,
+    actor?: Actor
   ): Promise<Task> => {
     const now = new Date().toISOString();
     const today = getTodayIST();
@@ -729,6 +763,17 @@ export const api = {
       created_at: isoToTimestamp(now),
       updated_at: isoToTimestamp(now),
     });
+
+    // Log only human-initiated creations — skip auto-spawned child instances
+    const isChildInstance = Boolean(normalizedTask.parent_task_id);
+    if (!isChildInstance && actor) {
+      writeTaskLog('created', ref.id, normalizedTask.title, actor, {
+        note: normalizedTask.recurring !== 'none'
+          ? `Recurring master task (${normalizedTask.recurring})`
+          : 'One-off task',
+      });
+    }
+
     return { ...normalizedTask, id: ref.id, created_at: now, updated_at: now };
   },
 
@@ -766,7 +811,25 @@ export const api = {
     } as Omit<Task, 'id' | 'created_at' | 'updated_at'>);
   },
 
-  updateTask: async (id: string, updates: Partial<Task>): Promise<void> => {
+  updateTask: async (
+    id: string,
+    updates: Partial<Task>,
+    actor?: Actor,
+    note?: string
+  ): Promise<void> => {
+    // Read current state before write so we can compute a diff for the log
+    let beforeData: Record<string, unknown> = {};
+    let taskTitle = updates.title || id;
+    if (actor) {
+      try {
+        const snap = await getDoc(doc(db, COLLECTIONS.TASKS, id));
+        if (snap.exists()) {
+          beforeData = snap.data() as Record<string, unknown>;
+          taskTitle = (beforeData.title as string) || taskTitle;
+        }
+      } catch (_) { /* non-blocking — proceed with write even if read fails */ }
+    }
+
     const normalizedUpdates = Object.fromEntries(
       Object.entries(updates).map(([k, v]) => [k, v === undefined ? deleteField() : v])
     );
@@ -781,23 +844,89 @@ export const api = {
       }
     }
     await updateDoc(doc(db, COLLECTIONS.TASKS, id), toUpdate);
+
+    if (actor) {
+      // Determine the most specific action type
+      let action: TaskLogAction = 'updated';
+      if (updates.status === 'closed_permanently') {
+        action = 'closed_permanently';
+      } else if (updates.status === 'completed' || updates.verified_at || updates.status === 'pending_verification') {
+        action = 'status_changed';
+      } else if (updates.status) {
+        action = 'status_changed';
+      } else if (updates.verification_rejected_at) {
+        action = 'verification_rejected';
+      } else if (updates.verified_at) {
+        action = 'verified';
+      }
+
+      // Build changes diff — only include keys that actually changed
+      const SKIP_KEYS = new Set(['updated_at', 'created_at']);
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      for (const [k, newVal] of Object.entries(updates)) {
+        if (SKIP_KEYS.has(k)) continue;
+        const oldVal = beforeData[k];
+        // Compare by JSON string to handle objects/arrays
+        if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+          changes[k] = { from: oldVal ?? null, to: newVal ?? null };
+        }
+      }
+
+      writeTaskLog(action, id, taskTitle, actor, {
+        changes: Object.keys(changes).length > 0 ? changes : undefined,
+        note,
+      });
+    }
   },
 
-  deleteTask: async (id: string): Promise<void> => {
+  deleteTask: async (id: string, actor?: Actor, note?: string): Promise<void> => {
+    // Read the task snapshot before deleting so the log survives the deletion
+    let snapshot: Record<string, unknown> = {};
+    let taskTitle = id;
+    if (actor) {
+      try {
+        const snap = await getDoc(doc(db, COLLECTIONS.TASKS, id));
+        if (snap.exists()) {
+          snapshot = snap.data() as Record<string, unknown>;
+          taskTitle = (snapshot.title as string) || taskTitle;
+        }
+      } catch (_) { /* non-blocking */ }
+    }
+
     await deleteDoc(doc(db, COLLECTIONS.TASKS, id));
+
+    if (actor) {
+      writeTaskLog('deleted', id, taskTitle, actor, {
+        deleted_snapshot: snapshot,
+        note,
+      });
+    }
   },
 
   setAuditStatus: async (
     id: string,
     status: AuditStatus,
-    auditedBy: string
+    auditedBy: string,
+    actor?: Actor
   ): Promise<void> => {
+    let taskTitle = id;
+    if (actor) {
+      try {
+        const snap = await getDoc(doc(db, COLLECTIONS.TASKS, id));
+        if (snap.exists()) taskTitle = (snap.data().title as string) || taskTitle;
+      } catch (_) { /* non-blocking */ }
+    }
     await updateDoc(doc(db, COLLECTIONS.TASKS, id), {
       audit_status: status,
       audited_at: isoToTimestamp(new Date().toISOString()),
       audited_by: auditedBy,
       updated_at: isoToTimestamp(new Date().toISOString()),
     });
+    if (actor) {
+      writeTaskLog('audit_set', id, taskTitle, actor, {
+        changes: { audit_status: { from: null, to: status } },
+      });
+    }
   },
 
   /** All tasks assigned to a user (for delete-member flow). */

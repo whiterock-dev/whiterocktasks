@@ -4,23 +4,19 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
-import { storage } from '../lib/firebase';
-import { compressImageForUpload, isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import {
   Pencil,
   Trash2,
   User as UserIcon,
-  Search,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -263,19 +259,19 @@ export const RedZone: React.FC = () => {
           await api.updateTask(task.id, {
             ...baseUpdates,
             status: 'closed_permanently',
-          });
+          }, { id: user.id, name: user.name, role: user.role }, 'Closed permanently from RedZone');
         } else if (task.verification_required) {
           await api.updateTask(task.id, {
             ...baseUpdates,
             status: 'pending_verification',
-          });
+          }, { id: user.id, name: user.name, role: user.role }, 'Completed from RedZone (needs verification)');
         } else {
           const completedAt = new Date().toISOString();
           await api.updateTask(task.id, {
             ...baseUpdates,
             status: 'completed',
             completed_at: completedAt,
-          });
+          }, { id: user.id, name: user.name, role: user.role }, 'Completed from RedZone');
         }
 
         setCompleteTask(null);
@@ -332,7 +328,7 @@ export const RedZone: React.FC = () => {
         updates.is_holiday = isHoliday(editDueDate, holidays);
       }
 
-      await api.updateTask(editingTask.id, updates);
+      await api.updateTask(editingTask.id, updates, { id: user.id, name: user.name, role: user.role }, 'Task edit from RedZone');
       setEditingTask(null);
       await loadTasks();
     } catch (err) {
@@ -362,7 +358,7 @@ export const RedZone: React.FC = () => {
     if (!window.confirm(message)) return;
 
     try {
-      await api.deleteTask(task.id);
+      await api.deleteTask(task.id, { id: user.id, name: user.name, role: user.role }, 'Deleted from RedZone');
       await loadTasks();
     } catch (err) {
       console.error('Failed to delete task:', err);

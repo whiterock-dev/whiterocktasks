@@ -98,7 +98,7 @@ export const RemovalRequest: React.FC = () => {
     setResolving(true);
     try {
       await api.resolveRemovalRequest(id, 'approved', user.name);
-      await api.deleteTask(taskIdForDelete);
+      await api.deleteTask(taskIdForDelete, { id: user.id, name: user.name, role: user.role }, 'Deleted via Removal Request approval');
       await loadRequests(undefined);
       setMyTasks(await api.getMyIncompleteTasks(user.id));
     } catch (err) {
