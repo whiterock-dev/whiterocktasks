@@ -148,6 +148,11 @@ const docToTask = (d: any): Task => {
           : timestampToISO(data.verification_rejected_at),
     verification_rejected_by: data.verification_rejected_by,
     doer_remark: data.doer_remark,
+    audit_sop_text: data.audit_sop_text,
+    audit_sop_updated_by: data.audit_sop_updated_by,
+    audit_sop_updated_at: data.audit_sop_updated_at ? timestampToISO(data.audit_sop_updated_at) : undefined,
+    audit_sop_attachments: data.audit_sop_attachments,
+    audit_sop_links: data.audit_sop_links,
   };
   return promoteScheduledTaskIfDue(task);
 };
@@ -797,11 +802,21 @@ export const api = {
       recurring_days,
       parent_task_id,
       is_holiday,
+      audit_sop_text,
+      audit_sop_updated_by,
+      audit_sop_updated_at,
+      audit_sop_attachments,
+      audit_sop_links,
       ...baseFields
     } = original;
 
     return api.createTask({
       ...baseFields,
+      audit_sop_text,
+      audit_sop_updated_by,
+      audit_sop_updated_at,
+      audit_sop_attachments,
+      audit_sop_links,
       due_date: nextDueDate,
       status: 'pending',
       recurring: 'none',
@@ -858,6 +873,8 @@ export const api = {
         action = 'verification_rejected';
       } else if (updates.verified_at) {
         action = 'verified';
+      } else if (updates.audit_sop_text !== undefined || updates.audit_sop_attachments !== undefined) {
+        action = 'audit_sop_updated';
       }
 
       // Build changes diff — only include keys that actually changed

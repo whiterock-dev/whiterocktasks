@@ -96,6 +96,18 @@ export interface Task {
   verification_rejection_comment?: string;
   verification_rejected_at?: string;
   verification_rejected_by?: string;
+  audit_sop_text?: string;
+  audit_sop_updated_by?: string;
+  audit_sop_updated_at?: string;
+  audit_sop_attachments?: {
+    file_url: string;
+    file_type: string;
+    file_name: string;
+    size: number;
+    uploaded_by: string;
+    uploaded_at: string;
+  }[];
+  audit_sop_links?: string[];
 }
 
 export interface Holiday {
@@ -180,7 +192,8 @@ export type TaskLogAction =
   | 'closed_permanently'
   | 'audit_set'
   | 'verified'
-  | 'verification_rejected';
+  | 'verification_rejected'
+  | 'audit_sop_updated';
 
 export interface TaskLog {
   id: string;

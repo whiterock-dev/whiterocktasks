@@ -13,8 +13,12 @@ import { Button } from '../components/ui/Button';
 import { RECURRING_OPTIONS } from '../lib/utils';
 import { User, Task, RecurringType } from '../types';
 import { UserRole } from '../types';
-import { Search, ChevronDown, X, Mic } from 'lucide-react';
+import { Search, ChevronDown, X, Mic, FileText } from 'lucide-react';
 import { useSpeechToText } from '../hooks/useSpeechToText';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from '../lib/firebase';
+import { compressImageForUpload } from '../lib/utils';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
@@ -39,6 +43,11 @@ export const AssignTask: React.FC = () => {
   const [attachmentType, setAttachmentType] = useState<'media' | 'text'>('media');
   const [attachmentDesc, setAttachmentDesc] = useState('');
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
+  const [auditSopText, setAuditSopText] = useState('');
+  const [auditSopFiles, setAuditSopFiles] = useState<File[]>([]);
+  const [auditSopLinks, setAuditSopLinks] = useState<string[]>(['']);
+  const [auditSopUploadProgresses, setAuditSopUploadProgresses] = useState<{ [key: string]: number }>({});
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
   const [assignToSearch, setAssignToSearch] = useState('');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
@@ -95,7 +104,7 @@ export const AssignTask: React.FC = () => {
   ];
   const toggleDay = (d: number) => {
     setRecurringDays((prev) =>
-      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)
+      prev.includes(d) ? prev.filter((day) => day !== d) : [...prev, d]
     );
   };
 
@@ -123,6 +132,48 @@ export const AssignTask: React.FC = () => {
       const isHoliday = holidays.some((h) => h.date === dueDate);
       const verifier = users.find((u) => u.id === verifierId);
 
+      let uploadedAuditSopAttachments: NonNullable<Task['audit_sop_attachments']> | undefined = undefined;
+      if (auditSopFiles.length > 0) {
+        const uploadPromises = auditSopFiles.map(async (file, index) => {
+          const fileId = `${Date.now()}_bulk_${index}_${file.name}`;
+          const path = `task-audit-attachments/${fileId}`;
+          const storageRef = ref(storage, path);
+          
+          const toUpload = file.type.startsWith('image/') ? await compressImageForUpload(file) : file;
+          const uploadTask = uploadBytesResumable(storageRef, toUpload);
+
+          return new Promise<NonNullable<Task['audit_sop_attachments']>[0]>((resolve, reject) => {
+            uploadTask.on(
+              'state_changed',
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setAuditSopUploadProgresses((prev) => ({ ...prev, [file.name]: progress }));
+              },
+              (err) => reject(err),
+              async () => {
+                const downloadUrl = await getDownloadURL(storageRef);
+                resolve({
+                  file_url: downloadUrl,
+                  file_type: file.type,
+                  file_name: file.name,
+                  size: file.size,
+                  uploaded_by: user.name || user.id,
+                  uploaded_at: new Date().toISOString(),
+                });
+              }
+            );
+          });
+        });
+
+        try {
+          uploadedAuditSopAttachments = await Promise.all(uploadPromises);
+        } catch (err: any) {
+          setFormError(err.message || 'Failed to upload audit SOP attachments');
+          setLoading(false);
+          return;
+        }
+      }
+
       let successCount = 0;
       let whatsappFailures: string[] = [];
 
@@ -143,6 +194,9 @@ export const AssignTask: React.FC = () => {
           attachment_required: attachmentRequired,
           attachment_type: attachmentRequired ? attachmentType : undefined,
           attachment_description: attachmentRequired ? attachmentDesc : undefined,
+          audit_sop_text: auditSopText.trim() || undefined,
+          audit_sop_attachments: uploadedAuditSopAttachments,
+          audit_sop_links: auditSopLinks.filter(l => l.trim() !== '').length > 0 ? auditSopLinks.filter(l => l.trim() !== '') : undefined,
           assigned_to_id: assigneeId,
           assigned_to_name: assignee.name || '',
           assigned_to_city: assignee.city,
@@ -194,12 +248,17 @@ export const AssignTask: React.FC = () => {
       setSuccess(msg);
       setTitle('');
       setDescription('');
+      setAuditSopText('');
+      setAuditSopFiles([]);
+      setAuditSopLinks(['']);
+      setAuditSopUploadProgresses({});
       setStartDate(today);
       setDueDate('');
       setRecurring('none');
       setRecurringDays([]);
       setAttachmentRequired(false);
       setAttachmentDesc('');
+      setAuditSopText('');
       setAssignedToIds([]);
       setAssignToSearch('');
       setVerificationRequired(true);
@@ -619,11 +678,27 @@ export const AssignTask: React.FC = () => {
                 )}
               </div>
             )}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Add Guidelines to Audit (optional)</label>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(true)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 shadow-sm font-medium"
+              >
+                <FileText size={16} className={auditSopText || auditSopFiles.length > 0 || auditSopLinks.filter(l => l.trim()).length > 0 ? "text-teal-600" : "text-slate-400"} />
+                {auditSopText || auditSopFiles.length > 0 || auditSopLinks.filter(l => l.trim()).length > 0 ? 'Edit Guidelines to Audit' : 'Add Guidelines to Audit'}
+              </button>
+            </div>
             {formError && (
               <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{formError}</div>
             )}
             {success && (
               <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm">{success}</div>
+            )}
+            {loading && auditSopFiles.length > 0 && (
+              <div className="mt-2 w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div className="bg-teal-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${Object.values(auditSopUploadProgresses).reduce((a, b) => a + b, 0) / auditSopFiles.length}%` }}></div>
+              </div>
             )}
             <Button type="submit" isLoading={loading}>
               Save & Assign
@@ -632,6 +707,21 @@ export const AssignTask: React.FC = () => {
         </div>
       </form>
 
+      {user && (
+        <AuditSopModal
+          isOpen={isAuditModalOpen}
+          onClose={() => setIsAuditModalOpen(false)}
+          user={user}
+          initialText={auditSopText}
+          initialFiles={auditSopFiles}
+          initialLinks={auditSopLinks}
+          onSaveAssign={(text, files, links) => {
+            setAuditSopText(text);
+            setAuditSopFiles(files);
+            setAuditSopLinks(links);
+          }}
+        />
+      )}
     </div>
   );
 };

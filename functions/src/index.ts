@@ -8,6 +8,7 @@ import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 
 admin.initializeApp();
 
@@ -510,6 +511,11 @@ async function runGenerateRecurringTasks(
           assignee_deleted: template.assignee_deleted === true,
           parent_task_id: masterTaskId,
           is_holiday: template.is_holiday === true,
+          audit_sop_text: template.audit_sop_text || null,
+          audit_sop_attachments: template.audit_sop_attachments || null,
+          audit_sop_links: template.audit_sop_links || null,
+          audit_sop_updated_by: template.audit_sop_updated_by || null,
+          audit_sop_updated_at: template.audit_sop_updated_at || null,
           created_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
           updated_at: admin.firestore.Timestamp.fromDate(new Date(nowIso)),
         };
@@ -673,5 +679,85 @@ export const transitionScheduledTasks = onSchedule(
       `transitionScheduledTasks complete: ${tasksToActivate.length} task(s) transitioned to pending.`
     );
     return;
+  }
+);
+
+/**
+ * Triggered when a task document is updated.
+ * Checks if audit_sop fields changed and sends a WhatsApp notification to the assigned doer and verifier.
+ */
+export const onTaskAuditSopUpdated = onDocumentUpdated(
+  {
+    document: `${COLLECTIONS.TASKS}/{taskId}`,
+  },
+  async (event) => {
+    if (!event.data) return;
+
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+
+    // Check if any audit SOP field changed
+    const sopTextChanged = before.audit_sop_text !== after.audit_sop_text;
+    const sopAttachmentsChanged = JSON.stringify(before.audit_sop_attachments || []) !== JSON.stringify(after.audit_sop_attachments || []);
+    const sopLinksChanged = JSON.stringify(before.audit_sop_links || []) !== JSON.stringify(after.audit_sop_links || []);
+
+    const hasSopChanged = sopTextChanged || sopAttachmentsChanged || sopLinksChanged;
+
+    if (!hasSopChanged) {
+      return;
+    }
+
+    const authToken = process.env.ELEVENZA_AUTH_TOKEN;
+    const apiUrl =
+      process.env.ELEVENZA_API_URL ||
+      'https://app.11za.in/apis/template/sendTemplate';
+    const originWebsite =
+      process.env.ELEVENZA_ORIGIN_WEBSITE ||
+      'https://whiterock.co.in/';
+    const templateAuditSopUpdate =
+      process.env.ELEVENZA_TEMPLATE_AUDIT_SOP_UPDATE ||
+      'audit_sop_update';
+
+    if (!authToken) {
+      logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping audit SOP notification');
+      return;
+    }
+
+    const db = admin.firestore();
+    const taskTitle = after.title || 'Unknown Task';
+    const updatedByName = after.audit_sop_updated_by || 'Assigner/Admin';
+
+    // Collect users to notify
+    const usersToNotify = new Set<string>();
+    if (after.assigned_to_id) usersToNotify.add(after.assigned_to_id);
+    if (after.verifier_id) usersToNotify.add(after.verifier_id);
+
+    if (usersToNotify.size === 0) return;
+
+    const elevenzaConfig = {
+      apiUrl,
+      originWebsite,
+      authToken,
+    };
+
+    const usersSnap = await db.collection(COLLECTIONS.USERS).get();
+    const usersById = new Map<string, { phone?: string; name: string }>();
+    for (const doc of usersSnap.docs) {
+      const d = doc.data();
+      usersById.set(doc.id, { phone: d.phone, name: d.name || '' });
+    }
+
+    for (const userId of usersToNotify) {
+      const user = usersById.get(userId);
+      const phone = user?.phone;
+      if (!phone) continue;
+
+      try {
+        await send11zaTemplate(phone, templateAuditSopUpdate, [user.name, taskTitle, updatedByName], elevenzaConfig);
+        logger.info(`Audit SOP update notification sent to ${user.name} (${phone})`);
+      } catch (err) {
+        logger.error(`Failed to send Audit SOP update notification to ${phone}:`, err);
+      }
+    }
   }
 );

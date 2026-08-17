@@ -18,6 +18,7 @@ import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 import {
   Paperclip,
   Check,
@@ -139,6 +140,7 @@ export const AssignedByMe: React.FC = () => {
   const [refreshToken, setRefreshToken] = useState(0);
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -1658,8 +1660,39 @@ export const AssignedByMe: React.FC = () => {
                         <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                       )}
                     </td>
-                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
-                      {t.description || '-'}
+                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700 align-top">
+                      <div className="flex flex-col">
+                        <span>{t.description || '-'}</span>
+                        {(() => {
+                          const hasSop = !!t.audit_sop_text || (t.audit_sop_attachments && t.audit_sop_attachments.length > 0) || (t.audit_sop_links && t.audit_sop_links.length > 0);
+                          const isAssigner = user?.id === t.assigned_by_id;
+                          const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                          const canEditSop = (isAssigner || isAdmin) && !t.verified_at;
+
+                          if (hasSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                              >
+                                <FileText size={12} /> View Guidelines to Audit
+                              </button>
+                            );
+                          } else if (canEditSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                              >
+                                + Add Guidelines to Audit
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </td>
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
@@ -2108,6 +2141,16 @@ export const AssignedByMe: React.FC = () => {
             })()}
           </div>
         </div>
+      )}
+
+      {user && (
+        <AuditSopModal
+          isOpen={!!selectedAuditTask}
+          onClose={() => setSelectedAuditTask(null)}
+          user={user}
+          task={selectedAuditTask || undefined}
+          onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
+        />
       )}
     </div>
   );

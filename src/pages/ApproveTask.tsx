@@ -19,9 +19,11 @@ import {
     ExternalLink,
     ClipboardCheck,
     Pencil,
+    FileText,
 } from 'lucide-react';
 import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 
 const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
 
@@ -44,6 +46,7 @@ export const ApproveTask: React.FC = () => {
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
     const [assignedToFilter, setAssignedToFilter] = useState('');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
+    const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
 
     const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
 
@@ -355,8 +358,39 @@ export const ApproveTask: React.FC = () => {
                                         <td>
                                             <span className="font-medium text-slate-800">{task.title}</span>
                                         </td>
-                                        <td className="whitespace-pre-wrap break-all text-sm text-slate-700">
-                                            {task.description || '-'}
+                                        <td className="whitespace-pre-wrap break-all text-sm text-slate-700 align-top">
+                                            <div className="flex flex-col">
+                                                <span>{task.description || '-'}</span>
+                                                {(() => {
+                                                  const hasSop = !!task.audit_sop_text || (task.audit_sop_attachments && task.audit_sop_attachments.length > 0) || (task.audit_sop_links && task.audit_sop_links.length > 0);
+                                                  const isAssigner = user?.id === task.assigned_by_id;
+                                                  const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                                                  const canEditSop = (isAssigner || isAdmin) && !task.verified_at;
+
+                                                  if (hasSop) {
+                                                    return (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setSelectedAuditTask(task)}
+                                                        className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                                                      >
+                                                        <FileText size={12} /> View Guidelines to Audit
+                                                      </button>
+                                                    );
+                                                  } else if (canEditSop) {
+                                                    return (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setSelectedAuditTask(task)}
+                                                        className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                                                      >
+                                                        + Add Guidelines to Audit
+                                                      </button>
+                                                    );
+                                                  }
+                                                  return null;
+                                                })()}
+                                            </div>
                                         </td>
                                         <td className="whitespace-pre-wrap break-all text-sm text-slate-700">
                                             {task.doer_remark?.trim() || '-'}
@@ -536,6 +570,15 @@ export const ApproveTask: React.FC = () => {
                     urls={viewAttachment.urls}
                     text={viewAttachment.text}
                     onClose={() => setViewAttachment(null)}
+                />
+            )}
+            {user && (
+                <AuditSopModal
+                    isOpen={!!selectedAuditTask}
+                    onClose={() => setSelectedAuditTask(null)}
+                    user={user}
+                    task={selectedAuditTask || undefined}
+                    onUpdate={() => loadAllPendingTasks()}
                 />
             )}
         </div>
