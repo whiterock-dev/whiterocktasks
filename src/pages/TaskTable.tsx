@@ -15,6 +15,7 @@ import { CsvExportButton } from '../components/ui/CsvExportButton';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { getTodayIST } from '../lib/dates';
@@ -36,6 +37,7 @@ import {
   ArrowUpDown,
 
   Table2,
+  FileText,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
@@ -86,6 +88,7 @@ export const TaskTable: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
   const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -1157,8 +1160,39 @@ export const TaskTable: React.FC = () => {
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
                   <td className="sticky-col-1">{t.title}</td>
-                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
-                    {t.description || '-'}
+                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700 align-top">
+                    <div className="flex flex-col">
+                      <span>{t.description || '-'}</span>
+                      {(() => {
+                        const hasSop = !!t.audit_sop_text || (t.audit_sop_attachments && t.audit_sop_attachments.length > 0);
+                        const isAssigner = user?.id === t.assigned_by_id;
+                        const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                        const canEditSop = (isAssigner || isAdmin) && !t.verified_at;
+
+                        if (hasSop) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAuditTask(t)}
+                              className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                            >
+                              <FileText size={12} /> View Guidelines to Audit
+                            </button>
+                          );
+                        } else if (canEditSop) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAuditTask(t)}
+                              className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                            >
+                              + Add Guidelines to Audit
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </td>
                   <td>
                     {t.assigned_to_name}
@@ -1274,8 +1308,39 @@ export const TaskTable: React.FC = () => {
                   <td className="sticky-col-1">
                     <span className="font-medium text-slate-800">{t.title}</span>
                   </td>
-                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700">
-                    {t.description || '-'}
+                  <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700 align-top">
+                    <div className="flex flex-col">
+                      <span>{t.description || '-'}</span>
+                      {(() => {
+                        const hasSop = !!t.audit_sop_text || (t.audit_sop_attachments && t.audit_sop_attachments.length > 0) || (t.audit_sop_links && t.audit_sop_links.length > 0);
+                        const isAssigner = user?.id === t.assigned_by_id;
+                        const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                        const canEditSop = (isAssigner || isAdmin) && !t.verified_at;
+
+                        if (hasSop) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAuditTask(t)}
+                              className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                            >
+                              <FileText size={12} /> View Guidelines to Audit
+                            </button>
+                          );
+                        } else if (canEditSop) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAuditTask(t)}
+                              className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                            >
+                              + Add Guidelines to Audit
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </td>
                   <td>
                     {t.assigned_to_name}
@@ -1572,8 +1637,39 @@ export const TaskTable: React.FC = () => {
                         <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
                       )}
                     </td>
-                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
-                      {t.description || '-'}
+                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700 align-top">
+                      <div className="flex flex-col">
+                        <span>{t.description || '-'}</span>
+                        {(() => {
+                          const hasSop = !!t.audit_sop_text || (t.audit_sop_attachments && t.audit_sop_attachments.length > 0) || (t.audit_sop_links && t.audit_sop_links.length > 0);
+                          const isAssigner = user?.id === t.assigned_by_id;
+                          const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                          const canEditSop = (isAssigner || isAdmin) && !t.verified_at;
+
+                          if (hasSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                              >
+                                <FileText size={12} /> View Guidelines to Audit
+                              </button>
+                            );
+                          } else if (canEditSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                              >
+                                + Add Guidelines to Audit
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </td>
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
@@ -2012,6 +2108,16 @@ export const TaskTable: React.FC = () => {
             })()}
           </div>
         </div>
+      )}
+
+      {user && (
+        <AuditSopModal
+          isOpen={!!selectedAuditTask}
+          onClose={() => setSelectedAuditTask(null)}
+          user={user}
+          task={selectedAuditTask || undefined}
+          onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
+        />
       )}
     </div>
   );
