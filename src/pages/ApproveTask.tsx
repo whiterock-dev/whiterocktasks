@@ -25,7 +25,7 @@ import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '.
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { AuditSopModal } from '../components/ui/AuditSopModal';
 
-const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
 
 export const ApproveTask: React.FC = () => {
     const { user } = useAuth();
@@ -315,12 +315,12 @@ export const ApproveTask: React.FC = () => {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">{paginationControls}</div>
             <div className="table-container">
-                <table>
+                <table className="[&_th]:!px-2.5 [&_td]:!px-2.5 [&_td]:align-top">
                     <thead>
                         <tr>
-                            <th className="whitespace-nowrap">Title</th>
-                            <th>Description</th>
-                            <th>Doer's Remark</th>
+                            <th className="min-w-[175px]">Title</th>
+                            <th className="min-w-[275px]">Description</th>
+                            <th className="min-w-[275px]">Doer's Remark</th>
                             <th className="whitespace-nowrap">Doer</th>
                             {!isDoer && <th className="whitespace-nowrap">Verifier</th>}
                             <th className="whitespace-nowrap">Frequency</th>
@@ -358,41 +358,43 @@ export const ApproveTask: React.FC = () => {
                                         <td>
                                             <span className="font-medium text-slate-800">{task.title}</span>
                                         </td>
-                                        <td className="whitespace-pre-wrap break-all text-sm text-slate-700 align-top">
-                                            <div className="flex flex-col">
+                                        <td className="whitespace-pre-wrap break-words text-sm text-slate-700 h-[1px]">
+                                            <div className="flex flex-col h-full justify-between min-h-full">
                                                 <span>{task.description || '-'}</span>
-                                                {(() => {
-                                                  const hasSop = !!task.audit_sop_text || (task.audit_sop_attachments && task.audit_sop_attachments.length > 0) || (task.audit_sop_links && task.audit_sop_links.length > 0);
-                                                  const isAssigner = user?.id === task.assigned_by_id;
-                                                  const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
-                                                  const canEditSop = (isAssigner || isAdmin) && !task.verified_at;
+                                                <div className="mt-auto pt-2 block">
+                                                    {(() => {
+                                                    const hasSop = !!task.audit_sop_text || (task.audit_sop_attachments && task.audit_sop_attachments.length > 0) || (task.audit_sop_links && task.audit_sop_links.length > 0);
+                                                    const isAssigner = user?.id === task.assigned_by_id;
+                                                    const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                                                    const canEditSop = (isAssigner || isAdmin) && !task.verified_at;
 
-                                                  if (hasSop) {
-                                                    return (
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => setSelectedAuditTask(task)}
-                                                        className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
-                                                      >
-                                                        <FileText size={12} /> View Guidelines to Audit
-                                                      </button>
-                                                    );
-                                                  } else if (canEditSop) {
-                                                    return (
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => setSelectedAuditTask(task)}
-                                                        className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
-                                                      >
-                                                        + Add Guidelines to Audit
-                                                      </button>
-                                                    );
-                                                  }
-                                                  return null;
+                                                    if (hasSop) {
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedAuditTask(task)}
+                                                                className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                                                            >
+                                                                <FileText size={12} /> View Guidelines to Audit
+                                                            </button>
+                                                        );
+                                                    } else if (canEditSop) {
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedAuditTask(task)}
+                                                                className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                                                            >
+                                                                + Add Guidelines to Audit
+                                                            </button>
+                                                        );
+                                                    }
+                                                    return null;
                                                 })()}
+                                                </div>
                                             </div>
                                         </td>
-                                        <td className="whitespace-pre-wrap break-all text-sm text-slate-700">
+                                        <td className="whitespace-pre-wrap break-words text-sm text-slate-700 align-top text-justify">
                                             {task.doer_remark?.trim() || '-'}
                                         </td>
                                         <td>
@@ -444,14 +446,14 @@ export const ApproveTask: React.FC = () => {
                                             )}
                                         </td>
                                         <td className="py-3 px-2 text-right pr-4">
-                                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center justify-end py-2 h-full">
+                                            <div className="flex flex-col gap-2 items-end pt-1">
                                                 {canApproveTask ? (
                                                     <>
                                                         <Button
                                                             size="sm"
                                                             variant="success"
                                                             onClick={() => handleApprove(task)}
-                                                            className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
+                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
                                                         >
                                                             Approve
                                                         </Button>
@@ -462,13 +464,13 @@ export const ApproveTask: React.FC = () => {
                                                                 setRejectTask(task);
                                                                 setRejectComment('');
                                                             }}
-                                                            className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap"
+                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
                                                         >
                                                             Reject
                                                         </Button>
                                                     </>
                                                 ) : (
-                                                    <span className="text-slate-400 text-sm whitespace-nowrap">
+                                                    <span className="text-slate-400 text-xs whitespace-nowrap text-right">
                                                         {task.verifier_name ? `Verifier: ${task.verifier_name}` : 'No verifier assigned'}
                                                     </span>
                                                 )}
@@ -480,9 +482,9 @@ export const ApproveTask: React.FC = () => {
                                                             setEditTask(task);
                                                             setEditDueDate(task.due_date || '');
                                                         }}
-                                                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-300 bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-300 transition-colors"
+                                                        className="inline-flex items-center justify-center w-[85px] h-8 rounded-lg border border-slate-300 bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-300 transition-colors text-xs gap-1.5 font-medium"
                                                     >
-                                                        <Pencil size={14} />
+                                                        <Pencil size={12} /> Edit Date
                                                     </button>
                                                 )}
                                             </div>

@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
-const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
 type TaskSortKey = 'start_date' | 'due_date';
 
 const DAYS = [

@@ -24,7 +24,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
 
 const DAYS = [
   { value: 0, label: 'Mon' },

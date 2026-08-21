@@ -13,7 +13,7 @@ import { Button } from '../components/ui/Button';
 import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import Papa from 'papaparse';
 
-const ROWS_PER_PAGE_OPTIONS = [25, 50, 100] as const;
+const ROWS_PER_PAGE_OPTIONS = [50, 100] as const;
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
@@ -40,7 +40,7 @@ export const Members: React.FC = () => {
   const [bulkMessage, setBulkMessage] = useState<{ text: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(100);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
   const [cityFilter, setCityFilter] = useState('');
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
