@@ -13,7 +13,7 @@ import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '.
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 
-const ROWS_PER_PAGE_OPTIONS = [25, 100, 500, 1000] as const;
+const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
 
 export const CompletedTasks: React.FC = () => {
     const { user } = useAuth();

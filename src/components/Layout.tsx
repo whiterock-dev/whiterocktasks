@@ -88,6 +88,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [overdueCount, setOverdueCount] = useState(0);
   const [helpPendingCount, setHelpPendingCount] = useState(0);
   const [totalOverdueCount, setTotalOverdueCount] = useState(0);
+  const [taskTableCount, setTaskTableCount] = useState(0);
+  const [myTasksCount, setMyTasksCount] = useState(0);
 
   if (!user) return <>{children}</>;
 
@@ -111,7 +113,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
         const isManagerOrOwner = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
 
-        const [approvalCount, overdueTasksCount, helpCount, ...rest] = await Promise.all([
+        const openStatuses: any[] = ['pending', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
+
+        const [approvalCount, overdueTasksCount, helpCount, taskTableAll, myTasksAll, ...rest] = await Promise.all([
           api.getTasksCount({
             status: 'pending_verification',
             verifierId: user.id,
@@ -124,6 +128,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           api.getHelpTicketsCount({
             helperId: user.id,
             statusIn: ['open', 'in_progress'],
+          }),
+          api.getTasksCount({
+            statusIn: openStatuses,
+          }),
+          api.getTasksCount({
+            assignedTo: user.id,
+            statusIn: openStatuses,
           }),
           ...(isManagerOrOwner
             ? [
@@ -139,6 +150,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           setPendingApprovalCount(approvalCount);
           setOverdueCount(overdueTasksCount);
           setHelpPendingCount(helpCount);
+          setTaskTableCount(isManagerOrOwner ? taskTableAll : myTasksAll);
+          setMyTasksCount(myTasksAll);
           if (isManagerOrOwner && rest.length > 0) {
             setTotalOverdueCount(rest[0]);
           }
@@ -236,7 +249,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                             ? overdueCount
                             : item.to === '/help'
                               ? helpPendingCount
-                              : undefined
+                              : item.to === '/tasks'
+                                ? taskTableCount
+                                : item.to === '/my-tasks'
+                                  ? myTasksCount
+                                  : undefined
                       }
                       secondBadgeCount={
                         item.to === '/redzone' && isManagerOrOwnerRole
@@ -315,7 +332,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                                 ? overdueCount
                                 : item.to === '/help'
                                   ? helpPendingCount
-                                  : undefined
+                                  : item.to === '/tasks'
+                                    ? taskTableCount
+                                    : item.to === '/my-tasks'
+                                      ? myTasksCount
+                                      : undefined
                           }
                           secondBadgeCount={
                             item.to === '/redzone' && isManagerOrOwnerRole
