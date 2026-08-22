@@ -571,6 +571,37 @@ exports.onTaskAuditSopUpdated = (0, firestore_1.onDocumentUpdated)({
     if (!hasSopChanged) {
         return;
     }
+    const db = admin.firestore();
+    // If it's a recurring master, propagate the SOP changes to active child instances
+    if (after.is_recurring_master) {
+        try {
+            const taskId = event.data.after.id;
+            const activeChildrenSnap = await db
+                .collection(COLLECTIONS.TASKS)
+                .where('parent_task_id', '==', taskId)
+                .where('recurring', '==', 'none')
+                .where('status', 'in', ['pending', 'scheduled', 'in_progress', 'correction_required', 'pending_verification', 'overdue'])
+                .get();
+            if (!activeChildrenSnap.empty) {
+                const batch = db.batch();
+                activeChildrenSnap.forEach(doc => {
+                    batch.update(doc.ref, {
+                        audit_sop_text: after.audit_sop_text || null,
+                        audit_sop_attachments: after.audit_sop_attachments || null,
+                        audit_sop_links: after.audit_sop_links || null,
+                        audit_sop_updated_by: after.audit_sop_updated_by || null,
+                        audit_sop_updated_at: after.audit_sop_updated_at || null,
+                        updated_at: admin.firestore.Timestamp.now(),
+                    });
+                });
+                await batch.commit();
+                firebase_functions_1.logger.info(`Propagated SOP updates from master task ${taskId} to ${activeChildrenSnap.size} active child tasks.`);
+            }
+        }
+        catch (err) {
+            firebase_functions_1.logger.error(`Failed to propagate SOP updates for master task ${event.data.after.id}:`, err);
+        }
+    }
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
     const apiUrl = process.env.ELEVENZA_API_URL ||
         'https://app.11za.in/apis/template/sendTemplate';
@@ -582,7 +613,6 @@ exports.onTaskAuditSopUpdated = (0, firestore_1.onDocumentUpdated)({
         firebase_functions_1.logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping audit SOP notification');
         return;
     }
-    const db = admin.firestore();
     const taskTitle = after.title || 'Unknown Task';
     const updatedByName = after.audit_sop_updated_by || 'Assigner/Admin';
     // Collect users to notify
