@@ -21,6 +21,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 
 const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
 
@@ -49,6 +50,7 @@ export const RecurringTasks: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [viewTask, setViewTask] = useState<Task | null>(null);
   const [viewAttachment, setViewAttachment] = useState<{ url?: string; text?: string } | null>(null);
+  const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
 
   // Edit recurring master task
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -706,7 +708,38 @@ export const RecurringTasks: React.FC = () => {
                       {t.title}
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-normal wrap-break-word align-top leading-6">
-                      {t.description || '-'}
+                      <div className="flex flex-col">
+                        <span>{t.description || '-'}</span>
+                        {(() => {
+                          const hasSop = !!t.audit_sop_text || (t.audit_sop_attachments && t.audit_sop_attachments.length > 0) || (t.audit_sop_links && t.audit_sop_links.length > 0);
+                          const isAssigner = user?.id === t.assigned_by_id;
+                          const isAdmin = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                          const canEditSop = (isAssigner || isAdmin) && !t.verified_at;
+
+                          if (hasSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+                              >
+                                <FileText size={12} /> View Guidelines to Audit
+                              </button>
+                            );
+                          } else if (canEditSop) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAuditTask(t)}
+                                className="mt-2 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+                              >
+                                + Add Guidelines to Audit
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-600 capitalize whitespace-normal wrap-break-word align-top leading-6">
                       {formatRecurringLabel(getDisplayRecurring(t, taskById), 'None')}
@@ -1087,6 +1120,16 @@ export const RecurringTasks: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {selectedAuditTask && (
+        <AuditSopModal
+          isOpen={true}
+          onClose={() => setSelectedAuditTask(null)}
+          user={user}
+          task={selectedAuditTask}
+          onUpdate={loadTasks}
+        />
       )}
     </div>
   );
