@@ -324,10 +324,10 @@ export const ApproveTask: React.FC = () => {
                             <th className="whitespace-nowrap">Doer</th>
                             {!isDoer && <th className="whitespace-nowrap">Verifier</th>}
                             <th className="whitespace-nowrap">Frequency</th>
+                            <th className="whitespace-nowrap text-center">Action</th>
                             <th className="whitespace-nowrap text-center">Due Date</th>
                             {/* <th className="whitespace-nowrap text-center">Priority</th> */}
                             <th className="whitespace-nowrap text-center">Attachment</th>
-                            <th className="whitespace-nowrap text-right pr-4">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -411,6 +411,50 @@ export const ApproveTask: React.FC = () => {
                                         <td className="whitespace-nowrap text-sm text-slate-700 capitalize">
                                             {formatRecurringLabel(getDisplayRecurring(task, recurringTaskLookup), 'None')}
                                         </td>
+                                        <td className="py-3 px-2 text-center">
+                                            <div className="flex flex-col gap-2 items-center pt-1">
+                                                {canApproveTask ? (
+                                                    <>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="success"
+                                                            onClick={() => handleApprove(task)}
+                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
+                                                        >
+                                                            Approve
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="danger"
+                                                            onClick={() => {
+                                                                setRejectTask(task);
+                                                                setRejectComment('');
+                                                            }}
+                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
+                                                        >
+                                                            Reject
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <span className="text-slate-400 text-xs whitespace-nowrap text-center">
+                                                        {task.verifier_name ? `Verifier: ${task.verifier_name}` : 'No verifier assigned'}
+                                                    </span>
+                                                )}
+                                                {canEditTask && (
+                                                    <button
+                                                        type="button"
+                                                        title="Edit due date"
+                                                        onClick={() => {
+                                                            setEditTask(task);
+                                                            setEditDueDate(task.due_date || '');
+                                                        }}
+                                                        className="inline-flex items-center justify-center w-[85px] h-8 rounded-lg border border-slate-300 bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-300 transition-colors text-xs gap-1.5 font-medium"
+                                                    >
+                                                        <Pencil size={12} /> Edit Date
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="text-center whitespace-nowrap text-slate-600 font-medium">{formatDateDDMMYYYY(task.due_date)}</td>
                                         {/*
                                         <td className="text-center">
@@ -444,50 +488,6 @@ export const ApproveTask: React.FC = () => {
                                             ) : (
                                                 <span className="text-slate-400">-</span>
                                             )}
-                                        </td>
-                                        <td className="py-3 px-2 text-right pr-4">
-                                            <div className="flex flex-col gap-2 items-end pt-1">
-                                                {canApproveTask ? (
-                                                    <>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="success"
-                                                            onClick={() => handleApprove(task)}
-                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
-                                                        >
-                                                            Approve
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="danger"
-                                                            onClick={() => {
-                                                                setRejectTask(task);
-                                                                setRejectComment('');
-                                                            }}
-                                                            className="w-[85px] justify-center text-xs px-2 py-1.5 whitespace-nowrap"
-                                                        >
-                                                            Reject
-                                                        </Button>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-slate-400 text-xs whitespace-nowrap text-right">
-                                                        {task.verifier_name ? `Verifier: ${task.verifier_name}` : 'No verifier assigned'}
-                                                    </span>
-                                                )}
-                                                {canEditTask && (
-                                                    <button
-                                                        type="button"
-                                                        title="Edit due date"
-                                                        onClick={() => {
-                                                            setEditTask(task);
-                                                            setEditDueDate(task.due_date || '');
-                                                        }}
-                                                        className="inline-flex items-center justify-center w-[85px] h-8 rounded-lg border border-slate-300 bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-300 transition-colors text-xs gap-1.5 font-medium"
-                                                    >
-                                                        <Pencil size={12} /> Edit Date
-                                                    </button>
-                                                )}
-                                            </div>
                                         </td>
                                     </tr>
                                 );
