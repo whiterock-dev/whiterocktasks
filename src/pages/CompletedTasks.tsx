@@ -242,9 +242,7 @@ export const CompletedTasks: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* ── Description ── */}
-            <p className="text-slate-500 text-sm">
-                {isManager ? 'All tasks that have been successfully completed or permanently closed.' : 'Tasks you have successfully completed or permanently closed.'}
-            </p>
+
 
             {/* ── Filter Bar ── */}
             <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

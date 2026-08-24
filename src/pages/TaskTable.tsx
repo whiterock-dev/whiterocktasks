@@ -745,7 +745,9 @@ export const TaskTable: React.FC = () => {
     if (isRecurringMasterTask(t)) return;
     if (completing) return;
     const closePermanently = opts?.closePermanently === true;
-    if (!closePermanently && !remark?.trim()) return;
+    if (!closePermanently && remark !== undefined) {
+      remark = remark.trim();
+    }
 
     setCompleting(true);
     try {
@@ -1130,7 +1132,7 @@ export const TaskTable: React.FC = () => {
   if (isAuditor) {
     return (
       <div>
-        <p className="text-slate-500 text-sm mb-4">Tasks pending audit. Mark as audited, bogus, or unclear.</p>
+
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
@@ -1277,7 +1279,7 @@ export const TaskTable: React.FC = () => {
   if (isVerifier) {
     return (
       <div>
-        <p className="text-slate-500 text-sm mb-4">Tasks awaiting your verification. Approve or reject after review.</p>
+
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
@@ -1450,13 +1452,7 @@ export const TaskTable: React.FC = () => {
 
   return (
     <div>
-      <p className="text-slate-500 text-sm mb-4">
-        {isMyTasksRoute
-          ? 'View and manage only your own tasks.'
-          : isManager
-            ? 'Manage and track all tasks across the team.'
-            : 'View and manage your assigned tasks.'}
-      </p>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Today</p>

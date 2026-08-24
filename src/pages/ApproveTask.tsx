@@ -300,9 +300,7 @@ export const ApproveTask: React.FC = () => {
 
     return (
         <div>
-            <p className="text-slate-500 text-sm mb-4">
-                Tasks awaiting your verification. Approve or reject after review.
-            </p>
+
             <div className="relative z-40 flex flex-col sm:flex-row sm:items-center gap-4 mb-3">
                 <div className="w-full sm:w-[250px]">
                     <SearchableUserSelect

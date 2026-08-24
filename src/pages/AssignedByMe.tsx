@@ -133,8 +133,7 @@ export const AssignedByMe: React.FC = () => {
   const [completing, setCompleting] = useState(false);
   const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: TaskSortKey; direction: 'asc' | 'desc' } | null>(null);
-  const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
-  const [summaryLoading, setSummaryLoading] = useState(false);
+
   const [exportingCsv, setExportingCsv] = useState(false);
   const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -559,49 +558,7 @@ export const AssignedByMe: React.FC = () => {
     return () => clearTimeout(timer);
   }, [midnightRefreshKey]);
 
-  // 1. Calculate Summary for Client-Side Views (My Tasks) instantly without fetching
-  useEffect(() => {
-    if (!isSelfTasksView || !nameFilteredRows) return;
-    
-    const today = getTodayIST();
-    let dueToday = 0;
-    let overdue = 0;
-    
-    nameFilteredRows.forEach(t => {
-      if (t.status === 'completed' || t.status === 'cancelled' || t.status === 'closed_permanently') return;
-      if (t.due_date === today) dueToday++;
-      else if (t.due_date && t.due_date < today) overdue++;
-    });
-    
-    setTaskSummary({ dueToday, overdue });
-  }, [nameFilteredRows, isSelfTasksView]);
 
-  // 2. Fetch Global Summary for Server-Side Views (Main Table) natively
-  useEffect(() => {
-    if (isAuditor || isVerifier || isSelfTasksView) return;
-    let isMounted = true;
-
-    const loadSummary = async () => {
-      setSummaryLoading(true);
-      try {
-        const filters = getActiveFilters();
-        const counts = await api.getTaskSummaryCounts(filters);
-        
-        if (isMounted) setTaskSummary(counts);
-      } catch (err) {
-        console.error('Failed to load task summary:', err);
-        if (isMounted) setTaskSummary({ dueToday: 0, overdue: 0 });
-      } finally {
-        if (isMounted) setSummaryLoading(false);
-      }
-    };
-
-    loadSummary();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [getActiveFilters, isAuditor, isSelfTasksView, isVerifier]);
 
   const filteredTasks = applyNameFilters(tasks);
 
@@ -736,7 +693,9 @@ export const AssignedByMe: React.FC = () => {
     if (isRecurringMasterTask(t)) return;
     if (completing) return;
     const closePermanently = opts?.closePermanently === true;
-    if (!closePermanently && !remark?.trim()) return;
+    if (!closePermanently && remark !== undefined) {
+      remark = remark.trim();
+    }
 
     setCompleting(true);
     try {
@@ -1124,7 +1083,7 @@ export const AssignedByMe: React.FC = () => {
   if (isAuditor) {
     return (
       <div>
-        <p className="text-slate-500 text-sm mb-4">Tasks pending audit. Mark as audited, bogus, or unclear.</p>
+
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
@@ -1240,7 +1199,7 @@ export const AssignedByMe: React.FC = () => {
   if (isVerifier) {
     return (
       <div>
-        <p className="text-slate-500 text-sm mb-4">Tasks awaiting your verification. Approve or reject after review.</p>
+
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           {paginationControls}
         </div>
@@ -1397,23 +1356,8 @@ export const AssignedByMe: React.FC = () => {
 
   return (
     <div>
-      <p className="text-slate-500 text-sm mb-4">
-        View and manage tasks you have assigned to others.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due Today</p>
-          <p className="mt-1 text-2xl font-bold text-slate-800">
-            {summaryLoading ? '...' : taskSummary.dueToday}
-          </p>
-        </div>
-        <div className="rounded-xl border border-red-200 bg-red-50/70 px-4 py-3 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Overdue (Till Today)</p>
-          <p className="mt-1 text-2xl font-bold text-red-700">
-            {summaryLoading ? '...' : taskSummary.overdue}
-          </p>
-        </div>
-      </div>
+
+
 
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
         {isSelfTasksView ? (
