@@ -243,7 +243,9 @@ export const RedZone: React.FC = () => {
       if (!user) return;
       if (completing) return;
       const closePermanently = opts?.closePermanently === true;
-      if (!closePermanently && !remark?.trim()) return;
+      if (!closePermanently && remark !== undefined) {
+        remark = remark.trim();
+      }
       
       setCompleting(true);
 
@@ -369,7 +371,6 @@ export const RedZone: React.FC = () => {
 
   return (
     <div>
-      <p className="text-red-800/80 text-sm mb-4">Tasks that are past their due date and not yet completed.</p>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         {isDoer ? (
           <div className="flex flex-wrap items-center gap-3">

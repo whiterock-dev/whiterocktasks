@@ -23,7 +23,6 @@ import {
   Users,
   Repeat,
   LifeBuoy,
-  ShieldCheck,
 } from 'lucide-react';
 
 const roleLabels: Record<UserRole, string> = {
@@ -88,7 +87,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [overdueCount, setOverdueCount] = useState(0);
   const [helpPendingCount, setHelpPendingCount] = useState(0);
   const [totalOverdueCount, setTotalOverdueCount] = useState(0);
-  const [taskTableCount, setTaskTableCount] = useState(0);
   const [myTasksCount, setMyTasksCount] = useState(0);
 
   if (!user) return <>{children}</>;
@@ -115,7 +113,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
         const openStatuses: any[] = ['pending', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
 
-        const [approvalCount, overdueTasksCount, helpCount, taskTableAll, myTasksAll, ...rest] = await Promise.all([
+        const [approvalCount, overdueTasksCount, helpCount, _, myTasksAll, ...rest] = await Promise.all([
           api.getTasksCount({
             status: 'pending_verification',
             verifierId: user.id,
@@ -150,7 +148,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           setPendingApprovalCount(approvalCount);
           setOverdueCount(overdueTasksCount);
           setHelpPendingCount(helpCount);
-          setTaskTableCount(isManagerOrOwner ? taskTableAll : myTasksAll);
           setMyTasksCount(myTasksAll);
           if (isManagerOrOwner && rest.length > 0) {
             setTotalOverdueCount(rest[0]);
@@ -170,7 +167,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     };
   }, [user?.id]);
 
-  const isDoer = user.role === UserRole.DOER;
+
   const isManagerOrOwnerRole = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
@@ -201,18 +198,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task', section: 'Tasks' as const }] : []),
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' as const },
         ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue', section: 'Tasks' as const }] : []),
-        { to: '/kpi', icon: BarChart3, label: 'KPI', section: 'Tasks' as const },
-        { to: '/tasks', icon: Table2, label: 'Task Table', section: 'Tasks' as const },
+        { to: '/reports', icon: BarChart3, label: 'Reports', section: 'Tasks' as const },
         ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks', section: 'Tasks' as const }] : []),
-        ...(isDoer ? [{ to: '/assigned-by-me', icon: ClipboardList, label: 'Assigned By Me', section: 'Tasks' as const }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks', section: 'Tasks' as const },
-        { to: '/completed-tasks', icon: CheckCircle2, label: 'Completed Tasks', section: 'Tasks' as const },
         { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard', section: 'Help' as const },
         ...(isOwner ? [
           { to: '/help/logs', icon: Table2, label: 'Help Logs', section: 'Help' as const },
           { to: '/help/kpi', icon: BarChart3, label: 'Help MIS', section: 'Help' as const }
         ] : []),
-        ...(isManager ? [{ to: '/verifier-pending', icon: ShieldCheck, label: 'Verification Pending', section: 'Tasks' as const }] : []),
         ...(isManager ? [{ to: '/members', icon: Users, label: 'Members', section: 'Settings' as const }] : []),
         { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' as const },
       ];
@@ -249,11 +242,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                             ? overdueCount
                             : item.to === '/help'
                               ? helpPendingCount
-                              : item.to === '/tasks'
-                                ? taskTableCount
-                                : item.to === '/my-tasks'
-                                  ? myTasksCount
-                                  : undefined
+                              : item.to === '/my-tasks'
+                                ? myTasksCount
+                                : undefined
                       }
                       secondBadgeCount={
                         item.to === '/redzone' && isManagerOrOwnerRole
@@ -332,11 +323,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                                 ? overdueCount
                                 : item.to === '/help'
                                   ? helpPendingCount
-                                  : item.to === '/tasks'
-                                    ? taskTableCount
-                                    : item.to === '/my-tasks'
-                                      ? myTasksCount
-                                      : undefined
+                                  : item.to === '/my-tasks'
+                                    ? myTasksCount
+                                    : undefined
                           }
                           secondBadgeCount={
                             item.to === '/redzone' && isManagerOrOwnerRole
@@ -385,7 +374,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               '/assign': 'Assign Task',
               '/removal': 'Removal Request',
               '/redzone': 'Overdue',
-              '/kpi': 'KPI Dashboard',
+              '/reports': 'Reports',
               '/my-tasks': 'My Tasks',
               '/assigned-by-me': 'Assigned By Me',
               '/members': 'Members',

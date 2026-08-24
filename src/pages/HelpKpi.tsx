@@ -48,9 +48,6 @@ export const HelpKpi: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="text-sm text-slate-500">
-          Doer-wise unresolved count, Helper-wise rating and resolution performance.
-        </div>
         <Button variant="secondary" onClick={load} disabled={loading}>Refresh</Button>
       </div>
 

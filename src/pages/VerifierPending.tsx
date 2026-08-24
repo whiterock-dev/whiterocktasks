@@ -42,7 +42,7 @@ export const VerifierPending: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <p className="text-slate-500 text-sm -mt-4">Members assigned as verifier with tasks not yet verified or approved</p>
+
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />

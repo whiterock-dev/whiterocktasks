@@ -204,9 +204,6 @@ export const HelpTickets: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="text-sm text-slate-500">
-          Assigned to you and created by you. Rate tickets from the details after they are resolved.
-        </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={load} disabled={loading}>
             <span className="inline-flex items-center gap-2"><RefreshCw size={16} /> Refresh</span>

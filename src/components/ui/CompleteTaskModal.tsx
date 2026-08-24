@@ -157,7 +157,7 @@ export const CompleteTaskModal: React.FC<CompleteTaskModalProps> = ({
     }
   };
 
-  const isCompleteDisabled = completing || uploading || !doerRemark.trim() || 
+  const isCompleteDisabled = completing || uploading || 
     (task.attachment_required && task.attachment_type === 'text' && !attachmentText.trim()) ||
     (task.attachment_required && task.attachment_type !== 'text' && attachmentFiles.length === 0 && !attachmentUrl.trim());
 
@@ -186,15 +186,14 @@ export const CompleteTaskModal: React.FC<CompleteTaskModalProps> = ({
         
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Doer's Remark <span className="text-red-600">*</span>
+            Doer's Remark (Optional)
           </label>
           <textarea
             value={doerRemark}
             onChange={(e) => setDoerRemark(e.target.value)}
-            placeholder="Add a completion remark (required)..."
+            placeholder="Add an optional completion remark..."
             rows={3}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
             disabled={completing || uploading}
           />
         </div>

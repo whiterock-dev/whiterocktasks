@@ -19,13 +19,12 @@ export const Kpi: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
-  const [allData, setAllData] = useState<{ tasks: Task[], holidays: any[], absences: any[], users: User[] } | null>(null);
-  const [dateFilter, setDateFilter] = useState('all_time');
+  const [staticData, setStaticData] = useState<{ holidays: any[], absences: any[], users: User[] } | null>(null);
+  const [dateFilter, setDateFilter] = useState('last_30_days');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [cityFilter, setCityFilter] = useState('');
 
-  const isOwner = user?.role === UserRole.OWNER;
   const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
 
@@ -36,24 +35,22 @@ export const Kpi: React.FC = () => {
   }, [isDoer, isOwnerOrManager, sortConfig]);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      const [tasks, holidays, absences, users] = await Promise.all([
-        api.getTasks(),
+    const fetchStatic = async () => {
+      const [holidays, absences, users] = await Promise.all([
         api.getHolidays(),
         api.getAbsences(),
         api.getUsers(),
       ]);
-      setAllData({ tasks, holidays, absences, users });
+      setStaticData({ holidays, absences, users });
     };
-    fetchAll();
+    fetchStatic();
   }, []);
 
   useEffect(() => {
-    if (!allData) return;
+    if (!staticData) return;
 
-    let filteredTasks = allData.tasks;
-
-    if (dateFilter !== 'all_time') {
+    const fetchTasks = async () => {
+      setLoading(true);
       const today = new Date();
       let startStr = '';
       let endStr = '';
@@ -88,18 +85,32 @@ export const Kpi: React.FC = () => {
         endStr = customEnd;
       }
 
-      if (startStr && endStr) {
-        filteredTasks = filteredTasks.filter(t => t.due_date >= startStr && t.due_date <= endStr);
-      } else if (startStr) {
-        filteredTasks = filteredTasks.filter(t => t.due_date >= startStr);
-      } else if (endStr) {
-        filteredTasks = filteredTasks.filter(t => t.due_date <= endStr);
-      }
-    }
+      let filteredTasks: Task[] = [];
+      const assignedToFilter = !isOwnerOrManager ? user?.id : undefined;
 
-    setMemberRows(computeKpiByMember(filteredTasks, allData.holidays, allData.absences, allData.users));
-    setLoading(false);
-  }, [allData, dateFilter, customStart, customEnd, isOwner, user?.id]);
+      try {
+        if (dateFilter === 'all_time') {
+          filteredTasks = await api.getTasks({ assignedTo: assignedToFilter });
+        } else if (startStr && endStr) {
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, dueDateTo: endStr });
+        } else if (startStr) {
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr });
+        } else if (endStr) {
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr });
+        }
+
+        setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users));
+      } catch (err) {
+        console.error('Failed to load KPI tasks:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (dateFilter !== 'custom' || (customStart && customEnd)) {
+      fetchTasks();
+    }
+  }, [staticData, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id]);
 
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
@@ -156,7 +167,7 @@ export const Kpi: React.FC = () => {
             {isOwnerOrManager && (() => {
               const cities = Array.from(
                 new Set(
-                  (allData?.users || [])
+                  (staticData?.users || [])
                     .map((u) => (u.city || '').trim())
                     .filter((c) => c.length > 0)
                 )

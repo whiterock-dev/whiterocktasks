@@ -523,7 +523,7 @@ export const RecurringTasks: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* ── Description ── */}
-      <p className="text-slate-500 text-sm">All active recurring tasks and their schedules.</p>
+
 
       {/* ── Filter Bar ── */}
       <div className="relative z-40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
