@@ -11,7 +11,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
-import { HelpTicket, HelpTicketStatus, User } from '../types';
+import { HelpTicket, HelpTicketStatus, User, UserRole } from '../types';
+import { HelpLogs } from './HelpLogs';
+import { HelpKpi } from './HelpKpi';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const StatusPill = ({ status }: { status: HelpTicketStatus }) => {
   const styles: Record<HelpTicketStatus, string> = {
@@ -52,6 +55,9 @@ const Stars = ({ value }: { value: number }) => {
 
 export const HelpTickets: React.FC = () => {
   const { user } = useAuth();
+  const isOwner = user?.role === UserRole.OWNER;
+  const [mainTab, setMainTab] = useState<'tickets' | 'logs' | 'mis'>('tickets');
+  
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<HelpTicket[]>([]);
   const [activeTab, setActiveTab] = useState<'assigned' | 'created'>('assigned');
@@ -203,16 +209,45 @@ export const HelpTickets: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={load} disabled={loading}>
-            <span className="inline-flex items-center gap-2"><RefreshCw size={16} /> Refresh</span>
-          </Button>
-          <Link to="/help/new">
-            <Button><span className="inline-flex items-center gap-2"><ClipboardList size={16} /> Create Ticket</span></Button>
-          </Link>
+      {isOwner && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2 overflow-x-auto">
+          <div className="flex gap-2 min-w-max">
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${mainTab === 'tickets' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setMainTab('tickets')}
+            >
+              Tickets
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${mainTab === 'logs' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setMainTab('logs')}
+            >
+              Logs
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${mainTab === 'mis' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setMainTab('mis')}
+            >
+              MIS
+            </button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {mainTab === 'logs' && <HelpLogs />}
+      {mainTab === 'mis' && <HelpKpi />}
+      {mainTab === 'tickets' && (
+        <>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={load} disabled={loading}>
+                <span className="inline-flex items-center gap-2"><RefreshCw size={16} /> Refresh</span>
+              </Button>
+              <Link to="/help/new">
+                <Button><span className="inline-flex items-center gap-2"><ClipboardList size={16} /> Create Ticket</span></Button>
+              </Link>
+            </div>
+          </div>
 
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">{error}</div>}
 
@@ -279,7 +314,7 @@ export const HelpTickets: React.FC = () => {
                         <span className="text-slate-500">({t.rating.stars}/5)</span>
                       </span>
                     ) : null}
-                    <span className="text-slate-400 text-xs hidden md:inline">{new Date(t.created_at).toLocaleString()}</span>
+                    <span className="text-slate-400 text-xs hidden md:inline">{formatDateDDMMYYYY(t.created_at, { includeTime: true })}</span>
                     {canEditDelete && (
                       <>
                         <Button
@@ -508,6 +543,8 @@ export const HelpTickets: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

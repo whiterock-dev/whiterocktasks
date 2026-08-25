@@ -20,7 +20,6 @@ import {
   LogOut,
   Menu,
   X,
-  Users,
   Repeat,
   LifeBuoy,
 } from 'lucide-react';
@@ -171,7 +170,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const isManagerOrOwnerRole = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const isAuditor = user.role === UserRole.AUDITOR;
   const isVerifier = user.role === UserRole.VERIFIER;
-  const isOwner = user.role === UserRole.OWNER;
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const canAssign = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
   const canSeeRedZone = [UserRole.OWNER, UserRole.MANAGER, UserRole.DOER].includes(user.role);
@@ -197,17 +195,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       : [
         ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task', section: 'Tasks' as const }] : []),
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' as const },
-        ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue', section: 'Tasks' as const }] : []),
+        ...(canSeeRedZone && !isManagerOrOwnerRole ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue', section: 'Tasks' as const }] : []),
         ...(user.role === UserRole.DOER ? [{ to: '/tasks', icon: Table2, label: 'Task Table', section: 'Tasks' as const }] : []),
         { to: '/reports', icon: BarChart3, label: 'Reports', section: 'Tasks' as const },
         ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks', section: 'Tasks' as const }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks', section: 'Tasks' as const },
         { to: '/help', icon: LifeBuoy, label: 'Helper Dashboard', section: 'Help' as const },
-        ...(isOwner ? [
-          { to: '/help/logs', icon: Table2, label: 'Help Logs', section: 'Help' as const },
-          { to: '/help/kpi', icon: BarChart3, label: 'Help MIS', section: 'Help' as const }
-        ] : []),
-        ...(isManager ? [{ to: '/members', icon: Users, label: 'Members', section: 'Settings' as const }] : []),
         { to: '/settings', icon: Settings, label: 'Settings', section: 'Settings' as const },
       ];
 

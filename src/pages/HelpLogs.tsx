@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
 import { HelpTicket, HelpTicketStatus, User, UserRole } from '../types';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 const minutesBetween = (aIso: string, bIso: string): number | null => {
   const a = new Date(aIso).getTime();
@@ -215,7 +216,7 @@ export const HelpLogs: React.FC = () => {
                 const mins = t.resolved_at ? minutesBetween(t.created_at, t.resolved_at) : null;
                 return (
                   <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50 align-top">
-                    <td className="py-3 px-4 text-slate-700 whitespace-nowrap">{new Date(t.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 px-4 text-slate-700 whitespace-nowrap">{formatDateDDMMYYYY(t.created_at, { includeTime: false })}</td>
                     <td className="py-3 px-4">
                       <div className="font-medium text-slate-800">{t.title}</div>
                       <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">{t.description}</div>
