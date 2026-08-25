@@ -12,6 +12,7 @@ import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Calendar, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { formatDateDDMMYYYY } from '../lib/utils';
+import { Members } from './Members';
 
 const LIST_MAX_HEIGHT = 'min(20rem, 50vh)';
 
@@ -29,6 +30,7 @@ export const Settings: React.FC = () => {
   const [absencesOpen, setAbsencesOpen] = useState(true);
   const [showAddHolidayModal, setShowAddHolidayModal] = useState(false);
   const [showMarkAbsentModal, setShowMarkAbsentModal] = useState(false);
+  const [mainTab, setMainTab] = useState<'general' | 'members'>('general');
 
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
 
@@ -89,8 +91,31 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl">
-      <section className="space-y-6">
+    <div className="space-y-4">
+      {isManager && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2 overflow-x-auto mb-6">
+          <div className="flex gap-2 min-w-max">
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${mainTab === 'general' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setMainTab('general')}
+            >
+              General
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${mainTab === 'members' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+              onClick={() => setMainTab('members')}
+            >
+              Members
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'members' && isManager ? (
+        <Members />
+      ) : (
+      <>
+      <section className="max-w-4xl space-y-6">
         <div className="card overflow-hidden">
           <div className="bg-slate-50/80 border-b border-slate-200 px-6 py-4">
             <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
@@ -297,6 +322,8 @@ export const Settings: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { CompletedTasks } from './CompletedTasks';
 import { TaskTable } from './TaskTable';
 import { VerifierPending } from './VerifierPending';
 import { AssignedByMe } from './AssignedByMe';
+import { RedZone } from './RedZone';
 
 export const Reports: React.FC = () => {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export const Reports: React.FC = () => {
   const [taskTableCount, setTaskTableCount] = useState(0);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [assignedByMeCount, setAssignedByMeCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -26,17 +28,27 @@ export const Reports: React.FC = () => {
         const openStatuses: TaskStatus[] = ['pending', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
 
         if (user.role === UserRole.OWNER || user.role === UserRole.MANAGER) {
-          const [approval, taskTableAll] = await Promise.all([
+          const today = new Date();
+          const yesterday = new Date(today);
+          yesterday.setDate(today.getDate() - 1);
+          const dueDateTo = yesterday.toISOString().split('T')[0];
+
+          const [approval, taskTableAll, overdue] = await Promise.all([
             api.getTasksCount({
               status: 'pending_verification',
               verifierId: user.id,
             }),
             api.getTasksCount({
               statusIn: openStatuses,
+            }),
+            api.getTasksCount({
+              statusIn: ['pending', 'overdue', 'pending_verification', 'correction_required'],
+              dueDateTo,
             })
           ]);
           setPendingApprovalCount(approval);
           setTaskTableCount(taskTableAll);
+          setOverdueCount(overdue);
         } else {
           // For DOER and others
           const assignedByMe = await api.getTasksCount({
@@ -63,6 +75,7 @@ export const Reports: React.FC = () => {
     ? [
       { id: 'verification', label: `Verification Pending ${pendingApprovalCount > 0 ? `(${pendingApprovalCount})` : ''}` },
       { id: 'tasktable', label: `Task Table ${taskTableCount > 0 ? `(${taskTableCount})` : ''}` },
+      { id: 'overdue', label: `Overdue ${overdueCount > 0 ? `(${overdueCount})` : ''}` },
       { id: 'kpi', label: 'KPI' },
       { id: 'completed', label: 'Completed Tasks' },
     ]
@@ -101,9 +114,10 @@ export const Reports: React.FC = () => {
       <div className="mt-4">
         {activeTab === 'kpi' && <Kpi />}
         {activeTab === 'completed' && <CompletedTasks />}
-        {activeTab === 'verification' && <VerifierPending />}
-        {activeTab === 'tasktable' && <TaskTable />}
-        {activeTab === 'assignedbyme' && <AssignedByMe />}
+        { activeTab === 'verification' && <VerifierPending /> }
+        { activeTab === 'tasktable' && <TaskTable /> }
+        { activeTab === 'overdue' && <RedZone /> }
+        { activeTab === 'assignedbyme' && <AssignedByMe /> }
       </div>
     </div>
   );
