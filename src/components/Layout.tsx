@@ -198,6 +198,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ...(canAssign ? [{ to: '/assign', icon: ClipboardList, label: 'Assign Task', section: 'Tasks' as const }] : []),
         { to: '/approve', icon: ClipboardCheck, label: 'Approve Task', section: 'Tasks' as const },
         ...(canSeeRedZone ? [{ to: '/redzone', icon: AlertTriangle, label: 'Overdue', section: 'Tasks' as const }] : []),
+        ...(user.role === UserRole.DOER ? [{ to: '/tasks', icon: Table2, label: 'Task Table', section: 'Tasks' as const }] : []),
         { to: '/reports', icon: BarChart3, label: 'Reports', section: 'Tasks' as const },
         ...(isManager ? [{ to: '/my-tasks', icon: ClipboardList, label: 'My Tasks', section: 'Tasks' as const }] : []),
         { to: '/recurring-tasks', icon: Repeat, label: 'Recurring Tasks', section: 'Tasks' as const },
