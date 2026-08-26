@@ -13,7 +13,6 @@ import { HelpKpi } from './pages/HelpKpi';
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
 const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const AssignTask = lazy(() => import('./pages/AssignTask').then((m) => ({ default: m.AssignTask })));
-const RemovalRequest = lazy(() => import('./pages/RemovalRequest').then((m) => ({ default: m.RemovalRequest })));
 const RedZone = lazy(() => import('./pages/RedZone').then((m) => ({ default: m.RedZone })));
 const Kpi = lazy(() => import('./pages/Kpi').then((m) => ({ default: m.Kpi })));
 const TaskTable = lazy(() => import('./pages/TaskTable').then((m) => ({ default: m.TaskTable })));
