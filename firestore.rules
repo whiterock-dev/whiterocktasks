@@ -7,6 +7,9 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read, write: if true;
     }
+    match /tasks_archive/{taskId} {
+      allow read: if true;
+    }
     match /holidays/{docId} {
       allow read, write: if true;
     }

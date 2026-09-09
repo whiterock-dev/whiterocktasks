@@ -25,6 +25,7 @@ export const CompletedTasks: React.FC = () => {
     const [rowsPerPage, setRowsPerPage] = useState<number>(ROWS_PER_PAGE_OPTIONS[0]);
     const [dateFilter, setDateFilter] = useState('last_7_days');
     const [showRecurringInstances, setShowRecurringInstances] = useState(false);
+    const [includeArchived, setIncludeArchived] = useState(false);
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
     const [assignedToFilter, setAssignedToFilter] = useState('');
@@ -146,8 +147,8 @@ export const CompletedTasks: React.FC = () => {
                 let allRows: Task[] = [];
                 if (!isManager) {
                     const [toTasks, byTasks] = await Promise.all([
-                        api.getAllTasksByFilters({ sortBy: 'completed_at', sortDirection: 'desc', ...filters, assignedTo: user?.id || '' }),
-                        api.getAllTasksByFilters({ sortBy: 'completed_at', sortDirection: 'desc', ...filters, assignedBy: user?.id || '' })
+                        api.getAllTasksByFilters({ sortBy: 'completed_at', sortDirection: 'desc', ...filters, assignedTo: user?.id || '', includeArchived }),
+                        api.getAllTasksByFilters({ sortBy: 'completed_at', sortDirection: 'desc', ...filters, assignedBy: user?.id || '', includeArchived })
                     ]);
                     const taskMap = new Map<string, Task>();
                     toTasks.forEach(t => taskMap.set(t.id, t));
@@ -157,6 +158,7 @@ export const CompletedTasks: React.FC = () => {
                     allRows = await api.getAllTasksByFilters({
                         sortBy: 'completed_at',
                         sortDirection: 'desc',
+                        includeArchived,
                         ...filters,
                     });
                 }
@@ -177,7 +179,7 @@ export const CompletedTasks: React.FC = () => {
         return () => {
             isActive = false;
         };
-    }, [isManager, isDoer, user?.id, dateFilter, customStart, customEnd, assignedToFilter, assignedByFilter]);
+    }, [isManager, isDoer, user?.id, dateFilter, customStart, customEnd, assignedToFilter, assignedByFilter, includeArchived]);
 
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
@@ -255,6 +257,16 @@ export const CompletedTasks: React.FC = () => {
                             className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
                         />
                         <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Include Recurring Tasks</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-sm hover:bg-slate-50 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={includeArchived}
+                            onChange={(e) => setIncludeArchived(e.target.checked)}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Include Archived</span>
                     </label>
 
                     <select

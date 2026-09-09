@@ -57,6 +57,7 @@ export const isoToTimestamp = (iso: string) => Timestamp.fromDate(new Date(iso))
 
 export const COLLECTIONS = {
   TASKS: 'tasks',
+  TASKS_ARCHIVE: 'tasks_archive',
   USERS: 'tasks_users',
   HOLIDAYS: 'holidays',
   ABSENCES: 'absences',

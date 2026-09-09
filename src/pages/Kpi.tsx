@@ -24,6 +24,7 @@ export const Kpi: React.FC = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [cityFilter, setCityFilter] = useState('');
+  const [includeArchived, setIncludeArchived] = useState(true);
 
   const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
   const isDoer = user?.role === UserRole.DOER;
@@ -90,13 +91,13 @@ export const Kpi: React.FC = () => {
 
       try {
         if (dateFilter === 'all_time') {
-          filteredTasks = await api.getTasks({ assignedTo: assignedToFilter });
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, includeArchived });
         } else if (startStr && endStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, dueDateTo: endStr });
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, dueDateTo: endStr, includeArchived });
         } else if (startStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr });
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, includeArchived });
         } else if (endStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr });
+          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr, includeArchived });
         }
 
         setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users));
@@ -110,7 +111,7 @@ export const Kpi: React.FC = () => {
     if (dateFilter !== 'custom' || (customStart && customEnd)) {
       fetchTasks();
     }
-  }, [staticData, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id]);
+  }, [staticData, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id, includeArchived]);
 
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
@@ -185,6 +186,16 @@ export const Kpi: React.FC = () => {
                 </select>
               ) : null;
             })()}
+
+            <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-slate-300 shadow-sm hover:bg-slate-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(e) => setIncludeArchived(e.target.checked)}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Include Archived</span>
+            </label>
 
             <select
               value={dateFilter}

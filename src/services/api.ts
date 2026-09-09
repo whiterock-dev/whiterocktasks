@@ -458,6 +458,7 @@ export const api = {
     sortBy?: 'updated_at' | 'start_date' | 'due_date' | 'completed_at';
     sortDirection?: 'asc' | 'desc';
     includeRecurringMasters?: boolean;
+    collectionOverride?: string;
   }): Promise<{ tasks: Task[]; lastDoc: QueryDocumentSnapshot | null }> => {
     const {
       pageSize,
@@ -473,8 +474,9 @@ export const api = {
       sortBy,
       sortDirection,
       includeRecurringMasters = false,
+      collectionOverride,
     } = opts;
-    const tasksRef = collection(db, COLLECTIONS.TASKS);
+    const tasksRef = collection(db, collectionOverride || COLLECTIONS.TASKS);
     const hasDueDateRange = Boolean(dueDateFrom || dueDateTo);
     const effectiveSortBy = sortBy || (hasDueDateRange ? 'due_date' : 'updated_at');
     const effectiveSortDirection = sortDirection || 'desc';
@@ -613,28 +615,40 @@ export const api = {
     sortDirection?: 'asc' | 'desc';
     batchSize?: number;
     includeRecurringMasters?: boolean;
+    includeArchived?: boolean;
   }): Promise<Task[]> => {
-    const { batchSize = 1000, ...filters } = opts;
-    const allTasks: Task[] = [];
-    let cursor: QueryDocumentSnapshot | null | undefined = undefined;
+    const { batchSize = 1000, includeArchived, ...filters } = opts;
+    
+    const fetchForCollection = async (col: string) => {
+      const allTasks: Task[] = [];
+      let cursor: QueryDocumentSnapshot | null | undefined = undefined;
 
-    for (let i = 0; i < 200; i += 1) {
-      const { tasks, lastDoc } = await api.getTasksPaginated({
-        pageSize: batchSize,
-        startAfterDoc: cursor,
-        ...filters,
-      });
+      for (let i = 0; i < 200; i += 1) {
+        const { tasks, lastDoc } = await api.getTasksPaginated({
+          pageSize: batchSize,
+          startAfterDoc: cursor,
+          collectionOverride: col,
+          ...filters,
+        });
 
-      allTasks.push(...tasks);
+        allTasks.push(...tasks);
 
-      if (!lastDoc || tasks.length === 0) {
-        break;
+        if (!lastDoc || tasks.length === 0) {
+          break;
+        }
+
+        cursor = lastDoc;
       }
+      return allTasks;
+    };
 
-      cursor = lastDoc;
+    const mainTasks = await fetchForCollection(COLLECTIONS.TASKS);
+    if (includeArchived) {
+      const archivedTasks = await fetchForCollection(COLLECTIONS.TASKS_ARCHIVE);
+      return [...mainTasks, ...archivedTasks];
     }
 
-    return allTasks;
+    return mainTasks;
   },
 
   /** Count tasks matching filters (for pagination totals). */
@@ -649,11 +663,6 @@ export const api = {
     verifierId?: string;
     includeRecurringMasters?: boolean;
   }): Promise<number> => {
-    if (!filters?.includeRecurringMasters) {
-      const all = await api.getAllTasksByFilters({ ...(filters || {}), includeRecurringMasters: false, batchSize: 1000 });
-      return all.length;
-    }
-
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const constraints: any[] = [];
     if (filters?.assignedTo) constraints.push(where('assigned_to_id', '==', filters.assignedTo));
@@ -666,7 +675,25 @@ export const api = {
     if (filters?.dueDateTo) constraints.push(where('due_date', '<=', filters.dueDateTo));
     const q = constraints.length > 0 ? query(tasksRef, ...constraints) : query(tasksRef);
     const countSnap = await getCountFromServer(q);
-    return countSnap.data().count;
+    let total = countSnap.data().count;
+
+    if (!filters?.includeRecurringMasters) {
+      try {
+        // Subtract the master templates natively to ensure the count matches the UI rows
+        const mastersQuery = query(tasksRef, ...constraints, where('is_recurring_master', '==', true));
+        const mastersSnap = await getCountFromServer(mastersQuery);
+        total -= mastersSnap.data().count;
+      } catch (err) {
+        // If a specific composite index is missing for the master subtraction, 
+        // fallback to downloading just the matching tasks to filter them (slower but keeps UI accurate)
+        // Note: we only fallback if absolutely necessary to preserve the count accuracy
+        console.warn('Missing composite index for master subtraction, falling back to manual count.');
+        const all = await api.getAllTasksByFilters({ ...(filters || {}), includeRecurringMasters: false, batchSize: 1000 });
+        return all.length;
+      }
+    }
+
+    return total;
   },
 
   /** Optimized Native Count for Task Summary Dashboard */
@@ -1297,13 +1324,13 @@ export const api = {
   },
 
   getHelpTicketsCount: async (filters?: { helperId?: string; statusIn?: HelpTicketStatus[] }): Promise<number> => {
-    const all = await api.getHelpTickets({
-      helperId: filters?.helperId,
-      statusIn: filters?.statusIn,
-      sortBy: 'date',
-      sortDirection: 'desc',
-    });
-    return all.length;
+    const ref = collection(db, COLLECTIONS.HELP_TICKETS);
+    const constraints: any[] = [];
+    if (filters?.helperId) constraints.push(where('helper_id', '==', filters.helperId));
+    if (filters?.statusIn && filters.statusIn.length > 0) constraints.push(where('status', 'in', filters.statusIn));
+    const q = constraints.length > 0 ? query(ref, ...constraints) : query(ref);
+    const snap = await getCountFromServer(q);
+    return snap.data().count;
   },
 
   computeHelpKpis: async (opts?: { dateFrom?: string; dateTo?: string }): Promise<{
