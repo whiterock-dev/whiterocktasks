@@ -793,3 +793,90 @@ export const onTaskAuditSopUpdated = onDocumentUpdated(
     }
   }
 );
+
+/**
+ * Scheduled function: runs weekly every Sunday at 3:00 AM IST.
+ * Archives tasks that have been closed ('completed', 'cancelled', 'closed_permanently')
+ * more than 90 days ago.
+ */
+export const archiveOldTasks = onSchedule(
+  {
+    schedule: '0 3 * * 0',
+    timeZone: 'Asia/Kolkata',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+  },
+  async () => {
+    const db = admin.firestore();
+    const TASKS_COLLECTION = COLLECTIONS.TASKS;
+    const ARCHIVE_COLLECTION = 'tasks_archive';
+
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const ninetyDaysAgoISO = ninetyDaysAgo.toISOString();
+
+    const targetStatuses = ['completed', 'cancelled', 'closed_permanently'];
+
+    try {
+      const timestampTarget = admin.firestore.Timestamp.fromDate(ninetyDaysAgo);
+      const stringTarget = ninetyDaysAgoISO;
+
+      logger.info(`Starting task archive job. Archiving tasks older than ${ninetyDaysAgoISO}`);
+
+      // Query 1: For tasks stored with Firestore Timestamps
+      const snapshotTimestamps = await db
+        .collection(TASKS_COLLECTION)
+        .where('updated_at', '<', timestampTarget)
+        .get();
+
+      // Query 2: For tasks stored with ISO strings
+      const snapshotStrings = await db
+        .collection(TASKS_COLLECTION)
+        .where('updated_at', '<', stringTarget)
+        .get();
+
+      const allDocs = [...snapshotTimestamps.docs, ...snapshotStrings.docs];
+
+      if (allDocs.length === 0) {
+        logger.info('No tasks found to archive.');
+        return;
+      }
+
+      logger.info(`Found ${allDocs.length} tasks older than 90 days. Starting batch process...`);
+
+      let batch = db.batch();
+      let operationCount = 0;
+      let totalArchived = 0;
+
+      for (const doc of allDocs) {
+        const taskData = doc.data();
+        if (!targetStatuses.includes(taskData.status)) continue;
+        const archiveRef = db.collection(ARCHIVE_COLLECTION).doc(doc.id);
+        const originalRef = db.collection(TASKS_COLLECTION).doc(doc.id);
+
+        batch.set(archiveRef, taskData);
+        batch.delete(originalRef);
+        operationCount += 2;
+
+        // Commit in chunks of 500 operations (250 tasks)
+        if (operationCount >= 500) {
+          await batch.commit();
+          totalArchived += (operationCount / 2);
+          logger.info(`Committed batch. Total archived so far: ${totalArchived}`);
+          batch = db.batch();
+          operationCount = 0;
+        }
+      }
+
+      // Commit any remaining operations
+      if (operationCount > 0) {
+        await batch.commit();
+        totalArchived += (operationCount / 2);
+      }
+
+      logger.info(`Archive job completed successfully. Total tasks archived: ${totalArchived}`);
+    } catch (error) {
+      logger.error('Error during task archiving:', error);
+    }
+  }
+);
