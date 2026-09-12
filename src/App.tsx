@@ -8,7 +8,6 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
-import { HelpKpi } from './pages/HelpKpi';
 
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
 const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
@@ -25,6 +24,7 @@ const RecurringTasks = lazy(() => import('./pages/RecurringTasks').then((m) => (
 const AssignedByMe = lazy(() => import('./pages/AssignedByMe').then((m) => ({ default: m.AssignedByMe })));
 const HelpTickets = lazy(() => import('./pages/HelpTickets').then((m) => ({ default: m.HelpTickets })));
 const HelpNew = lazy(() => import('./pages/HelpNew').then((m) => ({ default: m.HelpNew })));
+const HelpKpi = lazy(() => import('./pages/HelpKpi').then((m) => ({ default: m.HelpKpi })));
 const HelpLogs = lazy(() => import('./pages/HelpLogs').then((m) => ({ default: m.HelpLogs })));
 const VerifierPending = lazy(() => import('./pages/VerifierPending').then((m) => ({ default: m.VerifierPending })));
 
