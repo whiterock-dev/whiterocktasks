@@ -82,11 +82,22 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
-  const [overdueCount, setOverdueCount] = useState(0);
-  const [helpPendingCount, setHelpPendingCount] = useState(0);
-  const [totalOverdueCount, setTotalOverdueCount] = useState(0);
-  const [myTasksCount, setMyTasksCount] = useState(0);
+
+  // --- Sidebar counts: initialise from sessionStorage cache for instant render ---
+  const getSidebarCache = (userId: string) => {
+    try {
+      const raw = sessionStorage.getItem(`wr_sidebar_${userId}`);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return null;
+  };
+
+  const cached = user?.id ? getSidebarCache(user.id) : null;
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(cached?.pendingApprovalCount ?? 0);
+  const [overdueCount, setOverdueCount] = useState(cached?.overdueCount ?? 0);
+  const [helpPendingCount, setHelpPendingCount] = useState(cached?.helpPendingCount ?? 0);
+  const [totalOverdueCount, setTotalOverdueCount] = useState(cached?.totalOverdueCount ?? 0);
+  const [myTasksCount, setMyTasksCount] = useState(cached?.myTasksCount ?? 0);
 
   if (!user) return <>{children}</>;
 
@@ -144,13 +155,24 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ]);
 
         if (isMounted) {
-          setPendingApprovalCount(approvalCount);
-          setOverdueCount(overdueTasksCount);
-          setHelpPendingCount(helpCount);
-          setMyTasksCount(myTasksAll);
+          const newCounts = {
+            pendingApprovalCount: approvalCount,
+            overdueCount: overdueTasksCount,
+            helpPendingCount: helpCount,
+            myTasksCount: myTasksAll,
+            totalOverdueCount: isManagerOrOwner && rest.length > 0 ? rest[0] : 0,
+          };
+          setPendingApprovalCount(newCounts.pendingApprovalCount);
+          setOverdueCount(newCounts.overdueCount);
+          setHelpPendingCount(newCounts.helpPendingCount);
+          setMyTasksCount(newCounts.myTasksCount);
           if (isManagerOrOwner && rest.length > 0) {
             setTotalOverdueCount(rest[0]);
           }
+          // Persist to sessionStorage so next mount is instant
+          try {
+            sessionStorage.setItem(`wr_sidebar_${user.id}`, JSON.stringify(newCounts));
+          } catch { /* ignore quota errors */ }
         }
       } catch (err) {
         console.error('Failed to load sidebar counts:', err);
@@ -158,7 +180,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     };
 
     loadSidebarCounts();
-    const intervalId = window.setInterval(loadSidebarCounts, 60000);
+    const intervalId = window.setInterval(loadSidebarCounts, 240000); // 4 minutes
 
     return () => {
       isMounted = false;

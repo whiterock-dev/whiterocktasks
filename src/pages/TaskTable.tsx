@@ -402,6 +402,25 @@ export const TaskTable: React.FC = () => {
     return formatDateDDMMYYYY(value, { includeTime, emptyValue });
   }, []);
 
+  // --- Task cache helpers (stale-while-revalidate) ---
+  const getTaskCacheKey = useCallback(() => {
+    return `wr_tasks_${user?.id}_${location.pathname}`;
+  }, [user?.id, location.pathname]);
+
+  const loadCachedTasks = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem(getTaskCacheKey());
+      if (raw) return JSON.parse(raw) as Task[];
+    } catch { /* ignore */ }
+    return null;
+  }, [getTaskCacheKey]);
+
+  const saveCachedTasks = useCallback((rows: Task[]) => {
+    try {
+      sessionStorage.setItem(getTaskCacheKey(), JSON.stringify(rows.slice(0, 200)));
+    } catch { /* ignore quota errors */ }
+  }, [getTaskCacheKey]);
+
   const loadPage = useCallback(
     async (startAfterDoc: QueryDocumentSnapshot | null | undefined, pageNumber: number) => {
       try {
@@ -418,6 +437,10 @@ export const TaskTable: React.FC = () => {
         setLastDoc(nextLastDoc);
         setCurrentPage(pageNumber);
         setHasNextPage(nextLastDoc != null);
+        // Cache first page for instant render on next visit
+        if (pageNumber === 1 && nextTasks.length > 0) {
+          saveCachedTasks(nextTasks);
+        }
       } catch (err) {
         console.error('Failed to load tasks:', err);
         setTasks([]);
@@ -428,7 +451,7 @@ export const TaskTable: React.FC = () => {
         setLoading(false);
       }
     },
-    [getActiveFilters, hydrateRecurringLookup, rowsPerPage, sortConfig]
+    [getActiveFilters, hydrateRecurringLookup, rowsPerPage, saveCachedTasks, sortConfig]
   );
 
   const setClientPageFromRows = useCallback(
@@ -450,6 +473,7 @@ export const TaskTable: React.FC = () => {
     api.getHolidays().then(setHolidays).catch(console.error);
   }, []);
 
+
   useEffect(() => {
     let isActive = true;
 
@@ -459,7 +483,16 @@ export const TaskTable: React.FC = () => {
       const filters = getActiveFilters();
 
       if (isSelfTasksView) {
-        setLoading(true);
+        // Show stale cache instantly, fetch fresh in background
+        const stale = loadCachedTasks();
+        if (stale && stale.length > 0) {
+          setNameFilteredRows(stale);
+          setTotalResults(stale.length);
+          setClientPageFromRows(stale, 1);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
         try {
           const doerRows = await getDoerVisibleRows();
           if (!isActive) return;
@@ -472,6 +505,7 @@ export const TaskTable: React.FC = () => {
           setNameFilteredRows(filteredRows);
           setTotalResults(filteredRows.length);
           setClientPageFromRows(filteredRows, 1);
+          saveCachedTasks(filteredRows);
         } catch (err) {
           if (!isActive) return;
           console.error('Failed to load tasks:', err);
@@ -515,7 +549,19 @@ export const TaskTable: React.FC = () => {
         return;
       }
 
-      setLoading(true);
+      // Paginated path (Manager/Owner on /tasks)
+      // Show stale cached page instantly, then fetch fresh data in background
+      const stale = loadCachedTasks();
+      if (stale && stale.length > 0) {
+        setNameFilteredRows(null);
+        setTasks(stale);
+        setTotalResults(stale.length);
+        setCurrentPage(1);
+        setHasNextPage(false);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
       try {
         if (!isActive) return;
         setNameFilteredRows(null);
@@ -523,6 +569,8 @@ export const TaskTable: React.FC = () => {
         if (!isActive) return;
         setTotalResults(count);
         await loadPage(undefined, 1);
+        // After fresh page loaded, update cache with current tasks state
+        // (loadPage sets tasks via setTasks — we capture them on next render)
       } catch (err) {
         if (!isActive) return;
         console.error('Failed to load tasks:', err);
@@ -545,6 +593,8 @@ export const TaskTable: React.FC = () => {
     getActiveFilters,
     getDoerVisibleRows,
     isSelfTasksView,
+    loadCachedTasks,
+    saveCachedTasks,
     loadPage,
     midnightRefreshKey,
     refreshToken,

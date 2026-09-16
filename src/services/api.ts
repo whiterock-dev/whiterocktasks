@@ -230,6 +230,7 @@ export const api = {
     assignedToCount: number;
     assignedByCount: number;
     totalUniqueTasksCount: number;
+    masterRecurringTasksCount: number;
   }> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const [assignedToSnap, assignedBySnap] = await Promise.all([
@@ -237,34 +238,67 @@ export const api = {
       getDocs(query(tasksRef, where('assigned_by_id', '==', userId))),
     ]);
     const uniqueIds = new Set<string>();
-    assignedToSnap.forEach((d) => uniqueIds.add(d.id));
-    assignedBySnap.forEach((d) => uniqueIds.add(d.id));
+    
+    let visibleAssignedToCount = 0;
+    let visibleAssignedByCount = 0;
+    const visibleUniqueIds = new Set<string>();
+
+    const isVisible = (data: any) => {
+      return !data.is_recurring_master && data.status !== 'cancelled' && data.status !== 'closed_permanently';
+    };
+
+    assignedToSnap.forEach((d) => {
+      uniqueIds.add(d.id);
+      if (isVisible(d.data())) {
+        visibleAssignedToCount++;
+        visibleUniqueIds.add(d.id);
+      }
+    });
+    
+    assignedBySnap.forEach((d) => {
+      uniqueIds.add(d.id);
+      if (isVisible(d.data())) {
+        visibleAssignedByCount++;
+        visibleUniqueIds.add(d.id);
+      }
+    });
 
     // Also include child instances of any master tasks
-    const masterIds: string[] = [];
+    const allMasterIds: string[] = [];
+    const activeMasterIds: string[] = [];
     const map = new Map<string, any>();
     assignedToSnap.forEach((d) => map.set(d.id, d.data()));
     assignedBySnap.forEach((d) => map.set(d.id, d.data()));
     map.forEach((data, id) => {
       if (data.is_recurring_master === true || (data.recurring && data.recurring !== 'none')) {
-        masterIds.push(id);
+        allMasterIds.push(id);
+        if (data.status !== 'completed' && data.status !== 'cancelled' && data.status !== 'closed_permanently') {
+          activeMasterIds.push(id);
+        }
       }
     });
-    if (masterIds.length > 0) {
-      const childSnaps = await Promise.all(
-        masterIds.map((mid) =>
-          getDocs(query(tasksRef, where('parent_task_id', '==', mid)))
-        )
-      );
+    if (allMasterIds.length > 0) {
+      const childSnapsPromises = [];
+      for (let i = 0; i < allMasterIds.length; i += 30) {
+        const chunk = allMasterIds.slice(i, i + 30);
+        childSnapsPromises.push(getDocs(query(tasksRef, where('parent_task_id', 'in', chunk))));
+      }
+      const childSnaps = await Promise.all(childSnapsPromises);
       childSnaps.forEach((snap) => {
-        snap.forEach((d) => uniqueIds.add(d.id));
+        snap.forEach((d) => {
+          uniqueIds.add(d.id);
+          if (isVisible(d.data())) {
+            visibleUniqueIds.add(d.id);
+          }
+        });
       });
     }
 
     return {
-      assignedToCount: assignedToSnap.size,
-      assignedByCount: assignedBySnap.size,
-      totalUniqueTasksCount: uniqueIds.size,
+      assignedToCount: visibleAssignedToCount,
+      assignedByCount: visibleAssignedByCount,
+      totalUniqueTasksCount: visibleUniqueIds.size,
+      masterRecurringTasksCount: activeMasterIds.length,
     };
   },
 
@@ -280,18 +314,28 @@ export const api = {
     assignedBySnap.forEach((d) => tasksToDelete.set(d.id, d.data()));
 
     // Include child instances of any master tasks
-    const masterIds: string[] = [];
+    const allMasterIds: string[] = [];
+    const activeMasterIds: string[] = [];
     tasksToDelete.forEach((data, id) => {
       if (data.is_recurring_master === true || (data.recurring && data.recurring !== 'none')) {
-        masterIds.push(id);
+        allMasterIds.push(id);
+        if (data.status !== 'completed' && data.status !== 'cancelled' && data.status !== 'closed_permanently') {
+          activeMasterIds.push(id);
+        }
       }
     });
-    if (masterIds.length > 0) {
-      const childSnaps = await Promise.all(
-        masterIds.map((mid) =>
-          getDocs(query(tasksRef, where('parent_task_id', '==', mid)))
-        )
-      );
+
+    if (activeMasterIds.length > 0) {
+      throw new Error('Cannot delete user. They have active recurring tasks that must be shifted to another employee first.');
+    }
+
+    if (allMasterIds.length > 0) {
+      const childSnapsPromises = [];
+      for (let i = 0; i < allMasterIds.length; i += 30) {
+        const chunk = allMasterIds.slice(i, i + 30);
+        childSnapsPromises.push(getDocs(query(tasksRef, where('parent_task_id', 'in', chunk))));
+      }
+      const childSnaps = await Promise.all(childSnapsPromises);
       childSnaps.forEach((snap) => {
         snap.forEach((d) => tasksToDelete.set(d.id, d.data()));
       });
