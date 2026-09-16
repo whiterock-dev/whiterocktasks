@@ -10,7 +10,7 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react';
 import Papa from 'papaparse';
 
 const ROWS_PER_PAGE_OPTIONS = [50, 100] as const;
@@ -58,6 +58,7 @@ export const Members: React.FC = () => {
     assignedToCount: number;
     assignedByCount: number;
     totalUniqueTasksCount: number;
+    masterRecurringTasksCount: number;
   } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -112,6 +113,7 @@ export const Members: React.FC = () => {
         assignedToCount: impact.assignedToCount,
         assignedByCount: impact.assignedByCount,
         totalUniqueTasksCount: impact.totalUniqueTasksCount,
+        masterRecurringTasksCount: impact.masterRecurringTasksCount,
       });
     } catch (err) {
       console.error('Failed to load deletion impact:', err);
@@ -654,36 +656,60 @@ export const Members: React.FC = () => {
             <p className="text-slate-600 text-sm mb-4">
               Are you sure you want to permanently delete <strong>{deleteModal.user.name}</strong> ({ROLE_LABELS[deleteModal.user.role]})?
             </p>
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm space-y-1 mb-4">
-              <div className="flex justify-between text-slate-600">
-                <span>Tasks assigned to member:</span>
-                <span className="font-semibold text-slate-800">{deleteModal.assignedToCount}</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Tasks assigned by member:</span>
-                <span className="font-semibold text-slate-800">{deleteModal.assignedByCount}</span>
-              </div>
-              <div className="border-t border-slate-200 pt-1 mt-1 flex justify-between text-slate-700 font-medium">
-                <span>Total tasks to be deleted:</span>
-                <span className="font-bold text-red-600">{deleteModal.totalUniqueTasksCount}</span>
-              </div>
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 mb-6">
-              <strong>Warning:</strong> Deleting this member will permanently remove all <strong>{deleteModal.totalUniqueTasksCount}</strong> task(s) from the database across all types of tasks. This cannot be undone.
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setDeleteModal(null)} disabled={deleteSubmitting}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleDeleteConfirm}
-                disabled={deleteSubmitting}
-                isLoading={deleteSubmitting}
-              >
-                Delete member &amp; tasks
-              </Button>
-            </div>
+
+            {deleteModal.masterRecurringTasksCount > 0 ? (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-red-800 mb-1">Cannot Delete User</h3>
+                      <p className="text-sm text-red-700">
+                        This user has <strong>{deleteModal.masterRecurringTasksCount}</strong> active recurring task(s) where they are either the doer or creator.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="secondary" onClick={() => setDeleteModal(null)}>
+                    Close
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm space-y-1 mb-4">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tasks assigned to member:</span>
+                    <span className="font-semibold text-slate-800">{deleteModal.assignedToCount}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tasks assigned by member:</span>
+                    <span className="font-semibold text-slate-800">{deleteModal.assignedByCount}</span>
+                  </div>
+                  <div className="border-t border-slate-200 pt-1 mt-1 flex justify-between text-slate-700 font-medium">
+                    <span>Total tasks to be deleted:</span>
+                    <span className="font-bold text-red-600">{deleteModal.totalUniqueTasksCount}</span>
+                  </div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 mb-6">
+                  <strong>Warning:</strong> Deleting this member will permanently remove all <strong>{deleteModal.totalUniqueTasksCount}</strong> task(s) from the database across all types of tasks. This cannot be undone.
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="secondary" onClick={() => setDeleteModal(null)} disabled={deleteSubmitting}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={handleDeleteConfirm}
+                    disabled={deleteSubmitting}
+                    isLoading={deleteSubmitting}
+                  >
+                    Delete member &amp; tasks
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
