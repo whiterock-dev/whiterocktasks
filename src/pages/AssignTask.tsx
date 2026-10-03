@@ -222,7 +222,7 @@ export const AssignTask: React.FC = () => {
 
         if (assignee.phone) {
           try {
-            const link = `https://tasks.whiterock.co.in/#/tasks`;
+            const link = `${window.location.origin}/#/tasks`;
             const formattedDate = created.due_date.split('-').reverse().join('-');
             const desc = created.description || 'N/A';
 

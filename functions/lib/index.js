@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.archiveOldTasks = exports.onTaskAuditSopUpdated = exports.transitionScheduledTasks = exports.backfillRecurringTaskInstances = exports.generateRecurringTasksDaily = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
+exports.archiveOldTasks = exports.onTaskAuditSopUpdated = exports.transitionScheduledTasks = exports.generateRecurringTasksDaily = exports.sendDailyReminder = exports.sendDailyDueDateReminders = void 0;
 /*
  * Developed by Nerdshouse Technologies LLP — https://nerdshouse.com
  * © 2026 WhiteRock (Royal Enterprise). All rights reserved.
@@ -9,7 +9,6 @@ exports.archiveOldTasks = exports.onTaskAuditSopUpdated = exports.transitionSche
  */
 const admin = require("firebase-admin");
 const firebase_functions_1 = require("firebase-functions");
-const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firestore_1 = require("firebase-functions/v2/firestore");
 admin.initializeApp();
@@ -171,12 +170,9 @@ exports.sendDailyDueDateReminders = (0, scheduler_1.onSchedule)({
         return;
     }
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl = process.env.ELEVENZA_API_URL ||
-        'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE ||
-        'https://whiterock.co.in/';
-    const templateOverdueCount = process.env.ELEVENZA_TEMPLATE_OVERDUE_COUNT ||
-        'overdue_count';
+    const apiUrl = process.env.ELEVENZA_API_URL;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE;
+    const templateOverdueCount = process.env.ELEVENZA_TEMPLATE_OVERDUE_COUNT;
     if (!authToken) {
         firebase_functions_1.logger.warn('ELEVENZA_AUTH_TOKEN secret not set; skipping daily overdue reminders');
         return;
@@ -245,13 +241,10 @@ exports.sendDailyReminder = (0, scheduler_1.onSchedule)({
     memory: '256MiB',
 }, async () => {
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl = process.env.ELEVENZA_API_URL ||
-        'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE ||
-        'https://whiterock.co.in/';
-    const templateDailyReminder = process.env.ELEVENZA_TEMPLATE_DAILY_REMINDER ||
-        'daily_reminder';
-    if (!templateDailyReminder.trim()) {
+    const apiUrl = process.env.ELEVENZA_API_URL;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE;
+    const templateDailyReminder = process.env.ELEVENZA_TEMPLATE_DAILY_REMINDER;
+    if (!templateDailyReminder || !templateDailyReminder.trim()) {
         firebase_functions_1.logger.warn('ELEVENZA_TEMPLATE_DAILY_REMINDER is empty; skipping daily reminders');
         return;
     }
@@ -473,32 +466,6 @@ exports.generateRecurringTasksDaily = (0, scheduler_1.onSchedule)({
     return;
 });
 /**
- * One-time or manual backfill for missed recurring periods.
- * POST with header x-backfill-secret matching BACKFILL_SECRET env var.
- * Query/body dryRun=true logs what would be created without writing.
- */
-exports.backfillRecurringTaskInstances = (0, https_1.onRequest)({
-    timeoutSeconds: 540,
-    memory: '512MiB',
-}, async (req, res) => {
-    const secret = process.env.BACKFILL_SECRET;
-    if (!secret || req.headers['x-backfill-secret'] !== secret) {
-        res.status(403).json({ error: 'Forbidden' });
-        return;
-    }
-    const dryRun = req.query.dryRun === 'true' ||
-        req.body?.dryRun === true ||
-        req.body?.dryRun === 'true';
-    try {
-        const result = await runGenerateRecurringTasks(admin.firestore(), { dryRun });
-        res.json(result);
-    }
-    catch (err) {
-        firebase_functions_1.logger.error('backfillRecurringTaskInstances failed:', err);
-        res.status(500).json({ error: String(err) });
-    }
-});
-/**
  * Scheduled function: runs daily at 00:05 AM IST (18:05 UTC).
  * Finds all tasks with status 'scheduled' whose start_date has arrived (start_date <= today).
  * Updates them to 'pending' so they become visible to assignees in the task tables.
@@ -603,12 +570,9 @@ exports.onTaskAuditSopUpdated = (0, firestore_1.onDocumentUpdated)({
         }
     }
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl = process.env.ELEVENZA_API_URL ||
-        'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE ||
-        'https://whiterock.co.in/';
-    const templateAuditSopUpdate = process.env.ELEVENZA_TEMPLATE_AUDIT_SOP_UPDATE ||
-        'audit_sop_update';
+    const apiUrl = process.env.ELEVENZA_API_URL;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE;
+    const templateAuditSopUpdate = process.env.ELEVENZA_TEMPLATE_AUDIT_SOP_UPDATE;
     if (!authToken) {
         firebase_functions_1.logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping audit SOP notification');
         return;

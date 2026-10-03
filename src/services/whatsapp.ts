@@ -6,8 +6,8 @@
  */
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_11ZA_API_URL || 'https://app.11za.in/apis/template/sendTemplate';
-const ORIGIN_WEBSITE = import.meta.env.VITE_11ZA_ORIGIN_WEBSITE || 'https://whiterock.co.in/';
+const API_URL = import.meta.env.VITE_11ZA_API_URL;
+const ORIGIN_WEBSITE = import.meta.env.VITE_11ZA_ORIGIN_WEBSITE;
 const AUTH_TOKEN = import.meta.env.VITE_11ZA_AUTH_TOKEN;
 
 export interface SendTaskAssignmentParams {
