@@ -6,7 +6,6 @@
  */
 import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
-import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 
@@ -198,15 +197,9 @@ export const sendDailyDueDateReminders = onSchedule(
     }
 
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl =
-      process.env.ELEVENZA_API_URL ||
-      'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite =
-      process.env.ELEVENZA_ORIGIN_WEBSITE ||
-      'https://whiterock.co.in/';
-    const templateOverdueCount =
-      process.env.ELEVENZA_TEMPLATE_OVERDUE_COUNT ||
-      'overdue_count';
+    const apiUrl = process.env.ELEVENZA_API_URL as string;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE as string;
+    const templateOverdueCount = process.env.ELEVENZA_TEMPLATE_OVERDUE_COUNT as string;
 
     if (!authToken) {
       logger.warn('ELEVENZA_AUTH_TOKEN secret not set; skipping daily overdue reminders');
@@ -287,17 +280,11 @@ export const sendDailyReminder = onSchedule(
   },
   async () => {
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl =
-      process.env.ELEVENZA_API_URL ||
-      'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite =
-      process.env.ELEVENZA_ORIGIN_WEBSITE ||
-      'https://whiterock.co.in/';
-    const templateDailyReminder =
-      process.env.ELEVENZA_TEMPLATE_DAILY_REMINDER ||
-      'daily_reminder';
+    const apiUrl = process.env.ELEVENZA_API_URL as string;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE as string;
+    const templateDailyReminder = process.env.ELEVENZA_TEMPLATE_DAILY_REMINDER as string;
 
-    if (!templateDailyReminder.trim()) {
+    if (!templateDailyReminder || !templateDailyReminder.trim()) {
       logger.warn('ELEVENZA_TEMPLATE_DAILY_REMINDER is empty; skipping daily reminders');
       return;
     }
@@ -582,37 +569,7 @@ export const generateRecurringTasksDaily = onSchedule(
   }
 );
 
-/**
- * One-time or manual backfill for missed recurring periods.
- * POST with header x-backfill-secret matching BACKFILL_SECRET env var.
- * Query/body dryRun=true logs what would be created without writing.
- */
-export const backfillRecurringTaskInstances = onRequest(
-  {
-    timeoutSeconds: 540,
-    memory: '512MiB',
-  },
-  async (req, res) => {
-    const secret = process.env.BACKFILL_SECRET;
-    if (!secret || req.headers['x-backfill-secret'] !== secret) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
 
-    const dryRun =
-      req.query.dryRun === 'true' ||
-      req.body?.dryRun === true ||
-      req.body?.dryRun === 'true';
-
-    try {
-      const result = await runGenerateRecurringTasks(admin.firestore(), { dryRun });
-      res.json(result);
-    } catch (err) {
-      logger.error('backfillRecurringTaskInstances failed:', err);
-      res.status(500).json({ error: String(err) });
-    }
-  }
-);
 
 /**
  * Scheduled function: runs daily at 00:05 AM IST (18:05 UTC).
@@ -741,15 +698,9 @@ export const onTaskAuditSopUpdated = onDocumentUpdated(
     }
 
     const authToken = process.env.ELEVENZA_AUTH_TOKEN;
-    const apiUrl =
-      process.env.ELEVENZA_API_URL ||
-      'https://app.11za.in/apis/template/sendTemplate';
-    const originWebsite =
-      process.env.ELEVENZA_ORIGIN_WEBSITE ||
-      'https://whiterock.co.in/';
-    const templateAuditSopUpdate =
-      process.env.ELEVENZA_TEMPLATE_AUDIT_SOP_UPDATE ||
-      'audit_sop_update';
+    const apiUrl = process.env.ELEVENZA_API_URL as string;
+    const originWebsite = process.env.ELEVENZA_ORIGIN_WEBSITE as string;
+    const templateAuditSopUpdate = process.env.ELEVENZA_TEMPLATE_AUDIT_SOP_UPDATE as string;
 
     if (!authToken) {
       logger.warn('ELEVENZA_AUTH_TOKEN not set; skipping audit SOP notification');

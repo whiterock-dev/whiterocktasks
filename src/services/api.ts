@@ -1462,8 +1462,7 @@ export const api = {
     task: { title: string; due_date: string; description: string; link: string; assigned_by_name: string }
   ): Promise<void> => {
     const { whatsappService } = await import('./whatsapp');
-    const templateName =
-      import.meta.env.VITE_11ZA_TEMPLATE_TASK_ASSIGNMENT || 'task_assignment';
+    const templateName = import.meta.env.VITE_11ZA_TEMPLATE_TASK_ASSIGNMENT;
 
     await whatsappService.sendTaskAssignment({
       phone,
