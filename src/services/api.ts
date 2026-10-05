@@ -229,13 +229,15 @@ export const api = {
   getMemberDeletionImpact: async (userId: string): Promise<{
     assignedToCount: number;
     assignedByCount: number;
+    verifierCount: number;
     totalUniqueTasksCount: number;
     masterRecurringTasksCount: number;
   }> => {
     const tasksRef = collection(db, COLLECTIONS.TASKS);
-    const [assignedToSnap, assignedBySnap] = await Promise.all([
+    const [assignedToSnap, assignedBySnap, verifierSnap] = await Promise.all([
       getDocs(query(tasksRef, where('assigned_to_id', '==', userId))),
       getDocs(query(tasksRef, where('assigned_by_id', '==', userId))),
+      getDocs(query(tasksRef, where('verifier_id', '==', userId))),
     ]);
     const uniqueIds = new Set<string>();
     
@@ -243,21 +245,20 @@ export const api = {
     let visibleAssignedByCount = 0;
     const visibleUniqueIds = new Set<string>();
 
-    const isVisible = (data: any) => {
-      return !data.is_recurring_master && data.status !== 'cancelled' && data.status !== 'closed_permanently';
-    };
+    const ACTIVE_STATUSES = new Set(['pending', 'scheduled', 'pending_verification', 'correction_required']);
+    const isActiveTask = (data: any) => !data.is_recurring_master && ACTIVE_STATUSES.has(data.status);
 
     assignedToSnap.forEach((d) => {
       uniqueIds.add(d.id);
-      if (isVisible(d.data())) {
+      if (isActiveTask(d.data())) {
         visibleAssignedToCount++;
         visibleUniqueIds.add(d.id);
       }
     });
-    
+
     assignedBySnap.forEach((d) => {
       uniqueIds.add(d.id);
-      if (isVisible(d.data())) {
+      if (isActiveTask(d.data())) {
         visibleAssignedByCount++;
         visibleUniqueIds.add(d.id);
       }
@@ -287,33 +288,65 @@ export const api = {
       childSnaps.forEach((snap) => {
         snap.forEach((d) => {
           uniqueIds.add(d.id);
-          if (isVisible(d.data())) {
+          if (isActiveTask(d.data())) {
             visibleUniqueIds.add(d.id);
           }
         });
       });
     }
 
+    let visibleVerifierCount = 0;
+    verifierSnap.forEach((d) => {
+      if (!uniqueIds.has(d.id) && isActiveTask(d.data())) {
+        visibleVerifierCount++;
+      }
+    });
+
     return {
       assignedToCount: visibleAssignedToCount,
       assignedByCount: visibleAssignedByCount,
+      verifierCount: visibleVerifierCount,
       totalUniqueTasksCount: visibleUniqueIds.size,
       masterRecurringTasksCount: activeMasterIds.length,
     };
   },
 
   deleteUserAndAssociatedTasks: async (userId: string): Promise<{ deletedTasksCount: number }> => {
+    const BATCH_SIZE = 450;
     const tasksRef = collection(db, COLLECTIONS.TASKS);
     const [assignedToSnap, assignedBySnap] = await Promise.all([
       getDocs(query(tasksRef, where('assigned_to_id', '==', userId))),
       getDocs(query(tasksRef, where('assigned_by_id', '==', userId))),
     ]);
 
+    // Separate completed tasks (preserve) from everything else (delete)
     const tasksToDelete = new Map<string, any>();
-    assignedToSnap.forEach((d) => tasksToDelete.set(d.id, d.data()));
-    assignedBySnap.forEach((d) => tasksToDelete.set(d.id, d.data()));
+    const completedAssignedTo = new Map<string, any>(); // preserve: mark assignee_deleted
+    const assignedToIds = new Set<string>();
 
-    // Include child instances of any master tasks
+    assignedToSnap.forEach((d) => {
+      assignedToIds.add(d.id);
+      const data = d.data();
+      if (data.status === 'completed') {
+        completedAssignedTo.set(d.id, data);
+      } else {
+        tasksToDelete.set(d.id, data);
+      }
+    });
+
+    // For assigned_by tasks not already handled via assigned_to
+    const completedAssignedByOnly = new Map<string, any>(); // preserve: clear assigned_by_id
+    assignedBySnap.forEach((d) => {
+      if (assignedToIds.has(d.id)) return;
+      const data = d.data();
+      if (data.status === 'completed') {
+        completedAssignedByOnly.set(d.id, data);
+      } else {
+        tasksToDelete.set(d.id, data);
+      }
+    });
+
+    // Include child instances of any non-completed master tasks being deleted
     const allMasterIds: string[] = [];
     const activeMasterIds: string[] = [];
     tasksToDelete.forEach((data, id) => {
@@ -337,14 +370,18 @@ export const api = {
       }
       const childSnaps = await Promise.all(childSnapsPromises);
       childSnaps.forEach((snap) => {
-        snap.forEach((d) => tasksToDelete.set(d.id, d.data()));
+        snap.forEach((d) => {
+          if (!completedAssignedTo.has(d.id) && !completedAssignedByOnly.has(d.id)) {
+            tasksToDelete.set(d.id, d.data());
+          }
+        });
       });
     }
 
-    // Safeguard other doers: unlink verifier_id == userId on tasks belonging to other members
+    // Unlink verifier on tasks belonging to other members
     const verifierSnap = await getDocs(query(tasksRef, where('verifier_id', '==', userId)));
     for (const docSnap of verifierSnap.docs) {
-      if (!tasksToDelete.has(docSnap.id)) {
+      if (!tasksToDelete.has(docSnap.id) && !completedAssignedTo.has(docSnap.id) && !completedAssignedByOnly.has(docSnap.id)) {
         const data = docSnap.data();
         const updates: Record<string, any> = {
           verification_required: false,
@@ -358,6 +395,39 @@ export const api = {
         }
         await updateDoc(doc(db, COLLECTIONS.TASKS, docSnap.id), updates);
       }
+    }
+
+    // Preserve completed assigned_to tasks: mark assignee_deleted = true
+    const completedToIds = Array.from(completedAssignedTo.keys());
+    for (let i = 0; i < completedToIds.length; i += BATCH_SIZE) {
+      const chunk = completedToIds.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        const updates: Record<string, any> = {
+          assignee_deleted: true,
+          updated_at: isoToTimestamp(new Date().toISOString()),
+        };
+        // If the deleted user also assigned this task to themselves, clear that link too
+        if (completedAssignedTo.get(id)?.assigned_by_id === userId) {
+          updates.assigned_by_id = '';
+        }
+        batch.update(doc(db, COLLECTIONS.TASKS, id), updates);
+      });
+      await batch.commit();
+    }
+
+    // Preserve completed assigned_by-only tasks: clear assigned_by_id, keep name for history
+    const completedByIds = Array.from(completedAssignedByOnly.keys());
+    for (let i = 0; i < completedByIds.length; i += BATCH_SIZE) {
+      const chunk = completedByIds.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        batch.update(doc(db, COLLECTIONS.TASKS, id), {
+          assigned_by_id: '',
+          updated_at: isoToTimestamp(new Date().toISOString()),
+        });
+      });
+      await batch.commit();
     }
 
     // Clean up removal requests
@@ -376,16 +446,13 @@ export const api = {
     );
     const absIdsToDelete = absSnap.docs.map((d) => d.id);
 
-    // Batch delete all matched documents in chunks of 450
+    // Batch delete non-completed tasks + removal requests + absences + user doc
     const taskDocRefs = Array.from(tasksToDelete.keys()).map((id) => doc(db, COLLECTIONS.TASKS, id));
-    const reqDocRefs = Array.from(reqIdsToDelete).map((id) =>
-      doc(db, COLLECTIONS.REMOVAL_REQUESTS, id)
-    );
+    const reqDocRefs = Array.from(reqIdsToDelete).map((id) => doc(db, COLLECTIONS.REMOVAL_REQUESTS, id));
     const absDocRefs = absIdsToDelete.map((id) => doc(db, COLLECTIONS.ABSENCES, id));
     const userDocRef = doc(db, COLLECTIONS.USERS, userId);
 
     const allRefsToDelete = [...taskDocRefs, ...reqDocRefs, ...absDocRefs, userDocRef];
-    const BATCH_SIZE = 450;
     for (let i = 0; i < allRefsToDelete.length; i += BATCH_SIZE) {
       const chunk = allRefsToDelete.slice(i, i + BATCH_SIZE);
       const batch = writeBatch(db);
@@ -394,6 +461,30 @@ export const api = {
     }
 
     return { deletedTasksCount: tasksToDelete.size };
+  },
+
+  transferAssignedByTasks: async (fromUserId: string, toUserId: string, toUserName: string): Promise<{ transferredCount: number }> => {
+    const ACTIVE_STATUSES = new Set(['pending', 'scheduled', 'pending_verification', 'correction_required']);
+    const tasksRef = collection(db, COLLECTIONS.TASKS);
+    const snap = await getDocs(query(tasksRef, where('assigned_by_id', '==', fromUserId)));
+    if (snap.empty) return { transferredCount: 0 };
+    // Only transfer active tasks — completed tasks are preserved in place by deleteUserAndAssociatedTasks
+    const activeDocs = snap.docs.filter((d) => ACTIVE_STATUSES.has(d.data().status));
+    if (activeDocs.length === 0) return { transferredCount: 0 };
+    const BATCH_SIZE = 450;
+    for (let i = 0; i < activeDocs.length; i += BATCH_SIZE) {
+      const chunk = activeDocs.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((docSnap) => {
+        batch.update(doc(db, COLLECTIONS.TASKS, docSnap.id), {
+          assigned_by_id: toUserId,
+          assigned_by_name: toUserName,
+          updated_at: isoToTimestamp(new Date().toISOString()),
+        });
+      });
+      await batch.commit();
+    }
+    return { transferredCount: activeDocs.length };
   },
 
   updateUser: async (id: string, updates: Partial<User>): Promise<void> => {

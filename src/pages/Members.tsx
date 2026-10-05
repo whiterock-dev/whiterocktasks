@@ -10,7 +10,8 @@ import { api } from '../services/api';
 import { User, UserRole } from '../types';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } from 'lucide-react';
+import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
+import { UserPlus, Trash2, Pencil, Upload, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 
 const ROWS_PER_PAGE_OPTIONS = [50, 100] as const;
@@ -57,11 +58,16 @@ export const Members: React.FC = () => {
     user: User;
     assignedToCount: number;
     assignedByCount: number;
+    verifierCount: number;
     totalUniqueTasksCount: number;
     masterRecurringTasksCount: number;
   } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<User | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [transferToUserId, setTransferToUserId] = useState('');
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [recheckLoading, setRecheckLoading] = useState(false);
 
   const isOwner = user?.role === UserRole.OWNER;
   const isManager = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
@@ -105,6 +111,7 @@ export const Members: React.FC = () => {
   };
 
   const handleDeleteMember = async (u: User) => {
+    setPendingDeleteUser(u);
     setDeleteLoading(true);
     try {
       const impact = await api.getMemberDeletionImpact(u.id);
@@ -112,6 +119,7 @@ export const Members: React.FC = () => {
         user: u,
         assignedToCount: impact.assignedToCount,
         assignedByCount: impact.assignedByCount,
+        verifierCount: impact.verifierCount,
         totalUniqueTasksCount: impact.totalUniqueTasksCount,
         masterRecurringTasksCount: impact.masterRecurringTasksCount,
       });
@@ -120,6 +128,7 @@ export const Members: React.FC = () => {
       alert('Failed to check tasks for this member.');
     } finally {
       setDeleteLoading(false);
+      setPendingDeleteUser(null);
     }
   };
 
@@ -137,6 +146,51 @@ export const Members: React.FC = () => {
       alert('Failed to delete member and tasks.');
     } finally {
       setDeleteSubmitting(false);
+    }
+  };
+
+  const handleRecheckImpact = async () => {
+    if (!deleteModal) return;
+    setRecheckLoading(true);
+    try {
+      const impact = await api.getMemberDeletionImpact(deleteModal.user.id);
+      setDeleteModal(prev => prev ? {
+        ...prev,
+        assignedToCount: impact.assignedToCount,
+        assignedByCount: impact.assignedByCount,
+        verifierCount: impact.verifierCount,
+        totalUniqueTasksCount: impact.totalUniqueTasksCount,
+        masterRecurringTasksCount: impact.masterRecurringTasksCount,
+      } : null);
+    } catch (err) {
+      console.error('Failed to recheck impact:', err);
+    } finally {
+      setRecheckLoading(false);
+    }
+  };
+
+  const handleTransferAssignedBy = async () => {
+    if (!deleteModal || !transferToUserId) return;
+    const toUser = users.find(u => u.id === transferToUserId);
+    if (!toUser) return;
+    setTransferSubmitting(true);
+    try {
+      await api.transferAssignedByTasks(deleteModal.user.id, toUser.id, toUser.name);
+      const impact = await api.getMemberDeletionImpact(deleteModal.user.id);
+      setDeleteModal(prev => prev ? {
+        ...prev,
+        assignedToCount: impact.assignedToCount,
+        assignedByCount: impact.assignedByCount,
+        verifierCount: impact.verifierCount,
+        totalUniqueTasksCount: impact.totalUniqueTasksCount,
+        masterRecurringTasksCount: impact.masterRecurringTasksCount,
+      } : null);
+      setTransferToUserId('');
+    } catch (err) {
+      console.error('Transfer failed:', err);
+      alert('Failed to transfer tasks. Please try again.');
+    } finally {
+      setTransferSubmitting(false);
     }
   };
 
@@ -649,67 +703,154 @@ export const Members: React.FC = () => {
         </div>
       )}
 
-      {deleteModal && (
+      {deleteLoading && pendingDeleteUser && (
         <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">Delete member &amp; tasks?</h2>
-            <p className="text-slate-600 text-sm mb-4">
-              Are you sure you want to permanently delete <strong>{deleteModal.user.name}</strong> ({ROLE_LABELS[deleteModal.user.role]})?
-            </p>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-8 flex flex-col items-center gap-4">
+            <div className="w-10 h-10 rounded-full border-4 border-teal-100 border-t-teal-600 animate-spin" />
+            <div className="text-center">
+              <p className="text-slate-800 font-medium text-sm">Checking active tasks…</p>
+              <p className="text-slate-500 text-xs mt-1">{pendingDeleteUser.name}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
-            {deleteModal.masterRecurringTasksCount > 0 ? (
-              <>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="font-semibold text-red-800 mb-1">Cannot Delete User</h3>
-                      <p className="text-sm text-red-700">
-                        This user has <strong>{deleteModal.masterRecurringTasksCount}</strong> active recurring task(s) where they are either the doer or creator.
+      {deleteModal && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full flex flex-col max-h-[90vh]">
+
+            {/* Header */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
+              <h2 className="text-base font-semibold text-slate-900">Delete Member</h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                <span className="font-medium text-slate-700">{deleteModal.user.name}</span>
+                <span className="mx-1.5 text-slate-300">·</span>
+                {ROLE_LABELS[deleteModal.user.role]}
+              </p>
+            </div>
+
+            {/* Stats grid — 3-up, always visible, not scrollable */}
+            <div className="px-6 pt-4 pb-3 shrink-0">
+              <div className="grid grid-cols-3 gap-2.5">
+                {[
+                  { label: 'Assigned to', count: deleteModal.assignedToCount },
+                  { label: 'Assigned by', count: deleteModal.assignedByCount },
+                  { label: 'Verifier', count: deleteModal.verifierCount },
+                ].map(({ label, count }) => (
+                  <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-center">
+                    <div className={`text-2xl font-bold leading-none ${count > 0 ? 'text-orange-500' : 'text-green-500'}`}>{count}</div>
+                    <div className="text-[11px] text-slate-500 mt-1.5 leading-tight">{label}</div>
+                  </div>
+                ))}
+              </div>
+              {deleteModal.masterRecurringTasksCount > 0 && (
+                <div className="mt-2.5 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
+                  <span className="text-xs font-medium text-red-700">Active recurring tasks</span>
+                  <span className="text-sm font-bold text-red-700">{deleteModal.masterRecurringTasksCount}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Transfer section — kept OUTSIDE the scroll container so dropdown is never clipped */}
+            {deleteModal.assignedByCount > 0 && (
+              <div className="px-6 pb-3 shrink-0">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-sm font-medium text-blue-900">Transfer assigned-by tasks</p>
+                  <p className="text-xs text-blue-600 mt-0.5 mb-3">
+                    {deleteModal.assignedByCount} active task(s) will be reassigned to the member you select.
+                  </p>
+                  <div className={transferSubmitting ? 'pointer-events-none opacity-60' : ''}>
+                    <SearchableUserSelect
+                      users={users}
+                      value={transferToUserId}
+                      onChange={setTransferToUserId}
+                      excludeUserId={deleteModal.user.id}
+                      placeholder="Search member to transfer to…"
+                    />
+                  </div>
+                  <Button
+                    className="mt-2.5 w-full"
+                    size="sm"
+                    onClick={handleTransferAssignedBy}
+                    disabled={!transferToUserId || transferSubmitting}
+                    isLoading={transferSubmitting}
+                  >
+                    Transfer tasks
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Scrollable body — only sections that have no dropdowns */}
+            <div className="overflow-y-auto flex-1 px-6 pb-3 space-y-2.5">
+
+              {deleteModal.masterRecurringTasksCount > 0 && (
+                <div className="flex gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">
+                    <strong>Cannot delete.</strong> Shift all {deleteModal.masterRecurringTasksCount} recurring task(s) to another member first.
+                  </p>
+                </div>
+              )}
+
+              {deleteModal.masterRecurringTasksCount === 0 && (
+                <>
+                  {deleteModal.assignedToCount > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                      <p className="text-sm text-amber-900">
+                        <strong>{deleteModal.assignedToCount} task(s)</strong> are still assigned to this member. Reassign them via the task list, then Recheck.
                       </p>
                     </div>
-                  </div>
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="secondary" onClick={() => setDeleteModal(null)}>
-                    Close
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm space-y-1 mb-4">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Tasks assigned to member:</span>
-                    <span className="font-semibold text-slate-800">{deleteModal.assignedToCount}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Tasks assigned by member:</span>
-                    <span className="font-semibold text-slate-800">{deleteModal.assignedByCount}</span>
-                  </div>
-                  <div className="border-t border-slate-200 pt-1 mt-1 flex justify-between text-slate-700 font-medium">
-                    <span>Total tasks to be deleted:</span>
-                    <span className="font-bold text-red-600">{deleteModal.totalUniqueTasksCount}</span>
-                  </div>
-                </div>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 mb-6">
-                  <strong>Warning:</strong> Deleting this member will permanently remove all <strong>{deleteModal.totalUniqueTasksCount}</strong> task(s) from the database across all types of tasks. This cannot be undone.
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="secondary" onClick={() => setDeleteModal(null)} disabled={deleteSubmitting}>
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={handleDeleteConfirm}
-                    disabled={deleteSubmitting}
-                    isLoading={deleteSubmitting}
-                  >
-                    Delete member &amp; tasks
-                  </Button>
-                </div>
-              </>
-            )}
+                  )}
+
+                  {deleteModal.verifierCount > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                      <p className="text-sm text-amber-900">
+                        <strong>{deleteModal.verifierCount} task(s)</strong> still have this member as verifier. Update them via the task list, then Recheck.
+                      </p>
+                    </div>
+                  )}
+
+                  {(deleteModal.assignedToCount > 0 || deleteModal.verifierCount > 0) && (
+                    <Button variant="secondary" size="sm" onClick={handleRecheckImpact} disabled={recheckLoading} isLoading={recheckLoading}>
+                      <RefreshCw size={13} className="mr-1.5" />
+                      Recheck counts
+                    </Button>
+                  )}
+
+                  {deleteModal.assignedToCount === 0 && deleteModal.assignedByCount === 0 && deleteModal.verifierCount === 0 && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+                      <strong>Warning:</strong> All associations resolved. This action is permanent and cannot be undone.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => { setDeleteModal(null); setTransferToUserId(''); }}
+                disabled={deleteSubmitting || transferSubmitting}
+              >
+                Cancel
+              </Button>
+              {deleteModal.masterRecurringTasksCount === 0 &&
+                deleteModal.assignedToCount === 0 &&
+                deleteModal.assignedByCount === 0 &&
+                deleteModal.verifierCount === 0 && (
+                <Button
+                  variant="danger"
+                  onClick={handleDeleteConfirm}
+                  disabled={deleteSubmitting}
+                  isLoading={deleteSubmitting}
+                >
+                  Delete member
+                </Button>
+              )}
+            </div>
+
           </div>
         </div>
       )}

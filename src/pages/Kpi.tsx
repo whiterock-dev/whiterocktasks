@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown, Download } from 'lucide-react';
 import { api } from '../services/api';
 import { computeKpiByMember } from '../lib/utils';
 import { Task, User, UserRole } from '../types';
@@ -113,6 +113,56 @@ export const Kpi: React.FC = () => {
     }
   }, [staticData, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id, includeArchived]);
 
+  const handleExport = () => {
+    const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
+
+    const rows = [...memberRows]
+      .filter((r) => isOwnerOrManager || r.userId === user?.id)
+      .filter((r) => !cityFilter || (r.city || '').toLowerCase() === cityFilter.toLowerCase())
+      .sort((a, b) => {
+        if (!activeSort) return 0;
+        const { key, direction } = activeSort;
+        let valA = (a as any)[key];
+        let valB = (b as any)[key];
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (valA < valB) return direction === 'asc' ? -1 : 1;
+        if (valA > valB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+    const headers = isDoer
+      ? ['Name', 'Overdue %', 'Late %']
+      : ['Name', 'City', 'Total Assigned', 'On Time', 'Late', 'Overdue', 'Overdue %', 'Late %'];
+
+    const csvRows = [
+      headers.join(','),
+      ...rows.map((r) =>
+        isDoer
+          ? [r.userName, r.overdue_percent, r.late_completion_percent].join(',')
+          : [
+              `"${r.userName}"`,
+              `"${r.city || ''}"`,
+              r.total_assigned,
+              r.on_time_completed,
+              r.late_completed,
+              r.overdue_count,
+              r.overdue_percent,
+              r.late_completion_percent,
+            ].join(',')
+      ),
+    ];
+
+    const csv = csvRows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kpi_${dateFilter}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) return <div className="text-slate-500">Loading...</div>;
 
   return (
@@ -165,6 +215,13 @@ export const Kpi: React.FC = () => {
           </h2>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <Download size={15} />
+              Export
+            </button>
             {isOwnerOrManager && (() => {
               const cities = Array.from(
                 new Set(
