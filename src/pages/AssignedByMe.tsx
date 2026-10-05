@@ -1743,12 +1743,9 @@ export const AssignedByMe: React.FC = () => {
                             t.status !== 'pending_verification';
                           const isAssigner = t.assigned_by_id === user?.id;
                           const isManagerOrOwner = isOwner || isManager;
-                          const assignerUser = allUsers.find(u => u.id === t.assigned_by_id);
-                          const isAssignedByDoer = assignerUser?.role === UserRole.DOER;
-
                           const canEditTask =
                             isAssigner ||
-                            (isManagerOrOwner && !isAssignedByDoer);
+                            isManagerOrOwner;
 
                           const canDeleteTask =
                             isAssigner ||

@@ -1816,7 +1816,7 @@ export const TaskTable: React.FC = () => {
 
                           const canEditTask =
                             isAssigner ||
-                            (isManagerOrOwner && !isAssignedByDoer);
+                            isManagerOrOwner;
 
                           const canDeleteTask =
                             isAssigner ||
