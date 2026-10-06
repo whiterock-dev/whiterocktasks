@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ArrowUp, ArrowDown, ArrowUpDown, Download } from 'lucide-react';
 import { api } from '../services/api';
 import { computeKpiByMember } from '../lib/utils';
-import { Task, User, UserRole } from '../types';
+import { Task, User, UserRole, DateExtensionRequest } from '../types';
 
 export const Kpi: React.FC = () => {
   const { user } = useAuth();
@@ -20,6 +20,7 @@ export const Kpi: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   const [staticData, setStaticData] = useState<{ holidays: any[], absences: any[], users: User[] } | null>(null);
+  const [extensionRequests, setExtensionRequests] = useState<DateExtensionRequest[]>([]);
   const [dateFilter, setDateFilter] = useState('last_30_days');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -37,12 +38,14 @@ export const Kpi: React.FC = () => {
 
   useEffect(() => {
     const fetchStatic = async () => {
-      const [holidays, absences, users] = await Promise.all([
+      const [holidays, absences, users, extRequests] = await Promise.all([
         api.getHolidays(),
         api.getAbsences(),
         api.getUsers(),
+        api.getAllExtensionRequests(),
       ]);
       setStaticData({ holidays, absences, users });
+      setExtensionRequests(extRequests);
     };
     fetchStatic();
   }, []);
@@ -100,7 +103,7 @@ export const Kpi: React.FC = () => {
           filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr, includeArchived });
         }
 
-        setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users));
+        setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users, extensionRequests));
       } catch (err) {
         console.error('Failed to load KPI tasks:', err);
       } finally {
@@ -111,7 +114,7 @@ export const Kpi: React.FC = () => {
     if (dateFilter !== 'custom' || (customStart && customEnd)) {
       fetchTasks();
     }
-  }, [staticData, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id, includeArchived]);
+  }, [staticData, extensionRequests, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id, includeArchived]);
 
   const handleExport = () => {
     const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
@@ -133,7 +136,7 @@ export const Kpi: React.FC = () => {
 
     const headers = isDoer
       ? ['Name', 'Overdue %', 'Late %']
-      : ['Name', 'City', 'Total Assigned', 'On Time', 'Late', 'Overdue', 'Overdue %', 'Late %'];
+      : ['Name', 'City', 'Total Assigned', 'On Time', 'Late', 'Overdue', 'Overdue %', 'Late %', 'Ext. Taken', 'Approval Rate %'];
 
     const csvRows = [
       headers.join(','),
@@ -149,6 +152,8 @@ export const Kpi: React.FC = () => {
               r.overdue_count,
               r.overdue_percent,
               r.late_completion_percent,
+              r.extensions_taken,
+              r.extension_approval_rate,
             ].join(',')
       ),
     ];
@@ -305,6 +310,8 @@ export const Kpi: React.FC = () => {
                       { key: 'overdue_count', label: 'Overdue', align: 'center' },
                       { key: 'overdue_percent', label: 'Overdue %', align: 'center' },
                       { key: 'late_completion_percent', label: 'Late %', align: 'center' },
+                      { key: 'extensions_taken', label: 'Ext. Taken', align: 'center' },
+                      { key: 'extension_approval_rate', label: 'Approval Rate %', align: 'center' },
                     ]),
                 ].map((col) => (
                   <th
@@ -368,6 +375,8 @@ export const Kpi: React.FC = () => {
                     <td className="py-3 px-4 text-center font-medium text-slate-800">
                       {row.late_completion_percent}%
                     </td>
+                    {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.extensions_taken}</td>}
+                    {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.extension_approval_rate}%</td>}
                   </tr>
                 ))}
             </tbody>

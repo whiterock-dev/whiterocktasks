@@ -37,6 +37,7 @@ import {
   Holiday,
   Absence,
   RemovalRequest,
+  DateExtensionRequest,
   AuditStatus,
   HelpTicket,
   HelpTicketStatus,
@@ -45,6 +46,7 @@ import {
   TaskLogAction,
 } from '../types';
 import { getTodayIST, resolveInitialTaskStatus } from '../lib/dates';
+import { formatDateDDMMYYYY } from '../lib/utils';
 
 /** Actor descriptor passed into audit-logging mutations. */
 type Actor = { id: string; name: string; role: string };
@@ -1291,6 +1293,188 @@ export const api = {
       payload.rejection_reason = null;
     }
     await updateDoc(doc(db, COLLECTIONS.REMOVAL_REQUESTS, id), payload);
+  },
+
+  // --- Date Extension Requests ---
+
+  createExtensionRequest: async (params: {
+    task_id: string;
+    task_title: string;
+    requested_by_id: string;
+    requested_by_name: string;
+    requested_by_role: string;
+    approver_id: string;
+    approver_name: string;
+    original_due_date: string;
+    requested_due_date: string;
+    reason: string;
+    is_late_request: boolean;
+  }): Promise<void> => {
+    const extRef = collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS);
+    const priorSnap = await getCountFromServer(
+      query(extRef, where('task_id', '==', params.task_id), where('status', '==', 'approved'))
+    );
+    const extension_count = priorSnap.data().count;
+    const now = new Date().toISOString();
+    await addDoc(extRef, {
+      task_id: params.task_id,
+      task_title: params.task_title,
+      requested_by_id: params.requested_by_id,
+      requested_by_name: params.requested_by_name,
+      approver_id: params.approver_id,
+      approver_name: params.approver_name,
+      original_due_date: params.original_due_date,
+      requested_due_date: params.requested_due_date,
+      reason: params.reason,
+      is_late_request: params.is_late_request,
+      extension_count,
+      status: 'pending',
+      created_at: now,
+    });
+    writeTaskLog(
+      'extension_requested',
+      params.task_id,
+      params.task_title,
+      { id: params.requested_by_id, name: params.requested_by_name, role: params.requested_by_role },
+      { note: `Extension requested to ${params.requested_due_date}. Reason: ${params.reason}` }
+    );
+  },
+
+  getPendingExtensionRequests: async (approverId: string): Promise<DateExtensionRequest[]> => {
+    const snap = await getDocs(
+      query(
+        collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS),
+        where('approver_id', '==', approverId),
+        where('status', '==', 'pending')
+      )
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as DateExtensionRequest));
+  },
+
+  getPendingExtensionRequestsCount: async (approverId: string): Promise<number> => {
+    const snap = await getCountFromServer(
+      query(
+        collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS),
+        where('approver_id', '==', approverId),
+        where('status', '==', 'pending')
+      )
+    );
+    return snap.data().count;
+  },
+
+  getMyPendingExtensionRequestTaskIds: async (doerId: string): Promise<Set<string>> => {
+    const snap = await getDocs(
+      query(
+        collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS),
+        where('requested_by_id', '==', doerId),
+        where('status', '==', 'pending')
+      )
+    );
+    return new Set(snap.docs.map((d) => d.data().task_id as string));
+  },
+
+  approveExtensionRequest: async (params: {
+    requestId: string;
+    taskId: string;
+    taskTitle: string;
+    approvedDate: string;
+    requestedDate: string;
+    originalDueDate: string;
+    decidedById: string;
+    decidedByName: string;
+    decidedByRole: string;
+    approverRemark: string;
+    doerName: string;
+    doerPhone?: string;
+  }): Promise<void> => {
+    const now = new Date().toISOString();
+    const wasEdited = params.approvedDate !== params.requestedDate;
+    await updateDoc(doc(db, COLLECTIONS.DATE_EXTENSION_REQUESTS, params.requestId), {
+      status: 'approved',
+      approved_date: params.approvedDate,
+      decided_by_id: params.decidedById,
+      decided_by_name: params.decidedByName,
+      decided_at: now,
+      ...(params.approverRemark.trim() ? { approver_remark: params.approverRemark.trim() } : {}),
+    });
+    await updateDoc(doc(db, COLLECTIONS.TASKS, params.taskId), {
+      due_date: params.approvedDate,
+      updated_at: isoToTimestamp(now),
+    });
+    writeTaskLog(
+      'extension_approved',
+      params.taskId,
+      params.taskTitle,
+      { id: params.decidedById, name: params.decidedByName, role: params.decidedByRole },
+      {
+        changes: { due_date: { from: params.originalDueDate, to: params.approvedDate } },
+        note: params.approverRemark.trim() || undefined,
+      }
+    );
+    if (params.doerPhone) {
+      const { whatsappService } = await import('./whatsapp');
+      const templateName = import.meta.env.VITE_11ZA_TEMPLATE_DATE_EXT_DECISION;
+      const decision = wasEdited ? 'Approved with a modified date' : 'Approved';
+      await whatsappService.sendExtensionDecision({
+        phone: params.doerPhone,
+        doerName: params.doerName,
+        taskTitle: params.taskTitle,
+        decision,
+        requestedDate: formatDateDDMMYYYY(params.requestedDate),
+        finalDate: formatDateDDMMYYYY(params.approvedDate),
+        note: params.approverRemark.trim() || 'No remarks.',
+        templateName,
+      }).catch(console.error);
+    }
+  },
+
+  rejectExtensionRequest: async (params: {
+    requestId: string;
+    taskId: string;
+    taskTitle: string;
+    originalDueDate: string;
+    requestedDate: string;
+    decidedById: string;
+    decidedByName: string;
+    decidedByRole: string;
+    rejectionReason: string;
+    doerName: string;
+    doerPhone?: string;
+  }): Promise<void> => {
+    const now = new Date().toISOString();
+    await updateDoc(doc(db, COLLECTIONS.DATE_EXTENSION_REQUESTS, params.requestId), {
+      status: 'rejected',
+      decided_by_id: params.decidedById,
+      decided_by_name: params.decidedByName,
+      decided_at: now,
+      rejection_reason: params.rejectionReason.trim(),
+    });
+    writeTaskLog(
+      'extension_rejected',
+      params.taskId,
+      params.taskTitle,
+      { id: params.decidedById, name: params.decidedByName, role: params.decidedByRole },
+      { note: `Extension rejected. Reason: ${params.rejectionReason}` }
+    );
+    if (params.doerPhone) {
+      const { whatsappService } = await import('./whatsapp');
+      const templateName = import.meta.env.VITE_11ZA_TEMPLATE_DATE_EXT_DECISION;
+      await whatsappService.sendExtensionDecision({
+        phone: params.doerPhone,
+        doerName: params.doerName,
+        taskTitle: params.taskTitle,
+        decision: 'Rejected',
+        requestedDate: formatDateDDMMYYYY(params.requestedDate),
+        finalDate: formatDateDDMMYYYY(params.originalDueDate),
+        note: params.rejectionReason.trim(),
+        templateName,
+      }).catch(console.error);
+    }
+  },
+
+  getAllExtensionRequests: async (): Promise<DateExtensionRequest[]> => {
+    const snap = await getDocs(collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as DateExtensionRequest));
   },
 
   // --- Help Tickets ---

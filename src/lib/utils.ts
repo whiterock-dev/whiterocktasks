@@ -4,7 +4,7 @@
  *
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
-import { Task, Holiday, Absence, KpiMetrics } from '../types';
+import { Task, Holiday, Absence, KpiMetrics, DateExtensionRequest } from '../types';
 import { getTodayIST } from './dates';
 
 export const RECURRING_OPTIONS = [
@@ -104,13 +104,16 @@ export interface MemberKpiRow {
   overdue_count: number;
   overdue_percent: number;
   late_completion_percent: number;
+  extensions_taken: number;
+  extension_approval_rate: number;
 }
 
 export function computeKpiByMember(
   tasks: Task[],
   holidays: Holiday[],
   absences: Absence[],
-  users: { id: string; name: string; city?: string }[]
+  users: { id: string; name: string; city?: string }[],
+  extensionRequests: DateExtensionRequest[] = []
 ): MemberKpiRow[] {
   const today = getTodayIST();
   const rows: MemberKpiRow[] = users.map((u) => {
@@ -137,6 +140,13 @@ export function computeKpiByMember(
     const completed = onTime + late;
     const latePercent = completed > 0 ? Math.round((late / completed) * 100) : 0;
     const overduePercent = countable.length > 0 ? Math.round((overdue / countable.length) * 100) : 0;
+
+    const userExtensions = extensionRequests.filter((r) => r.requested_by_id === u.id);
+    const extensionsTaken = userExtensions.length;
+    const decided = userExtensions.filter((r) => r.status === 'approved' || r.status === 'rejected').length;
+    const approved = userExtensions.filter((r) => r.status === 'approved').length;
+    const extensionApprovalRate = decided > 0 ? Math.round((approved / decided) * 100) : 0;
+
     return {
       userId: u.id,
       userName: u.name,
@@ -147,6 +157,8 @@ export function computeKpiByMember(
       overdue_count: overdue,
       overdue_percent: overduePercent,
       late_completion_percent: latePercent,
+      extensions_taken: extensionsTaken,
+      extension_approval_rate: extensionApprovalRate,
     };
   });
   return rows.sort((a, b) => b.total_assigned - a.total_assigned);

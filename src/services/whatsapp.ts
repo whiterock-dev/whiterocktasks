@@ -26,6 +26,18 @@ export interface SendOverdueNotificationParams {
   templateName?: string;
 }
 
+export interface SendExtensionDecisionParams {
+  phone: string;
+  doerName: string;
+  taskTitle: string;
+  /** 'Approved' | 'Approved with a modified date' | 'Rejected' */
+  decision: string;
+  requestedDate: string;
+  finalDate: string;
+  note: string;
+  templateName?: string;
+}
+
 
 
 class WhatsappService {
@@ -123,6 +135,37 @@ class WhatsappService {
   }
 
 
+
+  /**
+   * Send a WhatsApp notification for date extension request decisions (approve/reject).
+   * Uses the single `date_ext_request` template — decision string drives context.
+   */
+  public async sendExtensionDecision(params: SendExtensionDecisionParams): Promise<void> {
+    const { phone, doerName, taskTitle, decision, requestedDate, finalDate, note, templateName } = params;
+    const normalizedPhone = this.normalizePhone(phone);
+    const sanitizedOrigin = this.sanitizeOrigin(ORIGIN_WEBSITE);
+
+    if (!AUTH_TOKEN) {
+      console.warn('[WhatsappService] VITE_11ZA_AUTH_TOKEN not set; skipping WhatsApp send');
+      return;
+    }
+
+    const payload = {
+      sendto: normalizedPhone,
+      authToken: AUTH_TOKEN,
+      originWebsite: sanitizedOrigin,
+      language: 'en',
+      templateName: templateName || 'date_ext_request',
+      data: [doerName, taskTitle, decision, requestedDate, finalDate, note],
+    };
+
+    try {
+      await axios.post(API_URL, payload, { headers: { 'Content-Type': 'application/json' } });
+    } catch (error: any) {
+      console.error('[WhatsappService] Error sending extension decision:', error?.response?.data || error.message);
+      throw error;
+    }
+  }
 
   /**
    * Send a WhatsApp OTP verification message.

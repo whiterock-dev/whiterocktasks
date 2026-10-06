@@ -98,6 +98,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [helpPendingCount, setHelpPendingCount] = useState(cached?.helpPendingCount ?? 0);
   const [totalOverdueCount, setTotalOverdueCount] = useState(cached?.totalOverdueCount ?? 0);
   const [myTasksCount, setMyTasksCount] = useState(cached?.myTasksCount ?? 0);
+  const [extensionRequestCount, setExtensionRequestCount] = useState(cached?.extensionRequestCount ?? 0);
 
   if (!user) return <>{children}</>;
 
@@ -123,7 +124,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
         const openStatuses: any[] = ['pending', 'overdue', 'cancelled', 'pending_verification', 'correction_required'];
 
-        const [approvalCount, overdueTasksCount, helpCount, _, myTasksAll, ...rest] = await Promise.all([
+        const [approvalCount, overdueTasksCount, helpCount, _, myTasksAll, extCount, ...rest] = await Promise.all([
           api.getTasksCount({
             status: 'pending_verification',
             verifierId: user.id,
@@ -144,6 +145,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             assignedTo: user.id,
             statusIn: openStatuses,
           }),
+          api.getPendingExtensionRequestsCount(user.id),
           ...(isManagerOrOwner
             ? [
               api.getTasksCount({
@@ -160,12 +162,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             overdueCount: overdueTasksCount,
             helpPendingCount: helpCount,
             myTasksCount: myTasksAll,
+            extensionRequestCount: extCount,
             totalOverdueCount: isManagerOrOwner && rest.length > 0 ? rest[0] : 0,
           };
           setPendingApprovalCount(newCounts.pendingApprovalCount);
           setOverdueCount(newCounts.overdueCount);
           setHelpPendingCount(newCounts.helpPendingCount);
           setMyTasksCount(newCounts.myTasksCount);
+          setExtensionRequestCount(newCounts.extensionRequestCount);
           if (isManagerOrOwner && rest.length > 0) {
             setTotalOverdueCount(rest[0]);
           }
@@ -253,7 +257,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                       label={item.label}
                       badgeCount={
                         item.to === '/approve'
-                          ? pendingApprovalCount
+                          ? pendingApprovalCount + extensionRequestCount
                           : item.to === '/redzone'
                             ? overdueCount
                             : item.to === '/help'
@@ -334,7 +338,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                           label={item.label}
                           badgeCount={
                             item.to === '/approve'
-                              ? pendingApprovalCount
+                              ? pendingApprovalCount + extensionRequestCount
                               : item.to === '/redzone'
                                 ? overdueCount
                                 : item.to === '/help'
