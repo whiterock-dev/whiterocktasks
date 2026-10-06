@@ -30,5 +30,8 @@ service cloud.firestore {
       allow read: if true;
       allow update, delete: if false;
     }
+    match /date_extension_requests/{docId} {
+      allow read, write: if true;
+    }
   }
 }

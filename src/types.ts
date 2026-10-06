@@ -184,6 +184,30 @@ export interface KpiMetrics {
   late_completion_percent: number;
 }
 
+export interface DateExtensionRequest {
+  id: string;
+  task_id: string;
+  task_title: string;
+  requested_by_id: string;
+  requested_by_name: string;
+  approver_id: string;
+  approver_name: string;
+  original_due_date: string;
+  requested_due_date: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  is_late_request: boolean;
+  /** Snapshot of how many times this task was previously approved for extension. */
+  extension_count: number;
+  approved_date?: string;
+  decided_by_id?: string;
+  decided_by_name?: string;
+  decided_at?: string;
+  approver_remark?: string;
+  rejection_reason?: string;
+  created_at: string;
+}
+
 export type TaskLogAction =
   | 'created'
   | 'updated'
@@ -193,7 +217,10 @@ export type TaskLogAction =
   | 'audit_set'
   | 'verified'
   | 'verification_rejected'
-  | 'audit_sop_updated';
+  | 'audit_sop_updated'
+  | 'extension_requested'
+  | 'extension_approved'
+  | 'extension_rejected';
 
 export interface TaskLog {
   id: string;

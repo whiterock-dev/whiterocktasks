@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
-import { Task, UserRole, User } from '../types';
+import { Task, UserRole, User, DateExtensionRequest } from '../types';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -20,6 +20,8 @@ import {
     ClipboardCheck,
     Pencil,
     FileText,
+    CalendarClock,
+    AlertTriangle,
 } from 'lucide-react';
 import { formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
 import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
@@ -49,6 +51,19 @@ export const ApproveTask: React.FC = () => {
     const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
 
     const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
+
+    // --- Tab state ---
+    const [activeTab, setActiveTab] = useState<'verification' | 'extensions'>('verification');
+
+    // --- Extension requests state ---
+    const [extensionRequests, setExtensionRequests] = useState<DateExtensionRequest[]>([]);
+    const [loadingExtensions, setLoadingExtensions] = useState(false);
+    const [extApproveModal, setExtApproveModal] = useState<DateExtensionRequest | null>(null);
+    const [extApprovedDate, setExtApprovedDate] = useState('');
+    const [extApproveRemark, setExtApproveRemark] = useState('');
+    const [extRejectModal, setExtRejectModal] = useState<DateExtensionRequest | null>(null);
+    const [extRejectReason, setExtRejectReason] = useState('');
+    const [extActionSubmitting, setExtActionSubmitting] = useState(false);
 
     const hydrateRecurringLookup = useCallback(async (rows: Task[]) => {
         let currentMap: Map<string, Task> = new Map();
@@ -194,6 +209,82 @@ export const ApproveTask: React.FC = () => {
         }
     };
 
+    const loadExtensionRequests = useCallback(async () => {
+        if (!user) return;
+        setLoadingExtensions(true);
+        try {
+            const reqs = await api.getPendingExtensionRequests(user.id);
+            setExtensionRequests(reqs);
+        } catch (err) {
+            console.error('Failed to load extension requests:', err);
+        } finally {
+            setLoadingExtensions(false);
+        }
+    }, [user]);
+
+    useEffect(() => { loadExtensionRequests(); }, [loadExtensionRequests]);
+
+    const handleExtApprove = async (editedDate?: string) => {
+        if (!extApproveModal || !user) return;
+        setExtActionSubmitting(true);
+        try {
+            const approvedDate = editedDate || extApproveModal.requested_due_date;
+            const doerUser = allUsers.find((u) => u.id === extApproveModal.requested_by_id);
+            await api.approveExtensionRequest({
+                requestId: extApproveModal.id,
+                taskId: extApproveModal.task_id,
+                taskTitle: extApproveModal.task_title,
+                approvedDate,
+                requestedDate: extApproveModal.requested_due_date,
+                originalDueDate: extApproveModal.original_due_date,
+                decidedById: user.id,
+                decidedByName: user.name,
+                decidedByRole: user.role,
+                approverRemark: extApproveRemark,
+                doerName: extApproveModal.requested_by_name,
+                doerPhone: doerUser?.phone,
+            });
+            setExtApproveModal(null);
+            setExtApprovedDate('');
+            setExtApproveRemark('');
+            await loadExtensionRequests();
+        } catch (err) {
+            console.error('Failed to approve extension:', err);
+            alert('Failed to approve. Please try again.');
+        } finally {
+            setExtActionSubmitting(false);
+        }
+    };
+
+    const handleExtReject = async () => {
+        if (!extRejectModal || !user || !extRejectReason.trim()) return;
+        setExtActionSubmitting(true);
+        try {
+            const doerUser = allUsers.find((u) => u.id === extRejectModal.requested_by_id);
+            await api.rejectExtensionRequest({
+                requestId: extRejectModal.id,
+                taskId: extRejectModal.task_id,
+                taskTitle: extRejectModal.task_title,
+                originalDueDate: extRejectModal.original_due_date,
+                requestedDate: extRejectModal.requested_due_date,
+                decidedById: user.id,
+                decidedByName: user.name,
+                decidedByRole: user.role,
+                rejectionReason: extRejectReason,
+                doerName: extRejectModal.requested_by_name,
+                doerPhone: doerUser?.phone,
+            });
+            setExtRejectModal(null);
+            setExtRejectReason('');
+            await loadExtensionRequests();
+        } catch (err) {
+            console.error('Failed to reject extension:', err);
+            alert('Failed to reject. Please try again.');
+        } finally {
+            setExtActionSubmitting(false);
+        }
+    };
+
     const handleEditDueDate = async () => {
         if (!editTask || !editDueDate.trim() || !user) return;
         try {
@@ -301,6 +392,43 @@ export const ApproveTask: React.FC = () => {
     return (
         <div>
 
+            {/* Tab headers */}
+            <div className="flex gap-1 mb-4 border-b border-slate-200">
+                <button
+                    onClick={() => setActiveTab('verification')}
+                    className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-2 ${
+                        activeTab === 'verification'
+                            ? 'bg-white border border-b-white border-slate-200 text-teal-700 -mb-px'
+                            : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    Verification
+                    {(allPendingTasks?.length ?? 0) > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-teal-100 text-teal-800 text-xs font-semibold">
+                            {allPendingTasks!.length}
+                        </span>
+                    )}
+                </button>
+                <button
+                    onClick={() => setActiveTab('extensions')}
+                    className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-2 ${
+                        activeTab === 'extensions'
+                            ? 'bg-white border border-b-white border-slate-200 text-teal-700 -mb-px'
+                            : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <CalendarClock size={15} />
+                    Extension Requests
+                    {extensionRequests.length > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold">
+                            {extensionRequests.length}
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {activeTab === 'verification' && (
+            <>
             <div className="relative z-40 flex flex-col sm:flex-row sm:items-center gap-4 mb-3">
                 <div className="w-full sm:w-[250px]">
                     <SearchableUserSelect
@@ -495,7 +623,92 @@ export const ApproveTask: React.FC = () => {
                 </table>
             </div>
             <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">{paginationControls}</div>
+            </>
+            )}
 
+            {/* ── Extension Requests tab ── */}
+            {activeTab === 'extensions' && (
+                <div>
+                    {loadingExtensions ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                            <div className="w-8 h-8 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin mb-3" />
+                            Loading extension requests…
+                        </div>
+                    ) : extensionRequests.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                            <CalendarClock className="w-12 h-12 text-slate-300 mb-3" />
+                            <p className="text-base font-medium text-slate-600">No pending extension requests.</p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-4">
+                            {extensionRequests.map((req) => (
+                                <div key={req.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                                        <div>
+                                            <p className="font-semibold text-slate-900 text-sm">{req.task_title}</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Requested by <span className="font-medium text-slate-700">{req.requested_by_name}</span></p>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {req.is_late_request && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+                                                    <AlertTriangle size={11} /> Late request
+                                                </span>
+                                            )}
+                                            {req.extension_count > 0 && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                                                    Extended {req.extension_count}× before
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 text-sm">
+                                        <div className="bg-slate-50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-slate-400 mb-0.5">Current due date</p>
+                                            <p className="font-medium text-slate-700">{formatDateDDMMYYYY(req.original_due_date)}</p>
+                                        </div>
+                                        <div className="bg-teal-50 rounded-lg px-3 py-2">
+                                            <p className="text-xs text-teal-500 mb-0.5">Requested date</p>
+                                            <p className="font-medium text-teal-800">{formatDateDDMMYYYY(req.requested_due_date)}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50 rounded-lg px-3 py-2 mb-4">
+                                        <p className="text-xs text-slate-400 mb-0.5">Reason</p>
+                                        <p className="text-sm text-slate-700">{req.reason}</p>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="success"
+                                            onClick={() => { setExtApproveModal(req); setExtApprovedDate(req.requested_due_date); setExtApproveRemark(''); }}
+                                        >
+                                            Approve
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => { setExtApproveModal({ ...req, _editMode: true } as any); setExtApprovedDate(req.requested_due_date); setExtApproveRemark(''); }}
+                                        >
+                                            Edit &amp; Approve
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="danger"
+                                            onClick={() => { setExtRejectModal(req); setExtRejectReason(''); }}
+                                        >
+                                            Reject
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Verification modals ── */}
             {rejectTask && user && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
                     <div className="card p-6 max-w-md w-full shadow-xl">
@@ -511,18 +724,8 @@ export const ApproveTask: React.FC = () => {
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4"
                         />
                         <div className="flex justify-end gap-2">
-                            <Button
-                                variant="secondary"
-                                onClick={() => {
-                                    setRejectTask(null);
-                                    setRejectComment('');
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button variant="danger" disabled={!rejectComment.trim()} onClick={() => submitReject()}>
-                                Submit rejection
-                            </Button>
+                            <Button variant="secondary" onClick={() => { setRejectTask(null); setRejectComment(''); }}>Cancel</Button>
+                            <Button variant="danger" disabled={!rejectComment.trim()} onClick={() => submitReject()}>Submit rejection</Button>
                         </div>
                     </div>
                 </div>
@@ -532,9 +735,7 @@ export const ApproveTask: React.FC = () => {
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
                     <div className="card p-6 max-w-sm w-full shadow-xl">
                         <h3 className="text-lg font-semibold mb-2 text-slate-800">Edit Due Date</h3>
-                        <p className="text-sm text-slate-600 mb-4">
-                            Update the due date for <strong>{editTask.title}</strong>
-                        </p>
+                        <p className="text-sm text-slate-600 mb-4">Update the due date for <strong>{editTask.title}</strong></p>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
                         <input
                             type="date"
@@ -544,33 +745,15 @@ export const ApproveTask: React.FC = () => {
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                         />
                         <div className="flex justify-end gap-2">
-                            <Button
-                                variant="secondary"
-                                onClick={() => {
-                                    setEditTask(null);
-                                    setEditDueDate('');
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="primary"
-                                disabled={!editDueDate.trim() || editDueDate === editTask.due_date}
-                                onClick={handleEditDueDate}
-                            >
-                                Save
-                            </Button>
+                            <Button variant="secondary" onClick={() => { setEditTask(null); setEditDueDate(''); }}>Cancel</Button>
+                            <Button variant="primary" disabled={!editDueDate.trim() || editDueDate === editTask.due_date} onClick={handleEditDueDate}>Save</Button>
                         </div>
                     </div>
                 </div>
             )}
 
             {viewAttachment && (
-                <AttachmentViewerModal
-                    urls={viewAttachment.urls}
-                    text={viewAttachment.text}
-                    onClose={() => setViewAttachment(null)}
-                />
+                <AttachmentViewerModal urls={viewAttachment.urls} text={viewAttachment.text} onClose={() => setViewAttachment(null)} />
             )}
             {user && (
                 <AuditSopModal
@@ -580,6 +763,93 @@ export const ApproveTask: React.FC = () => {
                     task={selectedAuditTask || undefined}
                     onUpdate={() => loadAllPendingTasks()}
                 />
+            )}
+
+            {/* ── Extension approve modal ── */}
+            {extApproveModal && user && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <h3 className="text-base font-semibold text-slate-900 mb-0.5">
+                            {(extApproveModal as any)._editMode ? 'Edit & Approve Extension' : 'Approve Extension'}
+                        </h3>
+                        <p className="text-sm text-slate-500 mb-4">
+                            <span className="font-medium text-slate-700">{extApproveModal.task_title}</span>
+                            <span className="mx-1.5 text-slate-300">·</span>
+                            {extApproveModal.requested_by_name}
+                        </p>
+                        {(extApproveModal as any)._editMode && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Approved Due Date</label>
+                                <input
+                                    type="date"
+                                    value={extApprovedDate}
+                                    min={(() => { const d = new Date(extApproveModal.original_due_date); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()}
+                                    onChange={(e) => setExtApprovedDate(e.target.value)}
+                                    className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                />
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Doer requested: <span className="font-medium">{formatDateDDMMYYYY(extApproveModal.requested_due_date)}</span>
+                                </p>
+                            </div>
+                        )}
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Note for doer <span className="text-slate-400 font-normal">(optional)</span></label>
+                            <textarea
+                                value={extApproveRemark}
+                                onChange={(e) => setExtApproveRemark(e.target.value)}
+                                rows={2}
+                                placeholder="Any message for the doer…"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => setExtApproveModal(null)} disabled={extActionSubmitting}>Cancel</Button>
+                            <Button
+                                variant="success"
+                                isLoading={extActionSubmitting}
+                                disabled={extActionSubmitting || ((extApproveModal as any)._editMode && !extApprovedDate)}
+                                onClick={() => handleExtApprove((extApproveModal as any)._editMode ? extApprovedDate : undefined)}
+                            >
+                                Confirm Approval
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Extension reject modal ── */}
+            {extRejectModal && user && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <h3 className="text-base font-semibold text-slate-900 mb-0.5">Reject Extension Request</h3>
+                        <p className="text-sm text-slate-500 mb-4">
+                            <span className="font-medium text-slate-700">{extRejectModal.task_title}</span>
+                            <span className="mx-1.5 text-slate-300">·</span>
+                            {extRejectModal.requested_by_name}
+                        </p>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Reason <span className="text-red-500">*</span></label>
+                            <textarea
+                                value={extRejectReason}
+                                onChange={(e) => setExtRejectReason(e.target.value)}
+                                rows={3}
+                                placeholder="Reason for rejection (required, shown to doer)…"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => setExtRejectModal(null)} disabled={extActionSubmitting}>Cancel</Button>
+                            <Button
+                                variant="danger"
+                                isLoading={extActionSubmitting}
+                                disabled={!extRejectReason.trim() || extActionSubmitting}
+                                onClick={handleExtReject}
+                            >
+                                Confirm Rejection
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

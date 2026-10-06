@@ -38,6 +38,7 @@ import {
 
   Table2,
   FileText,
+  CalendarClock,
 } from 'lucide-react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 
@@ -94,6 +95,11 @@ export const TaskTable: React.FC = () => {
   const [refreshToken, setRefreshToken] = useState(0);
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [pendingExtTaskIds, setPendingExtTaskIds] = useState<Set<string>>(new Set());
+  const [extRequestTask, setExtRequestTask] = useState<Task | null>(null);
+  const [extRequestDate, setExtRequestDate] = useState('');
+  const [extRequestReason, setExtRequestReason] = useState('');
+  const [extSubmitting, setExtSubmitting] = useState(false);
   const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
   const defaultAssignedToApplied = useRef(false);
 
@@ -472,6 +478,13 @@ export const TaskTable: React.FC = () => {
   useEffect(() => {
     api.getHolidays().then(setHolidays).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    api.getMyPendingExtensionRequestTaskIds(user.id)
+      .then(setPendingExtTaskIds)
+      .catch(console.error);
+  }, [user?.id]);
 
 
   useEffect(() => {
@@ -1828,12 +1841,31 @@ export const TaskTable: React.FC = () => {
                             t.status !== 'closed_permanently' &&
                             (isAssigner || (isManagerOrOwner && !isAssignedByDoer));
 
-                          const hasAnyAction = showComplete || canEditTask || canDeleteTask || canClosePermanently;
+                          const EXTENSION_ALLOWED_STATUSES = new Set(['pending', 'scheduled', 'correction_required']);
+                          const canRequestExtension =
+                            t.assigned_to_id === user?.id &&
+                            !t.is_recurring_master &&
+                            EXTENSION_ALLOWED_STATUSES.has(t.status);
+
+                          const hasAnyAction = showComplete || canEditTask || canDeleteTask || canClosePermanently || canRequestExtension;
                           return (
                             <>
                               {showComplete && (
                                 <Button size="sm" variant="success" onClick={() => handleCompleteClick(t)} className="w-full sm:w-auto text-xs sm:text-sm px-2 py-1 whitespace-nowrap">
                                   Complete
+                                </Button>
+                              )}
+                              {canRequestExtension && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => { setExtRequestTask(t); setExtRequestDate(''); setExtRequestReason(''); }}
+                                  disabled={pendingExtTaskIds.has(t.id)}
+                                  className="w-full sm:w-auto text-xs px-2 py-1 whitespace-nowrap gap-1"
+                                  title={pendingExtTaskIds.has(t.id) ? 'Extension request pending approval' : 'Request due date extension'}
+                                >
+                                  <CalendarClock size={13} />
+                                  {pendingExtTaskIds.has(t.id) ? 'Ext. Pending' : 'Extend Date'}
                                 </Button>
                               )}
                               {canClosePermanently && (
@@ -2164,6 +2196,89 @@ export const TaskTable: React.FC = () => {
           task={selectedAuditTask || undefined}
           onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
         />
+      )}
+
+      {extRequestTask && user && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-base font-semibold text-slate-900 mb-0.5">Request Date Extension</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              <span className="font-medium text-slate-700">{extRequestTask.title}</span>
+              <span className="mx-1.5 text-slate-300">·</span>
+              Current due: <span className="font-medium">{formatDateDDMMYYYY(extRequestTask.due_date)}</span>
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">New Due Date <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  value={extRequestDate}
+                  min={(() => { const d = new Date(extRequestTask.due_date); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()}
+                  onChange={(e) => setExtRequestDate(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Must be after the current due date.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reason <span className="text-red-500">*</span></label>
+                <textarea
+                  value={extRequestReason}
+                  onChange={(e) => setExtRequestReason(e.target.value)}
+                  rows={3}
+                  placeholder="Explain why you need more time (min. 10 characters)…"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                />
+                <p className={`text-xs mt-1 ${extRequestReason.trim().length > 0 && extRequestReason.trim().length < 10 ? 'text-red-500' : 'text-slate-400'}`}>
+                  {extRequestReason.trim().length}/10 minimum characters
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <Button
+                variant="secondary"
+                onClick={() => setExtRequestTask(null)}
+                disabled={extSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                isLoading={extSubmitting}
+                disabled={!extRequestDate || extRequestReason.trim().length < 10 || extSubmitting}
+                onClick={async () => {
+                  if (!extRequestDate || extRequestReason.trim().length < 10) return;
+                  setExtSubmitting(true);
+                  try {
+                    const today = new Date().toISOString().split('T')[0];
+                    const approverIdField = extRequestTask.verifier_id || extRequestTask.assigned_by_id;
+                    const approverNameField = extRequestTask.verifier_name || extRequestTask.assigned_by_name;
+                    await api.createExtensionRequest({
+                      task_id: extRequestTask.id,
+                      task_title: extRequestTask.title,
+                      requested_by_id: user.id,
+                      requested_by_name: user.name,
+                      requested_by_role: user.role,
+                      approver_id: approverIdField,
+                      approver_name: approverNameField,
+                      original_due_date: extRequestTask.due_date,
+                      requested_due_date: extRequestDate,
+                      reason: extRequestReason.trim(),
+                      is_late_request: extRequestTask.due_date < today,
+                    });
+                    setPendingExtTaskIds((prev) => new Set([...prev, extRequestTask.id]));
+                    setExtRequestTask(null);
+                  } catch (err) {
+                    console.error('Failed to submit extension request:', err);
+                    alert('Failed to submit request. Please try again.');
+                  } finally {
+                    setExtSubmitting(false);
+                  }
+                }}
+              >
+                Submit Request
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
