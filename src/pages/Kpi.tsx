@@ -24,6 +24,8 @@ export const Kpi: React.FC = () => {
   const [dateFilter, setDateFilter] = useState('last_30_days');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [appliedStart, setAppliedStart] = useState('');
+  const [appliedEnd, setAppliedEnd] = useState('');
   const [cityFilter, setCityFilter] = useState('');
   const [includeArchived, setIncludeArchived] = useState(true);
 
@@ -85,25 +87,34 @@ export const Kpi: React.FC = () => {
         startStr = getFormattedDate(past);
         endStr = getFormattedDate(today);
       } else if (dateFilter === 'custom') {
-        startStr = customStart;
-        endStr = customEnd;
+        startStr = appliedStart;
+        endStr = appliedEnd;
       }
 
-      let filteredTasks: Task[] = [];
       const assignedToFilter = !isOwnerOrManager ? user?.id : undefined;
 
-      try {
-        if (dateFilter === 'all_time') {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, includeArchived });
-        } else if (startStr && endStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, dueDateTo: endStr, includeArchived });
-        } else if (startStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, includeArchived });
-        } else if (endStr) {
-          filteredTasks = await api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr, includeArchived });
-        }
+      let taskFetchPromise: Promise<Task[]>;
+      if (dateFilter === 'all_time') {
+        taskFetchPromise = api.getAllTasksByFilters({ assignedTo: assignedToFilter, includeArchived });
+      } else if (startStr && endStr) {
+        taskFetchPromise = api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, dueDateTo: endStr, includeArchived });
+      } else if (startStr) {
+        taskFetchPromise = api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateFrom: startStr, includeArchived });
+      } else if (endStr) {
+        taskFetchPromise = api.getAllTasksByFilters({ assignedTo: assignedToFilter, dueDateTo: endStr, includeArchived });
+      } else {
+        setLoading(false);
+        return;
+      }
 
-        setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users, extensionRequests));
+      try {
+        const [filteredTasks, rejectionCounts] = await Promise.all([
+          taskFetchPromise,
+          api.getVerificationRejectionCounts(startStr || null, endStr || null)
+            .catch((err) => { console.error('[KPI] rejection counts failed:', err); return {} as Record<string, number>; }),
+        ]);
+
+        setMemberRows(computeKpiByMember(filteredTasks, staticData.holidays, staticData.absences, staticData.users, extensionRequests, rejectionCounts));
       } catch (err) {
         console.error('Failed to load KPI tasks:', err);
       } finally {
@@ -111,10 +122,10 @@ export const Kpi: React.FC = () => {
       }
     };
 
-    if (dateFilter !== 'custom' || (customStart && customEnd)) {
+    if (dateFilter !== 'custom' || (appliedStart && appliedEnd)) {
       fetchTasks();
     }
-  }, [staticData, extensionRequests, dateFilter, customStart, customEnd, isOwnerOrManager, user?.id, includeArchived]);
+  }, [staticData, extensionRequests, dateFilter, appliedStart, appliedEnd, isOwnerOrManager, user?.id, includeArchived]);
 
   const handleExport = () => {
     const activeSort = sortConfig || (isOwnerOrManager && !isDoer ? { key: 'overdue_percent', direction: 'desc' as const } : null);
@@ -136,7 +147,7 @@ export const Kpi: React.FC = () => {
 
     const headers = isDoer
       ? ['Name', 'Overdue %', 'Late %']
-      : ['Name', 'City', 'Total Assigned', 'On Time', 'Late', 'Overdue', 'Overdue %', 'Late %', 'Ext. Taken', 'Approval Rate %'];
+      : ['Name', 'City', 'Total Assigned', 'On Time', 'Late', 'Overdue', 'Overdue %', 'Late %', 'Ext. Taken', 'Approval Rate %', 'Total Rejections'];
 
     const csvRows = [
       headers.join(','),
@@ -154,6 +165,7 @@ export const Kpi: React.FC = () => {
               r.late_completion_percent,
               r.extensions_taken,
               r.extension_approval_rate,
+              r.total_rejections,
             ].join(',')
       ),
     ];
@@ -167,8 +179,6 @@ export const Kpi: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  if (loading) return <div className="text-slate-500">Loading...</div>;
 
   return (
     <div>
@@ -287,10 +297,23 @@ export const Kpi: React.FC = () => {
                   onChange={(e) => setCustomEnd(e.target.value)}
                   className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
+                <button
+                  onClick={() => { if (customStart && customEnd) { setAppliedStart(customStart); setAppliedEnd(customEnd); } }}
+                  disabled={!customStart || !customEnd}
+                  className="px-3 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Apply
+                </button>
               </div>
             )}
           </div>
         </div>
+        {!isDoer && (
+          <p className="mb-2 text-xs text-slate-400">* Total Rejections count is tracked from 8th August onwards.</p>
+        )}
+        {loading ? (
+          <div className="py-12 text-center text-slate-500">Loading...</div>
+        ) : (
         <div className={`${isOwnerOrManager ? 'max-h-[70vh] overflow-auto' : 'overflow-x-auto'}`}>
           <table className="w-full border-collapse bg-white rounded-xl border border-slate-200 shadow-sm">
             <thead className={isOwnerOrManager ? 'sticky top-0 z-20' : undefined}>
@@ -308,10 +331,11 @@ export const Kpi: React.FC = () => {
                       { key: 'on_time_completed', label: 'On Time', align: 'center' },
                       { key: 'late_completed', label: 'Late', align: 'center' },
                       { key: 'overdue_count', label: 'Overdue', align: 'center' },
-                      { key: 'overdue_percent', label: 'Overdue %', align: 'center' },
-                      { key: 'late_completion_percent', label: 'Late %', align: 'center' },
+                      { key: 'overdue_percent', label: 'Overdue%', align: 'center' },
+                      { key: 'late_completion_percent', label: 'Late%', align: 'center' },
                       { key: 'extensions_taken', label: 'Ext. Taken', align: 'center' },
-                      { key: 'extension_approval_rate', label: 'Approval Rate %', align: 'center' },
+                      { key: 'extension_approval_rate', label: 'Approval Rate%', align: 'center' },
+                      { key: 'total_rejections', label: 'Total Rejections', align: 'center' },
                     ]),
                 ].map((col) => (
                   <th
@@ -321,7 +345,7 @@ export const Kpi: React.FC = () => {
                       if (sortConfig && sortConfig.key === col.key && sortConfig.direction === 'asc') direction = 'desc';
                       setSortConfig({ key: col.key, direction });
                     }}
-                    className={`py-4 px-4 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 transition-colors ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'}`}
+                    className={`p-3 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 transition-colors ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'}`}
                   >
                     <div className={`flex items-center gap-1 ${col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
                       <span>{col.label}</span>
@@ -365,23 +389,25 @@ export const Kpi: React.FC = () => {
                     }}
                     className={`border-b border-slate-100 hover:bg-slate-50 ${!isDoer ? 'cursor-pointer' : ''}`}
                   >
-                    <td className="py-3 px-4 font-medium text-slate-800">{row.userName}</td>
-                    {!isDoer && <td className="py-3 px-4 text-slate-600">{row.city || '-'}</td>}
-                    {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.total_assigned}</td>}
-                    {!isDoer && <td className="py-3 px-4 text-center text-green-600">{row.on_time_completed}</td>}
-                    {!isDoer && <td className="py-3 px-4 text-center text-amber-600">{row.late_completed}</td>}
-                    {!isDoer && <td className="py-3 px-4 text-center text-red-600">{row.overdue_count}</td>}
-                    <td className="py-3 px-4 text-center font-medium text-red-600">{row.overdue_percent}%</td>
-                    <td className="py-3 px-4 text-center font-medium text-slate-800">
+                    <td className="p-3 font-medium text-slate-800">{row.userName}</td>
+                    {!isDoer && <td className="p-3 text-slate-600">{row.city || '-'}</td>}
+                    {!isDoer && <td className="p-3 text-center text-slate-700">{row.total_assigned}</td>}
+                    {!isDoer && <td className="p-3 text-center text-green-600">{row.on_time_completed}</td>}
+                    {!isDoer && <td className="p-3 text-center text-amber-600">{row.late_completed}</td>}
+                    {!isDoer && <td className="p-3 text-center text-red-600">{row.overdue_count}</td>}
+                    <td className="p-3 text-center font-medium text-red-600">{row.overdue_percent}%</td>
+                    <td className="p-3 text-center font-medium text-slate-800">
                       {row.late_completion_percent}%
                     </td>
-                    {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.extensions_taken}</td>}
-                    {!isDoer && <td className="py-3 px-4 text-center text-slate-700">{row.extension_approval_rate}%</td>}
+                    {!isDoer && <td className="p-3 text-center text-slate-700">{row.extensions_taken}</td>}
+                    {!isDoer && <td className="p-3 text-center text-slate-700">{row.extension_approval_rate}%</td>}
+                    {!isDoer && <td className="p-3 text-center font-medium text-orange-600">{row.total_rejections}</td>}
                   </tr>
                 ))}
             </tbody>
           </table>
         </div>
+        )}
       </>
     </div>
   );
