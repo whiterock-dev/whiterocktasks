@@ -1029,12 +1029,12 @@ export const api = {
       let action: TaskLogAction = 'updated';
       if (updates.status === 'closed_permanently') {
         action = 'closed_permanently';
+      } else if (updates.status === 'correction_required') {
+        action = 'verification_rejected';
       } else if (updates.status === 'completed' || updates.verified_at || updates.status === 'pending_verification') {
         action = 'status_changed';
       } else if (updates.status) {
         action = 'status_changed';
-      } else if (updates.verification_rejected_at) {
-        action = 'verification_rejected';
       } else if (updates.verified_at) {
         action = 'verified';
       } else if (updates.audit_sop_text !== undefined || updates.audit_sop_attachments !== undefined) {
@@ -1475,6 +1475,34 @@ export const api = {
   getAllExtensionRequests: async (): Promise<DateExtensionRequest[]> => {
     const snap = await getDocs(collection(db, COLLECTIONS.DATE_EXTENSION_REQUESTS));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() } as DateExtensionRequest));
+  },
+
+  /**
+   * Returns a map of task_id → rejection count for verification_rejected log entries
+   * within the given date range. Pass null for either bound to leave it open-ended.
+   * Counts only logs from Aug 7 2026 onward (when task_logs was introduced).
+   */
+  getVerificationRejectionCounts: async (
+    startDateStr: string | null,
+    endDateStr: string | null
+  ): Promise<Record<string, number>> => {
+    let q = query(
+      collection(db, COLLECTIONS.TASK_LOGS),
+      where('action', '==', 'verification_rejected')
+    );
+    if (startDateStr) {
+      q = query(q, where('timestamp', '>=', isoToTimestamp(startDateStr + 'T00:00:00.000Z')));
+    }
+    if (endDateStr) {
+      q = query(q, where('timestamp', '<=', isoToTimestamp(endDateStr + 'T23:59:59.999Z')));
+    }
+    const snap = await getDocs(q);
+    const counts: Record<string, number> = {};
+    snap.docs.forEach((d) => {
+      const taskId = d.data().task_id as string;
+      if (taskId) counts[taskId] = (counts[taskId] ?? 0) + 1;
+    });
+    return counts;
   },
 
   // --- Help Tickets ---

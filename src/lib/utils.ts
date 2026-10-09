@@ -106,6 +106,7 @@ export interface MemberKpiRow {
   late_completion_percent: number;
   extensions_taken: number;
   extension_approval_rate: number;
+  total_rejections: number;
 }
 
 export function computeKpiByMember(
@@ -113,7 +114,8 @@ export function computeKpiByMember(
   holidays: Holiday[],
   absences: Absence[],
   users: { id: string; name: string; city?: string }[],
-  extensionRequests: DateExtensionRequest[] = []
+  extensionRequests: DateExtensionRequest[] = [],
+  rejectionCounts: Record<string, number> = {}
 ): MemberKpiRow[] {
   const today = getTodayIST();
   const rows: MemberKpiRow[] = users.map((u) => {
@@ -147,6 +149,8 @@ export function computeKpiByMember(
     const approved = userExtensions.filter((r) => r.status === 'approved').length;
     const extensionApprovalRate = decided > 0 ? Math.round((approved / decided) * 100) : 0;
 
+    const totalRejections = userTasks.reduce((sum, t) => sum + (rejectionCounts[t.id] ?? 0), 0);
+
     return {
       userId: u.id,
       userName: u.name,
@@ -159,6 +163,7 @@ export function computeKpiByMember(
       late_completion_percent: latePercent,
       extensions_taken: extensionsTaken,
       extension_approval_rate: extensionApprovalRate,
+      total_rejections: totalRejections,
     };
   });
   return rows.sort((a, b) => b.total_assigned - a.total_assigned);
