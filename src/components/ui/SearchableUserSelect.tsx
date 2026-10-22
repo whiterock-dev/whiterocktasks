@@ -28,6 +28,7 @@ interface SearchableUserSelectProps {
   excludeUserId?: string;
   /** Multiple user IDs to exclude from the dropdown list. */
   excludeUserIds?: string[];
+  disabled?: boolean;
 }
 
 export const SearchableUserSelect: React.FC<SearchableUserSelectProps> = ({
@@ -41,6 +42,7 @@ export const SearchableUserSelect: React.FC<SearchableUserSelectProps> = ({
   id,
   excludeUserId,
   excludeUserIds,
+  disabled = false,
 }) => {
   const isNameMode = onNameChange !== undefined;
   const [searchText, setSearchText] = useState('');
@@ -162,7 +164,11 @@ export const SearchableUserSelect: React.FC<SearchableUserSelectProps> = ({
           onChange={() => {}}
         />
       )}
-      {!isOpen && selectedUser ? (
+      {disabled && selectedUser ? (
+        <div className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm flex items-center bg-slate-100 cursor-not-allowed opacity-70">
+          <span className="text-slate-600 truncate">{selectedUser.name}</span>
+        </div>
+      ) : !isOpen && selectedUser ? (
         <div className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm flex items-center justify-between bg-white">
           <span className="text-slate-800 truncate">{selectedUser.name}</span>
           <div className="flex items-center gap-1 shrink-0">

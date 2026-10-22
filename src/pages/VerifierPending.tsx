@@ -5,6 +5,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types';
 import { api } from '../services/api';
@@ -13,6 +14,7 @@ type VerifierRow = { verifier_id: string; verifier_name: string; count: number }
 
 export const VerifierPending: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<VerifierRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -71,9 +73,13 @@ export const VerifierPending: React.FC = () => {
                   <td className="py-3 px-4 text-sm text-slate-400">{idx + 1}</td>
                   <td className="py-3 px-4 text-sm text-slate-800 font-medium">{row.verifier_name}</td>
                   <td className="py-3 px-4 text-center">
-                    <span className="inline-flex items-center justify-center min-w-8 h-7 px-2.5 rounded-full bg-amber-100 text-amber-800 text-sm font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/tasks?status=pending_verification&verifierId=${encodeURIComponent(row.verifier_id)}`)}
+                      className="inline-flex items-center justify-center min-w-8 h-7 px-2.5 rounded-full bg-amber-100 text-amber-800 text-sm font-semibold hover:bg-amber-200 transition-colors cursor-pointer"
+                    >
                       {row.count}
-                    </span>
+                    </button>
                   </td>
                 </tr>
               ))}

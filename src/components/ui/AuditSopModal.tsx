@@ -8,16 +8,84 @@ import { compressImageForUpload } from '../../lib/utils';
 import { FileText, Paperclip, X, Pencil, Link as LinkIcon } from 'lucide-react';
 import { AttachmentViewerModal } from './AttachmentViewerModal';
 
+type Mode = 'audit_sop' | 'task_instructions';
+
+const MODE_CONFIG: Record<Mode, {
+  title: string;
+  editLabel: string;
+  saveLabel: string;
+  placeholder: string;
+  emptyTitle: string;
+  emptyDesc: string;
+  storagePath: string;
+  auditAction: string;
+  canEdit: (isAssigner: boolean, isAdmin: boolean, task?: Task) => boolean;
+  getFields: (task: Task) => { text?: string; attachments?: Task['audit_sop_attachments']; links?: string[]; updatedBy?: string; updatedAt?: string };
+  buildUpdate: (text: string, attachments: NonNullable<Task['audit_sop_attachments']>, links: string[], userName: string) => Partial<Task>;
+}> = {
+  audit_sop: {
+    title: 'Guidelines to Audit',
+    editLabel: 'Edit Guidelines',
+    saveLabel: 'Save Guidelines',
+    placeholder: 'Describe how this task should be checked — what to look at, what counts as done.',
+    emptyTitle: 'No Guidelines Set',
+    emptyDesc: 'There are no specific instructions for auditing this task.',
+    storagePath: 'task-audit-attachments',
+    auditAction: 'Updated Guidelines to Audit field',
+    canEdit: (isAssigner, isAdmin, task) => (isAssigner || isAdmin) && !task?.verified_at,
+    getFields: (task) => ({
+      text: task.audit_sop_text,
+      attachments: task.audit_sop_attachments,
+      links: task.audit_sop_links,
+      updatedBy: task.audit_sop_updated_by,
+      updatedAt: task.audit_sop_updated_at,
+    }),
+    buildUpdate: (text, attachments, links, userName) => ({
+      audit_sop_text: text || undefined,
+      audit_sop_attachments: attachments.length > 0 ? attachments : undefined,
+      audit_sop_links: links.length > 0 ? links : undefined,
+      audit_sop_updated_by: userName,
+      audit_sop_updated_at: new Date().toISOString(),
+    }),
+  },
+  task_instructions: {
+    title: 'Task Instructions',
+    editLabel: 'Edit Instructions',
+    saveLabel: 'Save Instructions',
+    placeholder: 'Add instructions, reference material or context for the doer.',
+    emptyTitle: 'No Instructions Set',
+    emptyDesc: 'No instructions have been added for this task yet.',
+    storagePath: 'task-instructions-attachments',
+    auditAction: 'Updated Task Instructions field',
+    canEdit: (isAssigner, isAdmin) => isAssigner || isAdmin,
+    getFields: (task) => ({
+      text: task.task_instructions_text,
+      attachments: task.task_instructions_attachments,
+      links: task.task_instructions_links,
+      updatedBy: task.task_instructions_updated_by,
+      updatedAt: task.task_instructions_updated_at,
+    }),
+    buildUpdate: (text, attachments, links, userName) => ({
+      task_instructions_text: text || undefined,
+      task_instructions_attachments: attachments.length > 0 ? attachments : undefined,
+      task_instructions_links: links.length > 0 ? links : undefined,
+      task_instructions_updated_by: userName,
+      task_instructions_updated_at: new Date().toISOString(),
+    }),
+  },
+};
+
 interface AuditSopModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User;
-  
+  mode?: Mode;
+
   // Edit existing task mode
   task?: Task;
   onUpdate?: () => void;
-  
-  // Create task mode (AssignTask)
+
+  // Create task mode (AssignTask) — only valid for audit_sop mode
   initialText?: string;
   initialFiles?: File[];
   initialLinks?: string[];
@@ -48,54 +116,58 @@ const linkify = (text: string) => {
 const DEFAULT_FILES: File[] = [];
 const DEFAULT_LINKS: string[] = [''];
 
-export const AuditSopModal: React.FC<AuditSopModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  user, 
-  task, 
+export const AuditSopModal: React.FC<AuditSopModalProps> = ({
+  isOpen,
+  onClose,
+  user,
+  mode = 'audit_sop',
+  task,
   onUpdate,
   initialText = '',
   initialFiles = DEFAULT_FILES,
   initialLinks = DEFAULT_LINKS,
   onSaveAssign
 }) => {
+  const config = MODE_CONFIG[mode];
   const isAssignMode = !task && !!onSaveAssign;
   const isAssigner = task ? user.id === task.assigned_by_id : true;
   const isAdmin = user.role === UserRole.OWNER || user.role === UserRole.MANAGER;
-  const canEdit = isAssignMode || ((isAssigner || isAdmin) && !task?.verified_at);
-  
-  const hasContent = isAssignMode 
+  const canEdit = isAssignMode || config.canEdit(isAssigner, isAdmin, task);
+
+  const fields = task ? config.getFields(task) : null;
+  const hasContent = isAssignMode
     ? (!!initialText || initialFiles.length > 0 || initialLinks.filter(l => l.trim()).length > 0)
-    : (!!task?.audit_sop_text || (task?.audit_sop_attachments && task.audit_sop_attachments.length > 0) || (task?.audit_sop_links && task.audit_sop_links.length > 0));
+    : (!!fields?.text || (fields?.attachments && fields.attachments.length > 0) || (fields?.links && fields.links.length > 0));
 
   const [isEditing, setIsEditing] = useState(isAssignMode || (canEdit && !hasContent));
-  
-  const [text, setText] = useState(isAssignMode ? initialText : (task?.audit_sop_text || ''));
-  const [existingFiles, setExistingFiles] = useState(isAssignMode ? [] : (task?.audit_sop_attachments || []));
+
+  const [text, setText] = useState(isAssignMode ? initialText : (fields?.text || ''));
+  const [existingFiles, setExistingFiles] = useState(isAssignMode ? [] : (fields?.attachments || []));
   const [newFiles, setNewFiles] = useState<File[]>(isAssignMode ? initialFiles : []);
-  const [links, setLinks] = useState<string[]>(isAssignMode ? initialLinks : (task?.audit_sop_links?.length ? task.audit_sop_links : ['']));
-  
+  const [links, setLinks] = useState<string[]>(isAssignMode ? initialLinks : (fields?.links?.length ? fields.links : ['']));
+
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadProgresses, setUploadProgresses] = useState<{ [key: string]: number }>({});
-  
+
   const [viewAttachment, setViewAttachment] = useState<{ urls: string[]; text?: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
+      const f = task ? config.getFields(task) : null;
       if (isAssignMode) {
         setText(initialText);
         setNewFiles(initialFiles);
         setLinks(initialLinks.length ? initialLinks : ['']);
         setIsEditing(true);
       } else {
-        setText(task?.audit_sop_text || '');
-        setExistingFiles(task?.audit_sop_attachments || []);
+        setText(f?.text || '');
+        setExistingFiles(f?.attachments || []);
         setNewFiles([]);
-        setLinks(task?.audit_sop_links?.length ? task.audit_sop_links : ['']);
-        const contentExists = !!task?.audit_sop_text || (task?.audit_sop_attachments && task.audit_sop_attachments.length > 0) || (task?.audit_sop_links && task.audit_sop_links.length > 0);
+        setLinks(f?.links?.length ? f.links : ['']);
+        const contentExists = !!f?.text || (f?.attachments && f.attachments.length > 0) || (f?.links && f.links.length > 0);
         setIsEditing(canEdit && !contentExists);
       }
       setUploadError(null);
@@ -103,7 +175,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
       setUploadProgresses({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, task?.id]);
+  }, [isOpen, task?.id, mode]);
 
   if (!isOpen) return null;
 
@@ -115,7 +187,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
 
     const currentCount = existingFiles.length + newFiles.length;
     const newCount = currentCount + files.length;
-    
+
     if (newCount > 5) {
       setUploadError('Maximum 5 attachments allowed.');
       return;
@@ -144,33 +216,32 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
 
   const handleSave = async () => {
     const validLinks = links.map(l => l.trim()).filter(l => l !== '');
-    
-    // In assign mode, empty save is allowed to clear the SOP.
+
     if (!isAssignMode && !text.trim() && existingFiles.length === 0 && newFiles.length === 0 && validLinks.length === 0) {
       setUploadError('Please provide text, attachment or a link.');
       return;
     }
-    
+
     if (isAssignMode && onSaveAssign) {
       onSaveAssign(text, newFiles, validLinks.length > 0 ? validLinks : ['']);
       onClose();
       return;
     }
-    
+
     if (!task) return;
 
     setIsSaving(true);
     setUploadError(null);
-    
+
     try {
       let uploadedAttachments = [...existingFiles];
-      
+
       if (newFiles.length > 0) {
         const uploadPromises = newFiles.map(async (file, index) => {
           const fileId = `${Date.now()}_${index}_${file.name}`;
-          const path = `task-audit-attachments/${task.id}/${fileId}`;
+          const path = `${config.storagePath}/${task.id}/${fileId}`;
           const storageRef = ref(storage, path);
-          
+
           const toUpload = file.type.startsWith('image/') ? await compressImageForUpload(file) : file;
           const uploadTask = uploadBytesResumable(storageRef, toUpload);
 
@@ -201,13 +272,12 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
         uploadedAttachments = [...uploadedAttachments, ...newUploaded];
       }
 
-      await api.updateTask(task.id, {
-        audit_sop_text: text.trim() || undefined,
-        audit_sop_attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
-        audit_sop_links: validLinks.length > 0 ? validLinks : undefined,
-        audit_sop_updated_by: user.name || user.id,
-        audit_sop_updated_at: new Date().toISOString(),
-      }, { id: user.id, name: user.name, role: user.role }, 'Updated Guidelines to Audit field');
+      await api.updateTask(
+        task.id,
+        config.buildUpdate(text.trim(), uploadedAttachments, validLinks, user.name || user.id),
+        { id: user.id, name: user.name, role: user.role },
+        config.auditAction
+      );
 
       setIsEditing(false);
       setNewFiles([]);
@@ -216,7 +286,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
       onClose();
 
     } catch (err: any) {
-      setUploadError(err?.message || 'Failed to save guidelines');
+      setUploadError(err?.message || 'Failed to save');
     } finally {
       setIsSaving(false);
     }
@@ -225,13 +295,15 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
   const totalProgress = Object.values(uploadProgresses).reduce((a, b) => a + b, 0);
   const averageProgress = newFiles.length > 0 ? totalProgress / newFiles.length : 0;
 
+  const currentFields = task ? config.getFields(task) : null;
+
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-xl">
           <div className="flex items-center gap-2">
             <FileText className="text-teal-600" size={20} />
-            <h3 className="text-lg font-semibold text-slate-800">Guidelines to Audit</h3>
+            <h3 className="text-lg font-semibold text-slate-800">{config.title}</h3>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full p-1 transition-colors">
             <X size={20} />
@@ -246,7 +318,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                 onClick={() => setIsEditing(true)}
                 className="text-sm text-teal-600 hover:text-teal-800 font-medium px-3 py-1.5 rounded-lg hover:bg-teal-50 transition-colors inline-flex items-center gap-1 border border-teal-200"
               >
-                <Pencil size={14} /> Edit Guidelines
+                <Pencil size={14} /> {config.editLabel}
               </button>
             </div>
           )}
@@ -259,7 +331,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                   onChange={(e) => setText(e.target.value)}
                   maxLength={2000}
                   rows={4}
-                  placeholder="Describe how this task should be checked — what to look at, what counts as done."
+                  placeholder={config.placeholder}
                   disabled={isSaving}
                   className="w-full text-sm rounded-lg border border-slate-300 px-3 py-3 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 bg-white resize-y min-h-[100px]"
                 />
@@ -267,15 +339,13 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                   <span className="text-xs text-slate-400">{text.length}/2000</span>
                 </div>
               </div>
-              
+
               <div className="pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-slate-700">Links (Max 3)</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (links.length < 3) setLinks([...links, '']);
-                    }}
+                    onClick={() => { if (links.length < 3) setLinks([...links, '']); }}
                     disabled={isSaving || links.length >= 3}
                     className="text-sm bg-white border border-slate-300 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-1.5 font-medium shadow-sm transition-colors"
                   >
@@ -332,7 +402,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                     className="hidden"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   {existingFiles.map((f, i) => (
                     <div key={`ext-${i}`} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
@@ -357,13 +427,13 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                     </div>
                   ))}
                 </div>
-                
+
                 {isSaving && newFiles.length > 0 && (
                   <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                     <div className="bg-teal-600 h-2 rounded-full transition-all duration-300" style={{ width: `${averageProgress}%` }}></div>
                   </div>
                 )}
-                
+
                 {uploadError && <p className="text-sm text-red-600 mt-2 font-medium bg-red-50 p-2 rounded">{uploadError}</p>}
               </div>
 
@@ -372,11 +442,7 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                   {isAssignMode && (text || newFiles.length > 0 || links.some(l => l.trim())) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setText('');
-                        setNewFiles([]);
-                        setLinks(['']);
-                      }}
+                      onClick={() => { setText(''); setNewFiles([]); setLinks(['']); }}
                       disabled={isSaving}
                       className="text-sm text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded transition-colors font-medium"
                     >
@@ -389,46 +455,45 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                     if (isAssignMode) {
                       onClose();
                     } else {
+                      const f = task ? config.getFields(task) : null;
                       setIsEditing(false);
                       setNewFiles([]);
-                      setLinks(task?.audit_sop_links?.length ? task.audit_sop_links : ['']);
+                      setLinks(f?.links?.length ? f.links : ['']);
                       setUploadError(null);
                     }
                   }} disabled={isSaving}>
                     Cancel
                   </Button>
                   <Button onClick={handleSave} disabled={isSaving}>
-                    {isSaving ? 'Saving...' : 'Save Guidelines'}
+                    {isSaving ? 'Saving...' : config.saveLabel}
                   </Button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="space-y-6">
-              {!task?.audit_sop_text && (!task?.audit_sop_attachments || task.audit_sop_attachments.length === 0) && (!task?.audit_sop_links || task.audit_sop_links.length === 0) ? (
-                 <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                   <FileText className="mx-auto h-12 w-12 text-slate-300 mb-3" />
-                   <h3 className="text-sm font-medium text-slate-900">No Guidelines Set</h3>
-                   <p className="mt-1 text-sm text-slate-500">
-                     There are no specific instructions for auditing this task.
-                   </p>
-                 </div>
+              {!currentFields?.text && (!currentFields?.attachments || currentFields.attachments.length === 0) && (!currentFields?.links || currentFields.links.length === 0) ? (
+                <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <FileText className="mx-auto h-12 w-12 text-slate-300 mb-3" />
+                  <h3 className="text-sm font-medium text-slate-900">{config.emptyTitle}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{config.emptyDesc}</p>
+                </div>
               ) : (
                 <>
-                  {task?.audit_sop_text && (
+                  {currentFields?.text && (
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800 mb-2">Instructions</h4>
                       <div className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        {linkify(task.audit_sop_text)}
+                        {linkify(currentFields.text)}
                       </div>
                     </div>
                   )}
-                  
-                  {task?.audit_sop_links && task.audit_sop_links.length > 0 && (
+
+                  {currentFields?.links && currentFields.links.length > 0 && (
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800 mb-2">Links</h4>
                       <div className="flex flex-col gap-2">
-                        {task.audit_sop_links.map((link, i) => (
+                        {currentFields.links.map((link, i) => (
                           <a
                             key={i}
                             href={link.startsWith('http') ? link : `https://${link}`}
@@ -444,11 +509,11 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                     </div>
                   )}
 
-                  {task?.audit_sop_attachments && task.audit_sop_attachments.length > 0 && (
+                  {currentFields?.attachments && currentFields.attachments.length > 0 && (
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800 mb-2">Attachments</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {task.audit_sop_attachments.map((att, i) => (
+                        {currentFields.attachments.map((att, i) => (
                           <button
                             key={i}
                             type="button"
@@ -465,20 +530,16 @@ export const AuditSopModal: React.FC<AuditSopModalProps> = ({
                       </div>
                     </div>
                   )}
-                  
-                  {task?.audit_sop_updated_by && task?.audit_sop_updated_at && (
+
+                  {currentFields?.updatedBy && currentFields?.updatedAt && (
                     <div className="text-xs text-slate-500 text-right mt-4 pt-4 border-t border-slate-100 flex items-center justify-end gap-1">
                       <span>Last updated by</span>
-                      <span className="font-medium text-slate-700">{task.audit_sop_updated_by}</span>
+                      <span className="font-medium text-slate-700">{currentFields.updatedBy}</span>
                       <span>on</span>
                       <span className="font-medium text-slate-700">
-                        {new Date(task.audit_sop_updated_at).toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
+                        {new Date(currentFields.updatedAt).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit', hour12: true
                         })}
                       </span>
                     </div>

@@ -75,12 +75,13 @@ export const TaskTable: React.FC = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [assignedToFilter, setAssignedToFilter] = useState('');
   const [assignedByFilter, setAssignedByFilter] = useState('');
+  const [verifierFilter, setVerifierFilter] = useState(() => searchParams.get('verifierId') || '');
 
 
 
 
 
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || '');
 
   const [recurringFilter, setRecurringFilter] = useState('');
   const [completeTask, setCompleteTask] = useState<Task | null>(null);
@@ -90,6 +91,7 @@ export const TaskTable: React.FC = () => {
   const [taskSummary, setTaskSummary] = useState({ dueToday: 0, overdue: 0 });
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
+  const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -247,6 +249,9 @@ export const TaskTable: React.FC = () => {
     if (assignedByFilter) {
       filters.assignedBy = assignedByFilter;
     }
+    if (verifierFilter) {
+      filters.verifierId = verifierFilter;
+    }
     if (isAuditor) {
       filters.status = 'completed';
     }
@@ -287,7 +292,7 @@ export const TaskTable: React.FC = () => {
     }
 
     return filters;
-  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter, dateFilter, assignedToFilter, assignedByFilter]);
+  }, [user?.id, isSelfTasksView, isAuditor, isVerifier, recurringFilter, resolveDoerDateRange, statusFilter, dateFilter, assignedToFilter, assignedByFilter, verifierFilter]);
 
   const getDoerBaseFilters = useCallback(() => {
     const filters: {
@@ -694,7 +699,7 @@ export const TaskTable: React.FC = () => {
   });
 
   const isClientMode = isSelfTasksView || isStartDateSort;
-  const tableColumnCount = 12;
+  const tableColumnCount = isSelfTasksView ? 11 : 12;
 
   const effectiveTotalResults = isClientMode
     ? (nameFilteredRows?.length ?? 0)
@@ -1120,6 +1125,37 @@ export const TaskTable: React.FC = () => {
     }
   };
 
+  const renderInstructionsButton = (t: Task) => {
+    const hasInstructions = !!t.task_instructions_text ||
+      (t.task_instructions_attachments && t.task_instructions_attachments.length > 0) ||
+      (t.task_instructions_links && t.task_instructions_links.length > 0);
+    const canEditInstructions = user?.id === t.assigned_by_id ||
+      user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+
+    if (hasInstructions) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setSelectedInstructionsTask(t); }}
+          className="mt-1 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100"
+        >
+          <FileText size={12} /> View Task Instructions
+        </button>
+      );
+    } else if (canEditInstructions) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setSelectedInstructionsTask(t); }}
+          className="mt-1 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200"
+        >
+          + Add Task Instructions
+        </button>
+      );
+    }
+    return null;
+  };
+
   const startRow = effectiveTotalResults === 0 || sortedTasks.length === 0
     ? 0
     : (currentPage - 1) * rowsPerPage + 1;
@@ -1224,7 +1260,12 @@ export const TaskTable: React.FC = () => {
                     ? 'overdue-row'
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
-                  <td className="sticky-col-1">{t.title}</td>
+                  <td className="sticky-col-1">
+                    <div className="flex flex-col">
+                      {t.title}
+                      {renderInstructionsButton(t)}
+                    </div>
+                  </td>
                   <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700 align-top">
                     <div className="flex flex-col">
                       <span>{t.description || '-'}</span>
@@ -1371,7 +1412,10 @@ export const TaskTable: React.FC = () => {
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
                   <td className="sticky-col-1">
-                    <span className="font-medium text-slate-800">{t.title}</span>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-slate-800">{t.title}</span>
+                      {renderInstructionsButton(t)}
+                    </div>
                   </td>
                   <td className="sticky-col-2 whitespace-pre-wrap break-words text-sm text-slate-700 align-top">
                     <div className="flex flex-col">
@@ -1535,9 +1579,10 @@ export const TaskTable: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <SearchableUserSelect
             users={allUsers}
-            value={assignedToFilter}
+            value={isSelfTasksView ? (user?.id || '') : assignedToFilter}
             onChange={setAssignedToFilter}
             placeholder="Search Doer Name"
+            disabled={isSelfTasksView}
           />
 
           <SearchableUserSelect
@@ -1546,6 +1591,15 @@ export const TaskTable: React.FC = () => {
             onChange={setAssignedByFilter}
             placeholder="Search Assigned By"
           />
+
+          {isManager && !isSelfTasksView && (
+            <SearchableUserSelect
+              users={allUsers}
+              value={verifierFilter}
+              onChange={setVerifierFilter}
+              placeholder="Search Verifier"
+            />
+          )}
 
           <select
             value={statusFilter}
@@ -1623,8 +1677,8 @@ export const TaskTable: React.FC = () => {
           <thead>
             <tr>
               <th className="sticky-col-1 text-center">Title</th>
-              <th className="sticky-col-2 text-center">Description</th>
-              <th className="whitespace-nowrap text-center">Assigned To</th>
+              <th className="sticky-col-2 text-center" style={isSelfTasksView ? { width: '295px', minWidth: '295px' } : undefined}>Description</th>
+              {!isSelfTasksView && <th className="whitespace-nowrap text-center">Assigned To</th>}
               <th className="whitespace-nowrap text-center">Assigned By</th>
               <th className="whitespace-nowrap text-center">
                 <button
@@ -1648,7 +1702,7 @@ export const TaskTable: React.FC = () => {
               </th>
               <th className="whitespace-nowrap text-center">Recurring</th>
               <th className="whitespace-nowrap text-center">Status</th>
-              <th className="whitespace-nowrap text-center">Doer's Remark</th>
+              <th className="whitespace-nowrap text-center" style={isSelfTasksView ? { minWidth: '200px' } : undefined}>Doer's Remark</th>
               <th className="whitespace-nowrap text-center">Verifier</th>
               <th className="whitespace-nowrap text-center">Attachment</th>
               <th className="whitespace-nowrap text-center">Action</th>
@@ -1688,15 +1742,16 @@ export const TaskTable: React.FC = () => {
                     className={`${isOverdue ? 'overdue-row' : ''} ${!isOverdue && onHoliday ? 'holiday-row' : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                   >
                     <td className="sticky-col-1">
-                      <span className="font-medium text-slate-800">{t.title}</span>
-                      {onHoliday && (
-                        <span className="ml-2 text-xs text-orange-600">(Holiday)</span>
-                      )}
-                      {t.assignee_deleted && (
-                        <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                      )}
+                      <div className="flex flex-col">
+                        <span className="font-medium text-slate-800">
+                          {t.title}
+                          {onHoliday && <span className="ml-2 text-xs text-orange-600">(Holiday)</span>}
+                          {t.assignee_deleted && <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>}
+                        </span>
+                        {renderInstructionsButton(t)}
+                      </div>
                     </td>
-                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700 align-top">
+                    <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700 align-top" style={isSelfTasksView ? { width: '295px', minWidth: '295px' } : undefined}>
                       <div className="flex flex-col">
                         <span>{t.description || '-'}</span>
                         {(() => {
@@ -1730,14 +1785,16 @@ export const TaskTable: React.FC = () => {
                         })()}
                       </div>
                     </td>
-                    <td>
-                      <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
-                        {t.assigned_to_name}
-                        {t.assignee_deleted && (
-                          <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                        )}
-                      </span>
-                    </td>
+                    {!isSelfTasksView && (
+                      <td>
+                        <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
+                          {t.assigned_to_name}
+                          {t.assignee_deleted && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
+                          )}
+                        </span>
+                      </td>
+                    )}
 
                     <td>
                       <span className="text-sm font-medium text-slate-700 whitespace-pre-wrap">
@@ -1787,7 +1844,7 @@ export const TaskTable: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="text-center whitespace-pre-wrap wrap-anywhere text-sm text-slate-700">
+                    <td className="text-center whitespace-pre-wrap wrap-anywhere text-sm text-slate-700" style={isSelfTasksView ? { minWidth: '200px' } : undefined}>
                       {t.doer_remark || '-'}
                     </td>
                     <td>
@@ -2194,6 +2251,17 @@ export const TaskTable: React.FC = () => {
           onClose={() => setSelectedAuditTask(null)}
           user={user}
           task={selectedAuditTask || undefined}
+          onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
+        />
+      )}
+
+      {user && (
+        <AuditSopModal
+          mode="task_instructions"
+          isOpen={!!selectedInstructionsTask}
+          onClose={() => setSelectedInstructionsTask(null)}
+          user={user}
+          task={selectedInstructionsTask || undefined}
           onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
         />
       )}

@@ -11,6 +11,7 @@ import { isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabe
 import { Button } from '../components/ui/Button';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
+import { AuditSopModal } from '../components/ui/AuditSopModal';
 import { Holiday, Task, User, UserRole } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -23,6 +24,7 @@ import {
   ChevronsRight,
   AlertTriangle,
   CalendarClock,
+  FileText,
 } from 'lucide-react';
 
 const ROWS_PER_PAGE_OPTIONS = [50, 100, 500, 1000] as const;
@@ -68,6 +70,7 @@ export const RedZone: React.FC = () => {
   const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
   const [pendingExtTaskIds, setPendingExtTaskIds] = useState<Set<string>>(new Set());
   const [extRequestTask, setExtRequestTask] = useState<Task | null>(null);
+  const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
   const [extRequestDate, setExtRequestDate] = useState('');
   const [extRequestReason, setExtRequestReason] = useState('');
   const [extSubmitting, setExtSubmitting] = useState(false);
@@ -117,7 +120,7 @@ export const RedZone: React.FC = () => {
   const loadTasks = useCallback(async () => {
     setLoading(true);
     const assignedToId =
-      user?.role === UserRole.DOER ? user?.id : undefined;
+      user?.role === UserRole.DOER ? user?.id : (assignedToFilter || undefined);
     const overdue = await api.getOverdueTasks({
       assignedToId,
       limitCount: 500,
@@ -125,7 +128,7 @@ export const RedZone: React.FC = () => {
     await hydrateRecurringLookup(overdue);
     setTasks(overdue);
     setLoading(false);
-  }, [hydrateRecurringLookup, user?.id, user?.role]);
+  }, [hydrateRecurringLookup, user?.id, user?.role, assignedToFilter]);
 
   useEffect(() => {
     loadTasks().catch(console.error);
@@ -556,6 +559,29 @@ export const RedZone: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-slate-800 truncate">{t.title}</p>
+                      {(() => {
+                        const hasInstructions = !!t.task_instructions_text ||
+                          (t.task_instructions_attachments && t.task_instructions_attachments.length > 0) ||
+                          (t.task_instructions_links && t.task_instructions_links.length > 0);
+                        const canEditInstructions = user?.id === t.assigned_by_id ||
+                          user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                        if (hasInstructions) {
+                          return (
+                            <button type="button" onClick={(e) => { e.preventDefault(); setSelectedInstructionsTask(t); }}
+                              className="mt-1 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100">
+                              <FileText size={12} /> View Task Instructions
+                            </button>
+                          );
+                        } else if (canEditInstructions) {
+                          return (
+                            <button type="button" onClick={(e) => { e.preventDefault(); setSelectedInstructionsTask(t); }}
+                              className="mt-1 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200">
+                              + Add Task Instructions
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
                       {t.description ? (
                         <p className="mt-1 text-sm text-slate-600 line-clamp-2">{t.description}</p>
                       ) : null}
@@ -851,6 +877,17 @@ export const RedZone: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {user && (
+        <AuditSopModal
+          mode="task_instructions"
+          isOpen={!!selectedInstructionsTask}
+          onClose={() => setSelectedInstructionsTask(null)}
+          user={user}
+          task={selectedInstructionsTask || undefined}
+          onUpdate={loadTasks}
+        />
       )}
     </div>
   );

@@ -8,5 +8,8 @@ service firebase.storage {
     match /task-audit-attachments/{allPaths=**} {
       allow read, write: if true;
     }
+    match /task-instructions-attachments/{allPaths=**} {
+      allow read, write: if true;
+    }
   }
 }

@@ -108,6 +108,18 @@ export interface Task {
     uploaded_at: string;
   }[];
   audit_sop_links?: string[];
+  task_instructions_text?: string;
+  task_instructions_updated_by?: string;
+  task_instructions_updated_at?: string;
+  task_instructions_attachments?: {
+    file_url: string;
+    file_type: string;
+    file_name: string;
+    size: number;
+    uploaded_by: string;
+    uploaded_at: string;
+  }[];
+  task_instructions_links?: string[];
 }
 
 export interface Holiday {

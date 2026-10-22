@@ -49,6 +49,7 @@ export const ApproveTask: React.FC = () => {
     const [assignedToFilter, setAssignedToFilter] = useState('');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
     const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
+    const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
 
     const [recurringTaskLookup, setRecurringTaskLookup] = useState<Map<string, Task>>(new Map());
 
@@ -482,7 +483,32 @@ export const ApproveTask: React.FC = () => {
                                 return (
                                     <tr key={task.id} className={highlightId === task.id ? 'bg-amber-50' : ''}>
                                         <td>
-                                            <span className="font-medium text-slate-800">{task.title}</span>
+                                            <div className="flex flex-col gap-1">
+                                              <span className="font-medium text-slate-800">{task.title}</span>
+                                              {(() => {
+                                                const hasInstructions = !!task.task_instructions_text ||
+                                                  (task.task_instructions_attachments && task.task_instructions_attachments.length > 0) ||
+                                                  (task.task_instructions_links && task.task_instructions_links.length > 0);
+                                                const canEditInstructions = user?.id === task.assigned_by_id ||
+                                                  user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                                                if (hasInstructions) {
+                                                  return (
+                                                    <button type="button" onClick={() => setSelectedInstructionsTask(task)}
+                                                      className="text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100">
+                                                      <FileText size={12} /> View Task Instructions
+                                                    </button>
+                                                  );
+                                                } else if (canEditInstructions) {
+                                                  return (
+                                                    <button type="button" onClick={() => setSelectedInstructionsTask(task)}
+                                                      className="text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200">
+                                                      + Add Task Instructions
+                                                    </button>
+                                                  );
+                                                }
+                                                return null;
+                                              })()}
+                                            </div>
                                         </td>
                                         <td className="whitespace-pre-wrap break-words text-sm text-slate-700 h-[1px]">
                                             <div className="flex flex-col h-full justify-between min-h-full">
@@ -756,6 +782,7 @@ export const ApproveTask: React.FC = () => {
                 <AttachmentViewerModal urls={viewAttachment.urls} text={viewAttachment.text} onClose={() => setViewAttachment(null)} />
             )}
             {user && (
+                <>
                 <AuditSopModal
                     isOpen={!!selectedAuditTask}
                     onClose={() => setSelectedAuditTask(null)}
@@ -763,6 +790,15 @@ export const ApproveTask: React.FC = () => {
                     task={selectedAuditTask || undefined}
                     onUpdate={() => loadAllPendingTasks()}
                 />
+                <AuditSopModal
+                    mode="task_instructions"
+                    isOpen={!!selectedInstructionsTask}
+                    onClose={() => setSelectedInstructionsTask(null)}
+                    user={user}
+                    task={selectedInstructionsTask || undefined}
+                    onUpdate={() => loadAllPendingTasks()}
+                />
+                </>
             )}
 
             {/* ── Extension approve modal ── */}

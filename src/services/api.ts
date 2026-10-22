@@ -155,6 +155,11 @@ const docToTask = (d: any): Task => {
     audit_sop_updated_at: data.audit_sop_updated_at ? timestampToISO(data.audit_sop_updated_at) : undefined,
     audit_sop_attachments: data.audit_sop_attachments,
     audit_sop_links: data.audit_sop_links,
+    task_instructions_text: data.task_instructions_text,
+    task_instructions_updated_by: data.task_instructions_updated_by,
+    task_instructions_updated_at: data.task_instructions_updated_at ? timestampToISO(data.task_instructions_updated_at) : undefined,
+    task_instructions_attachments: data.task_instructions_attachments,
+    task_instructions_links: data.task_instructions_links,
   };
   return promoteScheduledTaskIfDue(task);
 };

@@ -48,6 +48,11 @@ export const AssignTask: React.FC = () => {
   const [auditSopLinks, setAuditSopLinks] = useState<string[]>(['']);
   const [auditSopUploadProgresses, setAuditSopUploadProgresses] = useState<{ [key: string]: number }>({});
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [taskInstructionsText, setTaskInstructionsText] = useState('');
+  const [taskInstructionsFiles, setTaskInstructionsFiles] = useState<File[]>([]);
+  const [taskInstructionsLinks, setTaskInstructionsLinks] = useState<string[]>(['']);
+  const [taskInstructionsUploadProgresses, setTaskInstructionsUploadProgresses] = useState<{ [key: string]: number }>({});
+  const [isInstructionsModalOpen, setIsInstructionsModalOpen] = useState(false);
   const [assignedToIds, setAssignedToIds] = useState<string[]>([]);
   const [assignToSearch, setAssignToSearch] = useState('');
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
@@ -174,6 +179,48 @@ export const AssignTask: React.FC = () => {
         }
       }
 
+      let uploadedTaskInstructionsAttachments: NonNullable<Task['task_instructions_attachments']> | undefined = undefined;
+      if (taskInstructionsFiles.length > 0) {
+        const uploadPromises = taskInstructionsFiles.map(async (file, index) => {
+          const fileId = `${Date.now()}_bulk_${index}_${file.name}`;
+          const path = `task-instructions-attachments/${fileId}`;
+          const storageRef = ref(storage, path);
+
+          const toUpload = file.type.startsWith('image/') ? await compressImageForUpload(file) : file;
+          const uploadTask = uploadBytesResumable(storageRef, toUpload);
+
+          return new Promise<NonNullable<Task['task_instructions_attachments']>[0]>((resolve, reject) => {
+            uploadTask.on(
+              'state_changed',
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setTaskInstructionsUploadProgresses((prev) => ({ ...prev, [file.name]: progress }));
+              },
+              (err) => reject(err),
+              async () => {
+                const downloadUrl = await getDownloadURL(storageRef);
+                resolve({
+                  file_url: downloadUrl,
+                  file_type: file.type,
+                  file_name: file.name,
+                  size: file.size,
+                  uploaded_by: user.name || user.id,
+                  uploaded_at: new Date().toISOString(),
+                });
+              }
+            );
+          });
+        });
+
+        try {
+          uploadedTaskInstructionsAttachments = await Promise.all(uploadPromises);
+        } catch (err: any) {
+          setFormError(err.message || 'Failed to upload task instructions attachments');
+          setLoading(false);
+          return;
+        }
+      }
+
       let successCount = 0;
       let whatsappFailures: string[] = [];
 
@@ -197,6 +244,9 @@ export const AssignTask: React.FC = () => {
           audit_sop_text: auditSopText.trim() || undefined,
           audit_sop_attachments: uploadedAuditSopAttachments,
           audit_sop_links: auditSopLinks.filter(l => l.trim() !== '').length > 0 ? auditSopLinks.filter(l => l.trim() !== '') : undefined,
+          task_instructions_text: taskInstructionsText.trim() || undefined,
+          task_instructions_attachments: uploadedTaskInstructionsAttachments,
+          task_instructions_links: taskInstructionsLinks.filter(l => l.trim() !== '').length > 0 ? taskInstructionsLinks.filter(l => l.trim() !== '') : undefined,
           assigned_to_id: assigneeId,
           assigned_to_name: assignee.name || '',
           assigned_to_city: assignee.city,
@@ -252,6 +302,10 @@ export const AssignTask: React.FC = () => {
       setAuditSopFiles([]);
       setAuditSopLinks(['']);
       setAuditSopUploadProgresses({});
+      setTaskInstructionsText('');
+      setTaskInstructionsFiles([]);
+      setTaskInstructionsLinks(['']);
+      setTaskInstructionsUploadProgresses({});
       setStartDate(today);
       setDueDate('');
       setRecurring('none');
@@ -689,6 +743,17 @@ export const AssignTask: React.FC = () => {
                 {auditSopText || auditSopFiles.length > 0 || auditSopLinks.filter(l => l.trim()).length > 0 ? 'Edit Guidelines to Audit' : 'Add Guidelines to Audit'}
               </button>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Add Task Instructions (optional)</label>
+              <button
+                type="button"
+                onClick={() => setIsInstructionsModalOpen(true)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 shadow-sm font-medium"
+              >
+                <FileText size={16} className={taskInstructionsText || taskInstructionsFiles.length > 0 || taskInstructionsLinks.filter(l => l.trim()).length > 0 ? "text-teal-600" : "text-slate-400"} />
+                {taskInstructionsText || taskInstructionsFiles.length > 0 || taskInstructionsLinks.filter(l => l.trim()).length > 0 ? 'Edit Task Instructions' : 'Add Task Instructions'}
+              </button>
+            </div>
             {formError && (
               <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{formError}</div>
             )}
@@ -700,6 +765,11 @@ export const AssignTask: React.FC = () => {
                 <div className="bg-teal-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${Object.values(auditSopUploadProgresses).reduce((a, b) => a + b, 0) / auditSopFiles.length}%` }}></div>
               </div>
             )}
+            {loading && taskInstructionsFiles.length > 0 && (
+              <div className="mt-2 w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div className="bg-teal-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${Object.values(taskInstructionsUploadProgresses).reduce((a, b) => a + b, 0) / taskInstructionsFiles.length}%` }}></div>
+              </div>
+            )}
             <Button type="submit" isLoading={loading}>
               Save & Assign
             </Button>
@@ -708,19 +778,35 @@ export const AssignTask: React.FC = () => {
       </form>
 
       {user && (
-        <AuditSopModal
-          isOpen={isAuditModalOpen}
-          onClose={() => setIsAuditModalOpen(false)}
-          user={user}
-          initialText={auditSopText}
-          initialFiles={auditSopFiles}
-          initialLinks={auditSopLinks}
-          onSaveAssign={(text, files, links) => {
-            setAuditSopText(text);
-            setAuditSopFiles(files);
-            setAuditSopLinks(links);
-          }}
-        />
+        <>
+          <AuditSopModal
+            isOpen={isAuditModalOpen}
+            onClose={() => setIsAuditModalOpen(false)}
+            user={user}
+            initialText={auditSopText}
+            initialFiles={auditSopFiles}
+            initialLinks={auditSopLinks}
+            onSaveAssign={(text, files, links) => {
+              setAuditSopText(text);
+              setAuditSopFiles(files);
+              setAuditSopLinks(links);
+            }}
+          />
+          <AuditSopModal
+            mode="task_instructions"
+            isOpen={isInstructionsModalOpen}
+            onClose={() => setIsInstructionsModalOpen(false)}
+            user={user}
+            initialText={taskInstructionsText}
+            initialFiles={taskInstructionsFiles}
+            initialLinks={taskInstructionsLinks}
+            onSaveAssign={(text, files, links) => {
+              setTaskInstructionsText(text);
+              setTaskInstructionsFiles(files);
+              setTaskInstructionsLinks(links);
+            }}
+          />
+        </>
       )}
     </div>
   );
