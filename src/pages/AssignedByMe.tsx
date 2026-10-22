@@ -140,6 +140,7 @@ export const AssignedByMe: React.FC = () => {
   const [rejectTask, setRejectTask] = useState<Task | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
+  const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
 
   // Edit State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -1112,7 +1113,34 @@ export const AssignedByMe: React.FC = () => {
                     ? 'overdue-row'
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
-                  <td className="sticky-col-1">{t.title}</td>
+                  <td className="sticky-col-1">
+                    <div className="flex flex-col gap-1">
+                      {t.title}
+                      {(() => {
+                        const hasInstructions = !!t.task_instructions_text ||
+                          (t.task_instructions_attachments && t.task_instructions_attachments.length > 0) ||
+                          (t.task_instructions_links && t.task_instructions_links.length > 0);
+                        const canEditInstructions = user?.id === t.assigned_by_id ||
+                          user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                        if (hasInstructions) {
+                          return (
+                            <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                              className="text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100">
+                              <FileText size={12} /> View Task Instructions
+                            </button>
+                          );
+                        } else if (canEditInstructions) {
+                          return (
+                            <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                              className="text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200">
+                              + Add Task Instructions
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </td>
                   <td className="sticky-col-2 whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
                     {t.description || '-'}
                   </td>
@@ -1229,7 +1257,32 @@ export const AssignedByMe: React.FC = () => {
                     : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                 >
                   <td className="sticky-col-1">
-                    <span className="font-medium text-slate-800">{t.title}</span>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-slate-800">{t.title}</span>
+                      {(() => {
+                        const hasInstructions = !!t.task_instructions_text ||
+                          (t.task_instructions_attachments && t.task_instructions_attachments.length > 0) ||
+                          (t.task_instructions_links && t.task_instructions_links.length > 0);
+                        const canEditInstructions = user?.id === t.assigned_by_id ||
+                          user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                        if (hasInstructions) {
+                          return (
+                            <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                              className="text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100">
+                              <FileText size={12} /> View Task Instructions
+                            </button>
+                          );
+                        } else if (canEditInstructions) {
+                          return (
+                            <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                              className="text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100 border-dashed hover:border-teal-200">
+                              + Add Task Instructions
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </td>
                   <td className="sticky-col-2 whitespace-pre-wrap wrap-break-word text-sm text-slate-700">
                     {t.description || '-'}
@@ -1596,13 +1649,36 @@ export const AssignedByMe: React.FC = () => {
                     className={`${isOverdue ? 'overdue-row' : ''} ${!isOverdue && onHoliday ? 'holiday-row' : ''} ${highlightId === t.id ? 'ring-2 ring-amber-300' : ''}`}
                   >
                     <td className="sticky-col-1">
-                      <span className="font-medium text-slate-800">{t.title}</span>
-                      {onHoliday && (
-                        <span className="ml-2 text-xs text-orange-600">(Holiday)</span>
-                      )}
-                      {t.assignee_deleted && (
-                        <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>
-                      )}
+                      <div className="flex flex-col">
+                        <span className="font-medium text-slate-800">
+                          {t.title}
+                          {onHoliday && <span className="ml-2 text-xs text-orange-600">(Holiday)</span>}
+                          {t.assignee_deleted && <span className="ml-2 text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">Member deleted</span>}
+                        </span>
+                        {(() => {
+                          const hasInstructions = !!t.task_instructions_text ||
+                            (t.task_instructions_attachments && t.task_instructions_attachments.length > 0) ||
+                            (t.task_instructions_links && t.task_instructions_links.length > 0);
+                          const canEditInstructions = user?.id === t.assigned_by_id ||
+                            user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+                          if (hasInstructions) {
+                            return (
+                              <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                                className="mt-1 text-xs font-medium text-teal-600 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-teal-100">
+                                <FileText size={12} /> View Task Instructions
+                              </button>
+                            );
+                          } else if (canEditInstructions) {
+                            return (
+                              <button type="button" onClick={() => setSelectedInstructionsTask(t)}
+                                className="mt-1 text-xs font-medium text-slate-400 hover:text-teal-600 hover:bg-slate-50 px-2 py-1 rounded inline-flex items-center gap-1 w-fit transition-colors border border-transparent border-dashed hover:border-teal-200">
+                                + Add Task Instructions
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </td>
                     <td className="sticky-col-2 whitespace-pre-wrap wrap-anywhere text-sm text-slate-700 align-top">
                       <div className="flex flex-col">
@@ -2092,6 +2168,17 @@ export const AssignedByMe: React.FC = () => {
           onClose={() => setSelectedAuditTask(null)}
           user={user}
           task={selectedAuditTask || undefined}
+          onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
+        />
+      )}
+
+      {user && (
+        <AuditSopModal
+          mode="task_instructions"
+          isOpen={!!selectedInstructionsTask}
+          onClose={() => setSelectedInstructionsTask(null)}
+          user={user}
+          task={selectedInstructionsTask || undefined}
           onUpdate={() => loadPage(pageCursors[currentPage - 1] ?? null, currentPage)}
         />
       )}
