@@ -46,9 +46,8 @@ export const ApproveTask: React.FC = () => {
     const [editDueDate, setEditDueDate] = useState('');
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
-    const [availableVerifiers, setAvailableVerifiers] = useState<User[]>([]);
     const [assignedToFilter, setAssignedToFilter] = useState('');
-    const [verifierFilter, setVerifierFilter] = useState('');
+    const [verifierFilter, setVerifierFilter] = useState(user?.id || '');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
     const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
     const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
@@ -161,10 +160,6 @@ export const ApproveTask: React.FC = () => {
         // Update available doers
         const uniqueDoerIds = new Set(allPendingTasks.map(t => t.assigned_to_id).filter(Boolean));
         setAvailableUsers(allUsers.filter(u => uniqueDoerIds.has(u.id)));
-
-        // Update available verifiers
-        const uniqueVerifierIds = new Set(allPendingTasks.map(t => t.verifier_id).filter(Boolean));
-        setAvailableVerifiers(allUsers.filter(u => uniqueVerifierIds.has(u.id)));
 
         // Apply filters
         let filtered = allPendingTasks;
@@ -450,7 +445,7 @@ export const ApproveTask: React.FC = () => {
                 {isOwnerOrManager && (
                     <div className="w-full sm:w-[250px]">
                         <SearchableUserSelect
-                            users={availableVerifiers}
+                            users={allUsers}
                             value={verifierFilter}
                             onChange={setVerifierFilter}
                             placeholder="Search Verifier"
