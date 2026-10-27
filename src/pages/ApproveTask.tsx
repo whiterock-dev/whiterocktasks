@@ -46,7 +46,9 @@ export const ApproveTask: React.FC = () => {
     const [editDueDate, setEditDueDate] = useState('');
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+    const [availableVerifiers, setAvailableVerifiers] = useState<User[]>([]);
     const [assignedToFilter, setAssignedToFilter] = useState('');
+    const [verifierFilter, setVerifierFilter] = useState('');
     const [nameFilteredRows, setNameFilteredRows] = useState<Task[] | null>(null);
     const [selectedAuditTask, setSelectedAuditTask] = useState<Task | null>(null);
     const [selectedInstructionsTask, setSelectedInstructionsTask] = useState<Task | null>(null);
@@ -130,13 +132,15 @@ export const ApproveTask: React.FC = () => {
 
     const [allPendingTasks, setAllPendingTasks] = useState<Task[] | null>(null);
 
+    const isOwnerOrManager = user?.role === UserRole.OWNER || user?.role === UserRole.MANAGER;
+
     const loadAllPendingTasks = useCallback(async () => {
         if (!user) return;
         try {
             setLoading(true);
             const pendingTasks = await api.getAllTasksByFilters({
                 status: 'pending_verification',
-                verifierId: user.id
+                ...(isOwnerOrManager ? {} : { verifierId: user.id }),
             });
             await hydrateRecurringLookup(pendingTasks);
             setAllPendingTasks(pendingTasks);
@@ -158,14 +162,18 @@ export const ApproveTask: React.FC = () => {
         const uniqueDoerIds = new Set(allPendingTasks.map(t => t.assigned_to_id).filter(Boolean));
         setAvailableUsers(allUsers.filter(u => uniqueDoerIds.has(u.id)));
 
-        // Apply ID filter
-        const filtered = assignedToFilter
-            ? allPendingTasks.filter(t => t.assigned_to_id === assignedToFilter)
-            : allPendingTasks;
+        // Update available verifiers
+        const uniqueVerifierIds = new Set(allPendingTasks.map(t => t.verifier_id).filter(Boolean));
+        setAvailableVerifiers(allUsers.filter(u => uniqueVerifierIds.has(u.id)));
+
+        // Apply filters
+        let filtered = allPendingTasks;
+        if (assignedToFilter) filtered = filtered.filter(t => t.assigned_to_id === assignedToFilter);
+        if (verifierFilter) filtered = filtered.filter(t => t.verifier_id === verifierFilter);
 
         setTotalResults(filtered.length);
         setNameFilteredRows(filtered);
-    }, [allPendingTasks, allUsers, assignedToFilter]);
+    }, [allPendingTasks, allUsers, assignedToFilter, verifierFilter]);
 
     useEffect(() => {
         if (!nameFilteredRows) return;
@@ -186,7 +194,7 @@ export const ApproveTask: React.FC = () => {
                 completed_at: new Date().toISOString(),
                 verified_by: user.name,
                 verified_at: new Date().toISOString(),
-            }, { id: user.id, name: user.name, role: user.role }, 'Verified by verifier from ApproveTask');
+            }, { id: user.id, name: user.name, role: user.role }, isOwnerOrManager && task.verifier_id !== user.id ? 'Approved by manager/owner (override)' : 'Verified by verifier from ApproveTask');
             await loadAllPendingTasks();
         } catch (err) {
             console.error('Failed to approve task:', err);
@@ -430,7 +438,7 @@ export const ApproveTask: React.FC = () => {
 
             {activeTab === 'verification' && (
             <>
-            <div className="relative z-40 flex flex-col sm:flex-row sm:items-center gap-4 mb-3">
+            <div className="relative z-40 flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
                 <div className="w-full sm:w-[250px]">
                     <SearchableUserSelect
                         users={availableUsers}
@@ -439,6 +447,16 @@ export const ApproveTask: React.FC = () => {
                         placeholder="Search Doer Name"
                     />
                 </div>
+                {isOwnerOrManager && (
+                    <div className="w-full sm:w-[250px]">
+                        <SearchableUserSelect
+                            users={availableVerifiers}
+                            value={verifierFilter}
+                            onChange={setVerifierFilter}
+                            placeholder="Search Verifier"
+                        />
+                    </div>
+                )}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">{paginationControls}</div>
             <div className="table-container">
@@ -478,8 +496,8 @@ export const ApproveTask: React.FC = () => {
                             </tr>
                         ) : (
                             tasks.map((task) => {
-                                const canApproveTask = task.verifier_id === user?.id;
-                                const canEditTask = user?.id === task.assigned_by_id || user?.id === task.verifier_id;
+                                const canApproveTask = task.verifier_id === user?.id || isOwnerOrManager;
+                                const canEditTask = user?.id === task.assigned_by_id || user?.id === task.verifier_id || isOwnerOrManager;
                                 return (
                                     <tr key={task.id} className={highlightId === task.id ? 'bg-amber-50' : ''}>
                                         <td>
