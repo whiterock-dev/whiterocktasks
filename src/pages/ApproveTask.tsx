@@ -157,13 +157,22 @@ export const ApproveTask: React.FC = () => {
     useEffect(() => {
         if (!allPendingTasks || allUsers.length === 0) return;
 
-        // Update available doers
-        const uniqueDoerIds = new Set(allPendingTasks.map(t => t.assigned_to_id).filter(Boolean));
-        setAvailableUsers(allUsers.filter(u => uniqueDoerIds.has(u.id)));
+        // Update available doers scoped to selected verifier
+        const verifierScopedTasks = verifierFilter
+            ? allPendingTasks.filter(t => t.verifier_id === verifierFilter)
+            : allPendingTasks;
+        const uniqueDoerIds = new Set(verifierScopedTasks.map(t => t.assigned_to_id).filter(Boolean));
+        const newAvailableUsers = allUsers.filter(u => uniqueDoerIds.has(u.id));
+        setAvailableUsers(newAvailableUsers);
+
+        // Reset doer filter if selected doer is no longer in the verifier-scoped list
+        if (assignedToFilter && !uniqueDoerIds.has(assignedToFilter)) {
+            setAssignedToFilter('');
+        }
 
         // Apply filters
         let filtered = allPendingTasks;
-        if (assignedToFilter) filtered = filtered.filter(t => t.assigned_to_id === assignedToFilter);
+        if (assignedToFilter && uniqueDoerIds.has(assignedToFilter)) filtered = filtered.filter(t => t.assigned_to_id === assignedToFilter);
         if (verifierFilter) filtered = filtered.filter(t => t.verifier_id === verifierFilter);
 
         setTotalResults(filtered.length);
@@ -407,11 +416,16 @@ export const ApproveTask: React.FC = () => {
                     }`}
                 >
                     Verification
-                    {(allPendingTasks?.length ?? 0) > 0 && (
-                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-teal-100 text-teal-800 text-xs font-semibold">
-                            {allPendingTasks!.length}
-                        </span>
-                    )}
+                    {(() => {
+                        const count = verifierFilter
+                            ? (allPendingTasks?.filter(t => t.verifier_id === verifierFilter).length ?? 0)
+                            : (allPendingTasks?.length ?? 0);
+                        return count > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-teal-100 text-teal-800 text-xs font-semibold">
+                                {count}
+                            </span>
+                        ) : null;
+                    })()}
                 </button>
                 <button
                     onClick={() => setActiveTab('extensions')}
