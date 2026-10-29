@@ -57,6 +57,7 @@ export const RecurringTasks: React.FC = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
   // const [editPriority, setEditPriority] = useState<Task['priority']>('medium');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
@@ -372,6 +373,7 @@ export const RecurringTasks: React.FC = () => {
     setEditTitle(t.title);
     setEditDesc(t.description || '');
     setEditAssignedToId(t.assigned_to_id);
+    setEditStartTime(t.start_time || '');
     setEditDueDate(t.due_date);
     // setEditPriority(t.priority);
     setEditRecurring(t.recurring);
@@ -407,6 +409,7 @@ export const RecurringTasks: React.FC = () => {
       const updates: Partial<Task> = {
         title: editTitle,
         description: editDesc,
+        start_time: editStartTime || (null as any),
         assigned_to_id: editAssignedToId,
         assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
         assigned_to_city: assigneeUser?.city || editingTask.assigned_to_city,
@@ -981,21 +984,15 @@ export const RecurringTasks: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/*
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                  <select
-                    value={editPriority}
-                    onChange={(e) => setEditPriority(e.target.value as Task['priority'])}
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    value={editStartTime}
+                    onChange={(e) => setEditStartTime(e.target.value)}
                     className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
+                  />
                 </div>
-                */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Recurring</label>
                   <select

@@ -13,14 +13,34 @@ export function getTodayIST(): string {
     .replace(/\//g, '-');
 }
 
-/** Hide future-start tasks as scheduled until start_date arrives. */
+/** HH:MM for the current time in India Standard Time. */
+export function getCurrentTimeIST(): string {
+  return new Date().toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
+ * Decides the initial status for a newly created task.
+ * Returns 'scheduled' if the task's start window (date + optional time) is still in the future.
+ * Backward-compatible: callers that don't pass startTime get the existing date-only behaviour.
+ */
 export function resolveInitialTaskStatus(
   requestedStatus: TaskStatus,
   startDate: string | undefined,
-  today: string = getTodayIST()
+  today: string = getTodayIST(),
+  startTime?: string,
 ): TaskStatus {
-  if (requestedStatus === 'pending' && startDate && startDate > today) {
-    return 'scheduled';
-  }
+  if (requestedStatus !== 'pending' || !startDate) return requestedStatus;
+
+  // Future date → always scheduled regardless of time
+  if (startDate > today) return 'scheduled';
+
+  // Same day with a future start time → also scheduled
+  if (startDate === today && startTime && startTime > getCurrentTimeIST()) return 'scheduled';
+
   return requestedStatus;
 }

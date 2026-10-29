@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { isHoliday, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
+import { getTodayIST } from '../lib/dates';
 import { Button } from '../components/ui/Button';
 import { SearchableUserSelect } from '../components/ui/SearchableUserSelect';
 import { CompleteTaskModal } from '../components/ui/CompleteTaskModal';
@@ -846,7 +847,7 @@ export const RedZone: React.FC = () => {
                   if (!extRequestDate || extRequestReason.trim().length < 10) return;
                   setExtSubmitting(true);
                   try {
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = getTodayIST();
                     const approverIdField = extRequestTask.verifier_id || extRequestTask.assigned_by_id;
                     const approverNameField = extRequestTask.verifier_name || extRequestTask.assigned_by_name;
                     await api.createExtensionRequest({

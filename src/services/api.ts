@@ -80,29 +80,6 @@ const writeTaskLog = (
   }).catch((err) => console.error('[TaskLog] write failed:', err));
 };
 
-/** Debounce in-flight scheduled→pending promotions per task id. */
-const activatingScheduledTaskIds = new Set<string>();
-
-const promoteScheduledTaskIfDue = (task: Task): Task => {
-  if (task.status !== 'scheduled' || !task.start_date) return task;
-  const today = getTodayIST();
-  if (task.start_date > today) return task;
-
-  if (!activatingScheduledTaskIds.has(task.id)) {
-    activatingScheduledTaskIds.add(task.id);
-    const now = new Date().toISOString();
-    updateDoc(doc(db, COLLECTIONS.TASKS, task.id), {
-      status: 'pending',
-      updated_at: isoToTimestamp(now),
-    }).catch((err) => {
-      console.error(`Failed to activate scheduled task ${task.id}:`, err);
-      activatingScheduledTaskIds.delete(task.id);
-    });
-  }
-
-  return { ...task, status: 'pending' };
-};
-
 const docToTask = (d: any): Task => {
   const data = d.data();
   const task: Task = {
@@ -110,6 +87,7 @@ const docToTask = (d: any): Task => {
     title: data.title || '',
     description: data.description || '',
     start_date: data.start_date,
+    start_time: data.start_time,
     due_date: data.due_date || '',
     priority: data.priority || 'medium',
     status: (data.status as TaskStatus) || 'pending',
@@ -161,7 +139,7 @@ const docToTask = (d: any): Task => {
     task_instructions_attachments: data.task_instructions_attachments,
     task_instructions_links: data.task_instructions_links,
   };
-  return promoteScheduledTaskIfDue(task);
+  return task;
 };
 
 const docToHelpTicket = (d: any): HelpTicket => {
@@ -924,7 +902,7 @@ export const api = {
   ): Promise<Task> => {
     const now = new Date().toISOString();
     const today = getTodayIST();
-    const status = resolveInitialTaskStatus(t.status, t.start_date, today);
+    const status = resolveInitialTaskStatus(t.status, t.start_date, today, t.start_time);
 
     const normalizedTask: Omit<Task, 'id' | 'created_at' | 'updated_at'> = {
       ...t,
