@@ -18,7 +18,7 @@ import { AttachmentViewerModal } from '../components/ui/AttachmentViewerModal';
 import { AuditSopModal } from '../components/ui/AuditSopModal';
 import { exportRowsToCsv, type CsvColumn } from '../lib/csv';
 import { isHoliday, getPendingDays, formatDateDDMMYYYY, getDisplayRecurring, formatRecurringLabel } from '../lib/utils';
-import { getTodayIST } from '../lib/dates';
+import { getTodayIST, resolveInitialTaskStatus } from '../lib/dates';
 import {
   Paperclip,
   Check,
@@ -110,6 +110,7 @@ export const TaskTable: React.FC = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
   const [editAssignedToId, setEditAssignedToId] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
   const [editRecurring, setEditRecurring] = useState<Task['recurring']>('none');
@@ -746,6 +747,7 @@ export const TaskTable: React.FC = () => {
         { header: 'Assigned To City', accessor: (t) => t.assigned_to_city || '' },
         { header: 'Assigned By', accessor: (t) => t.assigned_by_name || '' },
         { header: 'Start Date', accessor: (t) => formatDateValue(t.start_date, { emptyValue: '###' }) },
+        { header: 'Start Time', accessor: (t) => t.start_time || '' },
         { header: 'Due Date', accessor: (t) => formatDateValue(t.due_date, { emptyValue: '###' }) },
         { header: 'Recurring', accessor: (t) => formatRecurringLabel(getDisplayRecurring(t, exportLookup), 'None') },
         { header: 'Status', accessor: (t) => t.status || '' },
@@ -966,6 +968,7 @@ export const TaskTable: React.FC = () => {
     setEditTitle(t.title);
     setEditDesc(t.description || '');
     setEditStartDate(t.start_date || '');
+    setEditStartTime(t.start_time || '');
     setEditAssignedToId(t.assigned_to_id);
     setEditDueDate(t.due_date);
     setEditRecurring(t.recurring);
@@ -998,11 +1001,8 @@ export const TaskTable: React.FC = () => {
     setEditSubmitting(true);
     try {
       let finalStatus = editingTask.status;
-      const today = getTodayIST();
-      if (editStartDate && editStartDate > today && ['pending', 'scheduled'].includes(editingTask.status)) {
-        finalStatus = 'scheduled';
-      } else if (editStartDate && editStartDate <= today && editingTask.status === 'scheduled') {
-        finalStatus = 'pending';
+      if (['pending', 'scheduled'].includes(editingTask.status)) {
+        finalStatus = resolveInitialTaskStatus('pending', editStartDate, getTodayIST(), editStartTime || undefined);
       }
 
       const immutableRecurring = editingTask.recurring;
@@ -1011,6 +1011,7 @@ export const TaskTable: React.FC = () => {
           title: editTitle,
           description: editDesc,
           start_date: editStartDate || (null as any),
+          start_time: editStartTime || (null as any),
           due_date: editDueDate,
           status: finalStatus,
           recurring: immutableRecurring,
@@ -1044,6 +1045,7 @@ export const TaskTable: React.FC = () => {
           title: editTitle,
           description: editDesc,
           start_date: editStartDate || (null as any),
+          start_time: editStartTime || (null as any),
           status: finalStatus,
           assigned_to_id: editAssignedToId,
           assigned_to_name: assigneeUser?.name || editingTask.assigned_to_name,
@@ -1803,6 +1805,9 @@ export const TaskTable: React.FC = () => {
                     </td>
                     <td className="text-center whitespace-nowrap text-slate-600">
                       {t.start_date ? formatDateValue(t.start_date) : '-'}
+                      {t.start_time && (
+                        <div className="text-xs text-slate-400">{t.start_time}</div>
+                      )}
                     </td>
                     <td className="text-center whitespace-nowrap text-slate-600 font-medium">
                       {formatDateValue(t.due_date)}
@@ -2081,6 +2086,12 @@ export const TaskTable: React.FC = () => {
                         onChange={(e) => setEditStartDate(e.target.value)}
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
                       />
+                      <input
+                        type="time"
+                        value={editStartTime}
+                        onChange={(e) => setEditStartTime(e.target.value)}
+                        className="mt-1 w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:ring-2 focus:ring-teal-500"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2316,7 +2327,7 @@ export const TaskTable: React.FC = () => {
                   if (!extRequestDate || extRequestReason.trim().length < 10) return;
                   setExtSubmitting(true);
                   try {
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = getTodayIST();
                     const approverIdField = extRequestTask.verifier_id || extRequestTask.assigned_by_id;
                     const approverNameField = extRequestTask.verifier_name || extRequestTask.assigned_by_name;
                     await api.createExtensionRequest({

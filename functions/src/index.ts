@@ -358,6 +358,16 @@ function getTodayIST(): string {
     .replace(/\//g, '-');
 }
 
+/** HH:MM for the current time in India Standard Time. */
+function getCurrentTimeIST(): string {
+  return new Date().toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 function resolveInstanceStartDate(
   baseStartDate: string,
   baseDueDate: string,
@@ -369,11 +379,17 @@ function resolveInstanceStartDate(
 function resolveInitialTaskStatus(
   requestedStatus: string,
   startDate: string | undefined,
-  today: string
+  today: string,
+  startTime?: string,
 ): string {
-  if (requestedStatus === 'pending' && startDate && startDate > today) {
-    return 'scheduled';
-  }
+  if (requestedStatus !== 'pending' || !startDate) return requestedStatus;
+
+  // Future date → always scheduled
+  if (startDate > today) return 'scheduled';
+
+  // Same day with a future start time → also scheduled
+  if (startDate === today && startTime && startTime > getCurrentTimeIST()) return 'scheduled';
+
   return requestedStatus;
 }
 
@@ -472,12 +488,14 @@ async function runGenerateRecurringTasks(
       }
 
       if (shouldCreateInstance && !existingInstanceDueDates.has(cursor)) {
-        const status = resolveInitialTaskStatus('pending', instanceStartDate, today);
+        const instanceStartTime = (template.start_time as string | undefined) || null;
+        const status = resolveInitialTaskStatus('pending', instanceStartDate, today, instanceStartTime || undefined);
 
         const newTask: FirebaseFirestore.DocumentData = {
           title: template.title || '',
           description: template.description || '',
           start_date: instanceStartDate,
+          start_time: instanceStartTime,
           due_date: cursor,
           priority: template.priority || 'medium',
           status,
@@ -572,48 +590,66 @@ export const generateRecurringTasksDaily = onSchedule(
 
 
 /**
- * Scheduled function: runs daily at 00:05 AM IST (18:05 UTC).
- * Finds all tasks with status 'scheduled' whose start_date has arrived (start_date <= today).
+ * Scheduled function: runs every 30 minutes.
+ * Finds all tasks with status 'scheduled' whose start_date has arrived (start_date <= today IST).
  * Updates them to 'pending' so they become visible to assignees in the task tables.
+ *
+ * Running every 30 min means tasks are promoted within 30 minutes of their start_date
+ * arriving, and naturally covers the midnight IST transition the previous daily job handled.
+ *
+ * The date filter is pushed into the Firestore query (not client-side) so only documents
+ * that actually need activation are read — requires composite index on (status, start_date).
  */
 export const transitionScheduledTasks = onSchedule(
   {
-    schedule: '05 00 * * *', // 00:05 IST
-    timeZone: 'Asia/Kolkata',
+    schedule: '*/30 * * * *',
     timeoutSeconds: 540,
     memory: '512MiB',
   },
   async () => {
     const db = admin.firestore();
-    const today = getTodayIST(); // YYYY-MM-DD in IST
+    const today = getTodayIST();       // YYYY-MM-DD in IST
+    const currentTime = getCurrentTimeIST(); // HH:MM in IST
 
-    logger.info(`transitionScheduledTasks: running for date ${today}`);
+    logger.info(`transitionScheduledTasks: running for date ${today} time ${currentTime}`);
 
-    // Fetch all tasks with 'scheduled' status
+    // Only read tasks that are both 'scheduled' AND whose start_date has already arrived.
+    // Requires composite index: status ASC, start_date ASC (firestore.indexes.json).
     const scheduledSnap = await db
       .collection(COLLECTIONS.TASKS)
       .where('status', '==', 'scheduled')
+      .where('start_date', '<=', today)
       .get();
 
     if (scheduledSnap.empty) {
-      logger.info('No scheduled tasks found; nothing to transition.');
+      logger.info('No scheduled tasks are ready to activate.');
       return;
     }
 
-    // Filter to only those whose start_date has arrived (start_date <= today)
+    // Secondary filter for time: tasks with start_date == today and a start_time that
+    // hasn't arrived yet are skipped — they'll be picked up by a later 30-min run.
+    // Tasks from past dates (start_date < today) are always activated regardless of start_time.
     const tasksToActivate = scheduledSnap.docs.filter((docSnap) => {
-      const startDate = docSnap.data().start_date as string | undefined;
-      // If no start_date set, activate it (edge case safety)
-      if (!startDate) return true;
-      return startDate <= today;
+      const data = docSnap.data();
+      const startDate = data.start_date as string | undefined;
+      const startTime = data.start_time as string | undefined; // HH:MM, set only when time scheduling is used
+
+      // Past date — always activate
+      if (!startDate || startDate < today) return true;
+
+      // Same day with no time constraint — activate
+      if (!startTime) return true;
+
+      // Same day with a specific start time — only activate once that time has passed
+      return currentTime >= startTime;
     });
 
     if (tasksToActivate.length === 0) {
-      logger.info('No scheduled tasks are ready to activate yet.');
+      logger.info('No scheduled tasks are ready to activate (time constraints pending).');
       return;
     }
 
-    logger.info(`Activating ${tasksToActivate.length} scheduled task(s)...`);
+    logger.info(`Activating ${tasksToActivate.length} of ${scheduledSnap.size} scheduled task(s)...`);
 
     // Firestore batch writes are limited to 500 ops per batch — use chunks of 450 to be safe
     const BATCH_SIZE = 450;
@@ -633,7 +669,7 @@ export const transitionScheduledTasks = onSchedule(
     }
 
     logger.info(
-      `transitionScheduledTasks complete: ${tasksToActivate.length} task(s) transitioned to pending.`
+      `transitionScheduledTasks complete: ${scheduledSnap.size} task(s) transitioned to pending.`
     );
     return;
   }
