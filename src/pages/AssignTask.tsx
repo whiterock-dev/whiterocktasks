@@ -19,7 +19,7 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import { compressImageForUpload } from '../lib/utils';
 import { AuditSopModal } from '../components/ui/AuditSopModal';
-import { getTodayIST, getCurrentTimeIST } from '../lib/dates';
+import { getTodayIST } from '../lib/dates';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
@@ -37,7 +37,7 @@ export const AssignTask: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState(today);
-  const [startTime, setStartTime] = useState(getCurrentTimeIST);
+  const [startTime, setStartTime] = useState('09:00');
   const [dueDate, setDueDate] = useState('');
   // const [priority, setPriority] = useState<TaskPriority>('medium');
   const [recurring, setRecurring] = useState<RecurringType>('none');
